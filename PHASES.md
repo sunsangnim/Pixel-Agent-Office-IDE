@@ -14,7 +14,7 @@
 - [x] Phase 2 — node-pty 통합: main에서 PTY spawn/write/kill, IPC로 stdout 스트리밍, 렌더러에서 최소 1개 터미널 동작 확인
 - [x] Phase 3 — 에이전트 템플릿 스토어 + 설정 모달: Claude/Codex 시드, CRUD UI
 - [x] Phase 4 — 작업 폴더 선택 + 에이전트 인스턴스 생성 플로우
-- [ ] Phase 5 — 픽셀 오피스 그리드 뷰 + 상태별 스타일링(idle/running/error) + 디바운스 상태 판별
+- [x] Phase 5 — 픽셀 오피스 그리드 뷰 + 상태별 스타일링(idle/running/error) + 디바운스 상태 판별
 - [ ] Phase 6 — 책상 클릭 → xterm.js 터미널 패널 연결(완전 CLI 패스스루)
 - [ ] Phase 7 — 우측 프롬프트 패널: 대상 체크박스 선택 → 선택된 인스턴스들에 프롬프트 전송
 - [ ] Phase 8 — 통합 점검: Claude+Codex 동시 구동, 프롬프트 전송, 터미널 드릴다운, 상태색 변화, 프로세스 정리 확인

@@ -48,6 +48,8 @@ export interface AgentTemplateApi {
   remove(id: string): Promise<AgentTemplate[]>
 }
 
+export type DeskStatus = 'idle' | 'running' | 'error'
+
 export interface AgentInstance {
   instanceId: string
   templateId: string

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { AgentInstance, AgentTemplate } from '@shared/types'
 import SettingsModal from './components/SettingsModal'
+import OfficeView from './components/OfficeView'
+import { usePtyStatuses } from './hooks/usePtyStatuses'
 
 function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -8,7 +10,9 @@ function App() {
   const [templates, setTemplates] = useState<AgentTemplate[]>([])
   const [instances, setInstances] = useState<AgentInstance[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const statuses = usePtyStatuses()
 
   const refreshTemplates = (): void => {
     window.api.templates.list().then((list) => {
@@ -42,9 +46,8 @@ function App() {
   const removeInstance = async (instanceId: string): Promise<void> => {
     const updated = await window.api.instances.remove(instanceId)
     setInstances(updated)
+    setSelectedInstanceId((current) => (current === instanceId ? null : current))
   }
-
-  const templateById = (id: string): AgentTemplate | undefined => templates.find((t) => t.id === id)
 
   return (
     <div className="app-shell office-shell">
@@ -89,25 +92,14 @@ function App() {
 
       {error && <p className="error-banner">{error}</p>}
 
-      <ul className="instance-list">
-        {instances.map((instance) => {
-          const template = templateById(instance.templateId)
-          return (
-            <li key={instance.instanceId} className="instance-row">
-              <span
-                className="template-color"
-                style={{ background: template?.color ?? '#888' }}
-              />
-              <div className="template-info">
-                <strong>{template?.name ?? instance.templateId}</strong>
-                <code>{instance.cwd}</code>
-              </div>
-              <button onClick={() => removeInstance(instance.instanceId)}>제거</button>
-            </li>
-          )
-        })}
-        {instances.length === 0 && <li>아직 배치된 에이전트가 없습니다. 작업 폴더를 지정하고 에이전트를 추가하세요.</li>}
-      </ul>
+      <OfficeView
+        instances={instances}
+        templates={templates}
+        statuses={statuses}
+        selectedInstanceId={selectedInstanceId}
+        onSelect={setSelectedInstanceId}
+        onRemove={removeInstance}
+      />
     </div>
   )
 }

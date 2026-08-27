@@ -70,22 +70,126 @@ body {
   border-radius: 6px;
 }
 
-.instance-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.office-empty {
+  color: #9a9ab0;
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed #3a3a4d;
+  border-radius: 8px;
 }
 
-.instance-row {
+.office-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 16px;
+}
+
+.desk {
+  --desk-color: #888888;
+  position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  background: #262638;
-  padding: 10px 12px;
-  border-radius: 8px;
+  gap: 6px;
+  padding: 14px 8px 10px;
+  border-radius: 10px;
+  background: #21212f;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    transform 0.1s;
+}
+
+.desk:hover {
+  transform: translateY(-2px);
+}
+
+.desk-selected {
+  border-color: #6ea8fe;
+}
+
+.desk-surface {
+  width: 64px;
+  height: 44px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #8a5a3b, #6b4327);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 4px;
+}
+
+.desk-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--desk-color);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+
+.desk-label {
+  font-size: 12px;
+  text-align: center;
+  color: #e4e4ef;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desk-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #6a6a7a;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.desk-running .desk-status-dot {
+  background: #f5c542;
+  animation: desk-pulse 1s infinite;
+}
+
+.desk-error .desk-status-dot {
+  background: #ff5c5c;
+}
+
+.desk-error {
+  border-color: #ff5c5c;
+}
+
+@keyframes desk-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 197, 66, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(245, 197, 66, 0);
+  }
+}
+
+.desk-remove {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ccc;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.desk:hover .desk-remove {
+  opacity: 1;
 }
 
 .modal-backdrop {
