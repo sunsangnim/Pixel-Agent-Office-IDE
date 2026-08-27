@@ -204,6 +204,11 @@ body {
   padding: 5px 8px;
 }
 
+.chat-auto-route {
+  color: #b7a9ff;
+  background: rgba(139, 124, 246, 0.1);
+}
+
 .chat-input-row {
   display: flex;
   gap: 6px;

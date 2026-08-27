@@ -66,8 +66,8 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
     return unsubscribe
   }, [])
 
-  const sendPrompt = (text: string, targetInstanceIds: string[]): void => {
-    const targets = instances.filter((i) => targetInstanceIds.includes(i.instanceId))
+  const sendPrompt = (text: string, targetInstanceIds: string[], sourceInstances = instances): void => {
+    const targets = sourceInstances.filter((i) => targetInstanceIds.includes(i.instanceId))
     if (targets.length === 0) return
 
     const targetNames = targets.map(

@@ -10,7 +10,7 @@ interface ChatPanelProps {
   onChooseFolder: () => void
   messages: ChatMessage[]
   selectedTargetIds: Set<string>
-  onSend: (text: string) => void
+  onSend: (text: string) => void | Promise<void>
 }
 
 function ChatPanel({
@@ -34,8 +34,8 @@ function ChatPanel({
     .map((i) => templates.find((t) => t.id === i.templateId)?.name ?? i.templateId)
 
   const send = (): void => {
-    if (!text.trim() || selectedTargetIds.size === 0) return
-    onSend(text)
+    if (!text.trim()) return
+    void onSend(text)
     setText('')
   }
 
@@ -69,7 +69,7 @@ function ChatPanel({
       <div className="chat-thread" ref={threadRef}>
         {messages.length === 0 && (
           <p className="chat-empty">
-            아직 대화가 없습니다. 아래 사무실에서 에이전트 프로필을 선택하고 지시해보세요.
+            에이전트를 선택해 직접 지시하거나, 선택 없이 보내 자동 배정할 수 있습니다.
           </p>
         )}
         {messages.map((m) =>
@@ -89,9 +89,9 @@ function ChatPanel({
         )}
       </div>
 
-      {selectedNames.length > 0 && (
-        <div className="chat-selected-row">받는 사람: {selectedNames.join(', ')}</div>
-      )}
+      <div className={`chat-selected-row${selectedNames.length === 0 ? ' chat-auto-route' : ''}`}>
+        {selectedNames.length > 0 ? `받는 사람: ${selectedNames.join(', ')}` : '받는 사람: 자동 배정'}
+      </div>
 
       <div className="chat-input-row">
         <textarea
@@ -109,7 +109,7 @@ function ChatPanel({
         <button
           className="chat-send-btn"
           onClick={send}
-          disabled={!text.trim() || selectedTargetIds.size === 0}
+          disabled={!text.trim()}
         >
           ▷
         </button>

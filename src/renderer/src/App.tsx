@@ -6,6 +6,7 @@ import TerminalModal from './components/TerminalModal'
 import ChatPanel from './components/ChatPanel'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
 import { useAgentChat } from './hooks/useAgentChat'
+import { planTask } from './lib/taskRouter'
 
 function App() {
   const [workFolder, setWorkFolder] = useState<string | null>(null)
@@ -69,8 +70,40 @@ function App() {
     })
   }
 
-  const sendPromptToSelected = (text: string): void => {
-    sendPrompt(text, Array.from(selectedTargetIds))
+  const sendPromptToSelected = async (text: string): Promise<void> => {
+    if (selectedTargetIds.size > 0) {
+      sendPrompt(text, Array.from(selectedTargetIds))
+      return
+    }
+    if (!workFolder) {
+      setError('자동 배정을 사용하려면 작업 폴더를 먼저 지정해주세요.')
+      return
+    }
+
+    setError(null)
+    const plan = planTask(text)
+    let availableInstances = instances
+    const targetIds: string[] = []
+
+    try {
+      for (const templateId of plan.templateIds) {
+        let leader = availableInstances.find(
+          (instance) => instance.templateId === templateId && instance.rank === 'teamLead'
+        )
+        if (!leader) {
+          availableInstances = await window.api.instances.create(templateId)
+          leader = availableInstances.find(
+            (instance) => instance.templateId === templateId && instance.rank === 'teamLead'
+          )
+        }
+        if (leader) targetIds.push(leader.instanceId)
+      }
+      setInstances(availableInstances)
+      sendPrompt(text, targetIds, availableInstances)
+    } catch (e) {
+      setInstances(availableInstances)
+      setError(e instanceof Error ? `${plan.reason}: ${e.message}` : String(e))
+    }
   }
 
   return (
