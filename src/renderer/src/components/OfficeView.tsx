@@ -2,6 +2,7 @@ import type { AgentInstance, AgentTemplate, DeskStatus } from '@shared/types'
 import AgentDesk from './AgentDesk'
 import OfficeZones from './OfficeZones'
 import { BUILT_IN_TEAM_IDS } from '@shared/orchestrationPolicy'
+import type { OfficePresence } from '@shared/types'
 
 interface OfficeViewProps {
   instances: AgentInstance[]
@@ -21,10 +22,22 @@ function OfficeView({
   onRemove
 }: OfficeViewProps) {
   const teamTemplates = BUILT_IN_TEAM_IDS.map((id) => templates.find((template) => template.id === id))
+  const getPresence = (instance: AgentInstance): OfficePresence => {
+    const status = statuses[instance.ptyId] ?? 'idle'
+    if (status === 'running') return 'working'
+    if (status === 'error') return 'error'
+    if (instance.rank === 'teamLead' || instance.slotIndex === 3) return 'deskIdle'
+    return instance.slotIndex === 1 ? 'pantry' : 'meeting'
+  }
+  const occupants = instances.map((instance) => ({
+    instance,
+    template: templates.find((template) => template.id === instance.templateId),
+    presence: getPresence(instance)
+  }))
 
   return (
     <div className="office-room">
-      <OfficeZones />
+      <OfficeZones occupants={occupants} />
 
       <div className="office-desk-floor">
         <span className="office-deco office-deco-tl">🌿</span>
@@ -59,6 +72,7 @@ function OfficeView({
                   onSelect={() => onSelect(instance.instanceId)}
                   onRemove={() => onRemove(instance.instanceId)}
                   roleLabel={roleLabel}
+                  presence={getPresence(instance)}
                 />
               )
             })

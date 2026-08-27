@@ -469,6 +469,110 @@ body {
   animation: working-bob 0.8s steps(2, end) infinite;
 }
 
+.desk[data-presence='pantry'] .pixel-worker,
+.desk[data-presence='meeting'] .pixel-worker {
+  opacity: 0;
+}
+
+.desk-away {
+  position: absolute;
+  top: 30px;
+  z-index: 2;
+  padding: 2px 5px;
+  border: 1px solid rgba(207, 232, 219, 0.28);
+  background: rgba(18, 25, 22, 0.88);
+  color: #cfe8db;
+  font-size: 8px;
+}
+
+.zone-occupants {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  display: flex;
+  gap: 5px;
+  align-items: flex-end;
+  z-index: 3;
+}
+
+.meeting-occupants {
+  right: 4px;
+  bottom: 4px;
+}
+
+.room-agent {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: room-agent-arrive 0.4s steps(4, end) both;
+}
+
+.room-agent-sprite {
+  position: relative;
+  display: block;
+  width: 24px;
+  height: 34px;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.28));
+}
+
+.room-agent-sprite .hair {
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 18px;
+  height: 15px;
+  background: #342018;
+  box-shadow: -3px 3px #342018, 3px 3px #342018;
+}
+
+.room-agent-sprite .face {
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  width: 11px;
+  height: 11px;
+  background: #a85e42;
+}
+
+.room-agent-sprite .body {
+  position: absolute;
+  left: 4px;
+  top: 18px;
+  width: 16px;
+  height: 13px;
+  border-bottom: 4px solid #1c2940;
+  background: var(--agent-color);
+  box-shadow: -3px 3px var(--agent-color), 3px 3px var(--agent-color);
+}
+
+.room-agent-name {
+  max-width: 58px;
+  overflow: hidden;
+  color: #f2f5f3;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-agent-bubble {
+  position: absolute;
+  right: 20px;
+  top: -7px;
+  width: max-content;
+  padding: 2px 4px;
+  border: 1px solid #4c6156;
+  background: #f0eadc;
+  color: #2b352f;
+  font-size: 7px;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.18);
+}
+
+@keyframes room-agent-arrive {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 @keyframes arrive-at-desk {
   from { transform: translateY(12px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
