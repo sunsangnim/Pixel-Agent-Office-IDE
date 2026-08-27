@@ -53,6 +53,7 @@ body {
   gap: 16px;
   padding: 24px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .chat-panel {
@@ -386,8 +387,10 @@ body {
   image-rendering: pixelated;
   aspect-ratio: 6 / 5;
   box-sizing: border-box;
-  width: min(100%, calc((100vh - 48px) * 6 / 5));
-  max-height: calc(100vh - 48px);
+  width: min(100%, calc((100dvh - 64px) * 6 / 5));
+  max-width: 100%;
+  max-height: calc(100dvh - 64px);
+  min-width: 0;
   align-self: center;
   flex: 0 0 auto;
 }
@@ -819,8 +822,10 @@ body {
 
 .office-team-column .desk-asset-wrap { width: 84px; height: 80px; }
 .office-team-column .desk-sprite { width: min(80px, 100%); height: auto; }
-.office-team-column .desk-label { max-width: 92px; font-size: 9px; }
-.office-team-column .desk-role { font-size: 8px; }
+.office-team-column .desk-label,
+.office-team-column .desk-role {
+  display: none;
+}
 
 .representative-office {
   position: absolute;
