@@ -795,30 +795,30 @@ body {
   overflow: hidden;
 }
 
-.office-team-grid::after {
-  content: '';
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 4px;
-  background: rgba(73, 105, 98, 0.5);
-  box-shadow: 3px 0 rgba(218, 239, 233, 0.18);
-  pointer-events: none;
-}
-
 .office-team-column {
   position: relative;
   display: grid;
   grid-template-rows: 18px minmax(0, 1fr) minmax(0, 2fr);
   min-width: 0;
   padding: 0 10px;
-  border-right: 4px solid rgba(73, 105, 98, 0.5);
-  box-shadow: 3px 0 rgba(218, 239, 233, 0.18);
+  border-right: 0;
+  box-shadow: none;
 }
 
 .office-team-column:last-child { border-right: 0; box-shadow: none; }
+
+.office-team-column::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  bottom: 12px;
+  width: 4px;
+  background: rgba(73, 105, 98, 0.5);
+  box-shadow: 3px 0 rgba(218, 239, 233, 0.18);
+  pointer-events: none;
+}
 
 .office-team-heading {
   margin: 0;
