@@ -780,8 +780,8 @@ body {
   min-height: 0;
   padding: 8px 18px 10px;
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(150px, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 7fr) minmax(110px, 1fr);
+  gap: 8px;
 }
 
 .office-team-grid {
@@ -841,35 +841,36 @@ body {
   height: 100%;
   min-width: 0;
   overflow: hidden;
-  border: 4px solid #526f69;
-  border-top-color: #d6e9e4;
-  border-radius: 3px;
+  border: 3px solid #405f59;
+  border-top: 4px solid #e0efeb;
+  border-radius: 0;
   background:
-    linear-gradient(118deg, transparent 22%, rgba(255, 255, 255, 0.13) 23% 25%, transparent 26%),
-    #c6ded7;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18), 4px 4px rgba(31, 57, 51, 0.18);
+    linear-gradient(118deg, transparent 18%, rgba(255, 255, 255, 0.18) 19% 21%, transparent 22%),
+    #b7d7cf;
+  box-shadow: inset 2px 0 #d9ebe7, inset -2px 0 #6d9189, 3px 3px #294a43;
+  image-rendering: pixelated;
 }
 
 .representative-office::before {
   content: '';
   position: absolute;
   inset: 0;
-  opacity: 0.32;
+  opacity: 0.24;
   background-image:
     linear-gradient(rgba(70, 110, 101, 0.38) 1px, transparent 1px),
     linear-gradient(90deg, rgba(70, 110, 101, 0.38) 1px, transparent 1px);
-  background-size: 22px 22px;
+  background-size: 16px 16px;
 }
 
 .representative-office-title {
   position: absolute;
   z-index: 5;
-  top: 5px;
-  left: 7px;
+  top: 4px;
+  left: 4px;
   margin: 0;
   padding: 2px 5px;
-  border: 1px solid rgba(74, 103, 96, 0.45);
-  background: rgba(237, 246, 242, 0.82);
+  border: 2px solid #46665f;
+  background: #e9f4f0;
   color: #29443d;
   font-size: 10px;
 }
@@ -877,7 +878,7 @@ body {
 .representative-desk {
   position: absolute;
   z-index: 3;
-  top: 23%;
+  top: 16%;
   left: 50%;
   transform: translateX(-50%);
 }
@@ -889,61 +890,66 @@ body {
 .representative-picture {
   position: absolute;
   z-index: 2;
-  top: 8px;
-  right: 12px;
-  width: 25px;
-  height: 19px;
-  border: 3px solid #77583a;
-  background: linear-gradient(145deg, #8fc1b5 45%, #e4c071 46% 60%, #5f8e6f 61%);
+  top: 7px;
+  right: 6px;
+  width: 21px;
+  height: 17px;
+  border: 3px solid #59402d;
+  background: linear-gradient(145deg, #8fc1b5 42%, #e7c36e 43% 58%, #4f8062 59%);
+  box-shadow: inset 1px 1px #f5ddb1, 2px 2px #42645d;
 }
 
-.representative-cabinet {
+.representative-wall-lamp {
   position: absolute;
   z-index: 2;
-  top: 12%;
+  top: 37px;
   left: 8px;
-  display: flex;
-  width: 35px;
-  height: 48px;
-  border: 3px solid #5e412c;
-  background: #a87446;
+  width: 13px;
+  height: 15px;
+  border: 2px solid #4b5552;
+  background: #e2c977;
+  box-shadow: inset 2px 2px #fff0a9, 2px 2px #527169;
 }
 
-.representative-cabinet i { flex: 1; border-right: 1px solid #664a34; }
-.representative-cabinet i:last-child { border-right: 0; }
+.representative-wall-lamp i { position: absolute; left: 4px; bottom: -6px; width: 2px; height: 6px; background: #414945; }
+
+.representative-office .desk-asset-wrap { width: 102px; height: 82px; }
+.representative-office .desk-sprite { width: 102px; height: auto; }
 
 .representative-sofa {
   position: absolute;
   z-index: 2;
-  right: 8px;
-  bottom: 16%;
-  width: 31px;
-  height: 57px;
-  border: 4px solid #303746;
-  border-radius: 7px;
+  right: 7px;
+  bottom: 27%;
+  width: 48px;
+  height: 27px;
+  border: 3px solid #252d38;
+  border-radius: 2px;
   background: #526174;
-  box-shadow: inset 0 7px #64758a, 3px 3px rgba(29, 40, 48, 0.38);
+  box-shadow: inset 0 5px #74869a, 3px 3px #30453f;
 }
 
-.representative-sofa i { display: block; height: 50%; border-bottom: 2px solid #35404e; }
+.representative-sofa i { float: left; width: 50%; height: 100%; border-right: 2px solid #35404e; }
+.representative-sofa i:last-child { border-right: 0; }
 
 .representative-plant {
   position: absolute;
   z-index: 2;
-  left: 13px;
-  bottom: 17%;
-  width: 23px;
-  height: 34px;
-  border-bottom: 12px solid #91613b;
+  left: 8px;
+  bottom: 28%;
+  width: 20px;
+  height: 30px;
+  border-bottom: 10px solid #835337;
+  box-shadow: 0 3px #52372a;
 }
 
 .representative-plant i {
   position: absolute;
   bottom: 8px;
-  left: 8px;
-  width: 8px;
-  height: 22px;
-  border-radius: 80% 10%;
+  left: 7px;
+  width: 7px;
+  height: 19px;
+  border-radius: 0;
   background: #40795b;
   transform-origin: bottom;
 }
@@ -951,26 +957,60 @@ body {
 .representative-plant i:first-child { transform: rotate(-38deg); }
 .representative-plant i:last-child { transform: rotate(38deg); }
 
-.representative-glass-door {
+.representative-side-table {
   position: absolute;
-  z-index: 4;
+  z-index: 2;
+  left: 37px;
+  bottom: 27%;
+  width: 18px;
+  height: 12px;
+  border: 3px solid #62432f;
+  background: #c68a4f;
+  box-shadow: inset 0 2px #efbd78, 2px 2px #49665f;
+}
+
+.representative-side-table i { position: absolute; left: 5px; top: -7px; width: 5px; height: 5px; background: #e7c36e; border: 1px solid #72502f; }
+
+.representative-glass-front {
+  position: absolute;
+  z-index: 6;
+  right: -3px;
   bottom: -3px;
-  left: 42%;
-  width: 35px;
-  height: 46px;
-  border: 3px solid #d9ebe7;
+  left: -3px;
+  height: 48px;
+  display: grid;
+  grid-template-columns: 1fr 34px 1fr;
+  border: 3px solid #3d625a;
+  border-top-color: #d9ece7;
+  border-bottom-width: 5px;
+  background: rgba(145, 201, 191, 0.13);
+  box-shadow: inset 0 2px rgba(255, 255, 255, 0.34), 0 -2px #6b8d85;
+}
+
+.representative-glass-panel {
+  border-right: 2px solid #66877f;
+  background: linear-gradient(120deg, transparent 18%, rgba(255,255,255,.24) 19% 23%, transparent 24% 67%, rgba(255,255,255,.1) 68% 71%, transparent 72%);
+}
+
+.representative-glass-panel:last-child { border-right: 0; border-left: 2px solid #66877f; }
+
+.representative-glass-door {
+  position: relative;
+  margin-top: 4px;
+  border: 3px solid #dcece8;
   border-bottom: 0;
-  background: rgba(158, 205, 196, 0.18);
-  box-shadow: inset 3px 0 rgba(255, 255, 255, 0.2);
+  background: linear-gradient(120deg, transparent 20%, rgba(255,255,255,.3) 21% 26%, transparent 27%), rgba(173, 216, 208, .14);
+  box-shadow: inset 2px 0 rgba(255,255,255,.25);
 }
 
 .representative-glass-door i {
   position: absolute;
   top: 48%;
-  right: 4px;
+  right: 3px;
   width: 3px;
   height: 6px;
-  background: #45625b;
+  background: #345149;
+  box-shadow: 1px 1px #bed8d2;
 }
 
 .office-deco {
