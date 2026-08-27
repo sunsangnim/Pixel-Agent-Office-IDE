@@ -593,7 +593,7 @@ body {
   right: -2px;
   bottom: -2px;
   left: -2px;
-  height: 38px;
+  height: 42px;
   display: grid;
   grid-template-columns: 1fr 1fr 38px;
   border: 3px solid #486b65;
@@ -614,7 +614,7 @@ body {
   border: 3px solid #d9ebe7;
   border-bottom: 0;
   background: linear-gradient(118deg, transparent 20%, rgba(255, 255, 255, 0.28) 21% 26%, transparent 27%), rgba(158, 205, 196, 0.18);
-  box-shadow: inset 3px 0 rgba(255, 255, 255, 0.2), 2px 0 #5f817a;
+  box-shadow: inset 3px 0 rgba(255, 255, 255, 0.24), inset -2px 0 #73958d, 2px 0 #45675f, 0 3px #294b44;
   pointer-events: none;
 }
 
@@ -629,9 +629,11 @@ body {
 }
 
 .pantry-glass-door {
-  width: auto;
-  height: auto;
-  margin: 4px 2px 0;
+  align-self: end;
+  width: 38px;
+  height: 40px;
+  margin: 0 0 -3px;
+  border-top-color: #f0faf7;
 }
 
 .zone-label {
@@ -837,8 +839,8 @@ body {
 .representative-office {
   position: absolute;
   z-index: 3;
-  right: 24px;
-  bottom: 24px;
+  right: 12px;
+  bottom: 16px;
   width: 22%;
   height: 50%;
   min-width: 0;
