@@ -15,6 +15,8 @@ function AgentDesk({ instance, template, status, selected, onSelect, onRemove, r
   return (
     <div
       className={`desk desk-${status}${selected ? ' desk-selected' : ''}`}
+      data-rank={instance.rank}
+      data-presence={status === 'running' ? 'working' : status === 'error' ? 'error' : instance.presence}
       onClick={onSelect}
       title={instance.cwd}
     >
@@ -30,7 +32,7 @@ function AgentDesk({ instance, template, status, selected, onSelect, onRemove, r
       <div className="desk-status-dot" />
       <DeskIcon color={template?.color ?? '#888888'} status={status} />
       <div className="desk-label">{template?.name ?? instance.templateId}</div>
-      {roleLabel && <div className="desk-role">{roleLabel}</div>}
+      {roleLabel && <div className="desk-role">{instance.rank === 'teamLead' ? '◆ ' : ''}{roleLabel}</div>}
     </div>
   )
 }

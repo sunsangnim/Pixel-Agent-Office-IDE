@@ -452,6 +452,33 @@ body {
   opacity: 0.52;
 }
 
+.desk[data-rank='teamLead'] {
+  background: linear-gradient(180deg, rgba(245, 197, 66, 0.08), transparent 65%);
+}
+
+.desk[data-rank='teamLead'] .desk-role {
+  color: #f5c542;
+  font-weight: 700;
+}
+
+.desk[data-presence='deskIdle']:not(.desk-vacant) .desk-sprite {
+  animation: arrive-at-desk 0.38s steps(4, end) both;
+}
+
+.desk[data-presence='working'] .desk-sprite {
+  animation: working-bob 0.8s steps(2, end) infinite;
+}
+
+@keyframes arrive-at-desk {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes working-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
 .desk-vacant:hover {
   transform: none;
   background: transparent;

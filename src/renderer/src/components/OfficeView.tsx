@@ -34,13 +34,15 @@ function OfficeView({
 
         <div className="office-grid office-grid-fixed">
           {teamTemplates.flatMap((template, teamIndex) => {
-            const teamInstances = instances.filter((instance) => instance.templateId === template?.id).slice(0, 4)
+            const teamInstances = instances
+              .filter((instance) => instance.templateId === template?.id)
+              .sort((a, b) => a.slotIndex - b.slotIndex)
             return Array.from({ length: 4 }, (_, seatIndex) => {
-              const instance = teamInstances[seatIndex]
+              const instance = teamInstances.find((candidate) => candidate.slotIndex === seatIndex)
               const roleLabel = seatIndex === 0 ? '팀장' : `하위 세션 ${seatIndex}`
               if (!instance) {
                 return (
-                  <div className="desk desk-vacant" key={`${teamIndex}-${seatIndex}`}>
+                  <div className="desk desk-vacant" data-presence="offDuty" key={`${teamIndex}-${seatIndex}`}>
                     <div className="vacant-chair"><i /></div>
                     <div className="desk-label">{template?.name ?? ['Claude Code', 'Codex CLI', 'Antigravity CLI'][teamIndex]}</div>
                     <div className="desk-role">{roleLabel} · 미출근</div>

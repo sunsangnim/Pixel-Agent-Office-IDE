@@ -79,6 +79,10 @@ export interface AgentInstance {
   templateId: string
   cwd: string
   ptyId: string
+  rank: AgentRank
+  slotIndex: number
+  parentInstanceId: string | null
+  presence: OfficePresence
 }
 
 export interface WorkspaceApi {
