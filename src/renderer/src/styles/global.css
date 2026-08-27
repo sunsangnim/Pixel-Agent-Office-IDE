@@ -787,10 +787,25 @@ body {
 }
 
 .office-team-grid {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   width: 76%;
   height: 100%;
+  overflow: hidden;
+}
+
+.office-team-grid::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: 18px;
+  right: 0;
+  bottom: 4px;
+  width: 4px;
+  background: rgba(73, 105, 98, 0.5);
+  box-shadow: 3px 0 rgba(218, 239, 233, 0.18);
+  pointer-events: none;
 }
 
 .office-team-column {
