@@ -1,11 +1,11 @@
-import type { AgentInstance, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
+import type { AgentInstance, AgentProfile, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
 import AgentDesk from './AgentDesk'
 import OfficeZones from './OfficeZones'
-import { BUILT_IN_TEAM_IDS } from '@shared/orchestrationPolicy'
 import type { OfficePresence } from '@shared/types'
 
 interface OfficeViewProps {
   instances: AgentInstance[]
+  profiles: AgentProfile[]
   templates: AgentTemplate[]
   statuses: Record<string, DeskStatus>
   runtimeStates: Record<string, AgentStatePayload>
@@ -16,6 +16,7 @@ interface OfficeViewProps {
 
 function OfficeView({
   instances,
+  profiles,
   templates,
   statuses,
   runtimeStates,
@@ -23,7 +24,6 @@ function OfficeView({
   onSelect,
   onRemove
 }: OfficeViewProps) {
-  const teamTemplates = BUILT_IN_TEAM_IDS.map((id) => templates.find((template) => template.id === id))
   const getPresence = (instance: AgentInstance): OfficePresence => {
     const runtimeState = runtimeStates[instance.ptyId]?.state
     if (runtimeState === 'waiting') return 'requestingHelp'
@@ -52,18 +52,15 @@ function OfficeView({
         <span className="office-deco office-deco-br">🪴</span>
 
         <div className="office-grid office-grid-fixed">
-          {teamTemplates.flatMap((template, teamIndex) => {
-            const teamInstances = instances
-              .filter((instance) => instance.templateId === template?.id)
-              .sort((a, b) => a.slotIndex - b.slotIndex)
-            return Array.from({ length: 4 }, (_, seatIndex) => {
-              const instance = teamInstances.find((candidate) => candidate.slotIndex === seatIndex)
-              const roleLabel = seatIndex === 0 ? '팀장' : `하위 세션 ${seatIndex}`
+          {profiles.map((profile) => {
+              const template = templates.find((candidate) => candidate.id === profile.templateId)
+              const instance = instances.find((candidate) => candidate.profileId === profile.profileId)
+              const roleLabel = profile.rank === 'teamLead' ? '팀장' : `하위 세션 ${profile.slotIndex}`
               if (!instance) {
                 return (
-                  <div className="desk desk-vacant" data-presence="offDuty" key={`${teamIndex}-${seatIndex}`}>
+                  <div className="desk desk-vacant" data-presence="offDuty" key={profile.profileId}>
                     <div className="vacant-chair"><i /></div>
-                    <div className="desk-label">{template?.name ?? ['Claude Code', 'Codex CLI', 'Antigravity CLI'][teamIndex]}</div>
+                    <div className="desk-label">{profile.displayName}</div>
                     <div className="desk-role">{roleLabel} · 미출근</div>
                   </div>
                 )
@@ -81,7 +78,6 @@ function OfficeView({
                   presence={getPresence(instance)}
                 />
               )
-            })
           })}
         </div>
       </div>

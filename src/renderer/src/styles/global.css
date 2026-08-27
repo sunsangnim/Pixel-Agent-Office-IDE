@@ -787,6 +787,14 @@ body {
   box-shadow: 0 0 0 2px #ff5c5c;
 }
 
+.profile-card-offduty {
+  cursor: default;
+  opacity: 0.45;
+  filter: grayscale(0.65);
+}
+
+.profile-card-offduty:hover { transform: none; }
+
 .profile-card-check {
   position: absolute;
   top: 6px;

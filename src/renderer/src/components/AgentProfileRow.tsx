@@ -1,8 +1,10 @@
-import type { AgentInstance, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
+import type { AgentInstance, AgentProfile, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
 import AgentProfileCard from './AgentProfileCard'
+import IdenticonAvatar from './IdenticonAvatar'
 
 interface AgentProfileRowProps {
   instances: AgentInstance[]
+  profiles: AgentProfile[]
   templates: AgentTemplate[]
   statuses: Record<string, DeskStatus>
   runtimeStates: Record<string, AgentStatePayload>
@@ -17,6 +19,7 @@ interface AgentProfileRowProps {
 
 function AgentProfileRow({
   instances,
+  profiles,
   templates,
   statuses,
   runtimeStates,
@@ -30,18 +33,28 @@ function AgentProfileRow({
 }: AgentProfileRowProps) {
   return (
     <div className="profile-row">
-      {instances.map((instance) => (
-        <AgentProfileCard
-          key={instance.instanceId}
-          instance={instance}
-          template={templates.find((t) => t.id === instance.templateId)}
-          status={statuses[instance.ptyId] ?? 'idle'}
-          runtimeState={runtimeStates[instance.ptyId]}
-          task={tasks[instance.instanceId]}
-          selected={selectedTargetIds.has(instance.instanceId)}
-          onToggle={() => onToggleTarget(instance.instanceId)}
-        />
-      ))}
+      {profiles.map((profile) => {
+        const instance = instances.find((candidate) => candidate.profileId === profile.profileId)
+        const template = templates.find((candidate) => candidate.id === profile.templateId)
+        return instance ? (
+          <AgentProfileCard
+            key={profile.profileId}
+            instance={instance}
+            template={template}
+            status={statuses[instance.ptyId] ?? 'idle'}
+            runtimeState={runtimeStates[instance.ptyId]}
+            task={tasks[instance.instanceId]}
+            selected={selectedTargetIds.has(instance.instanceId)}
+            onToggle={() => onToggleTarget(instance.instanceId)}
+          />
+        ) : (
+          <div className="profile-card profile-card-offduty" key={profile.profileId} title="CLI 프로세스 미실행">
+            <IdenticonAvatar seed={profile.profileId} color={template?.color ?? '#888888'} size={48} />
+            <span className="profile-card-name">{profile.displayName}</span>
+            <span className="profile-card-task">미출근</span>
+          </div>
+        )
+      })}
 
       <div className="profile-add-card">
         <span className="profile-add-plus">+</span>

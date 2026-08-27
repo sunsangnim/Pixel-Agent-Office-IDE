@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AgentInstance, AgentTemplate } from '@shared/types'
+import type { AgentInstance, AgentProfile, AgentTemplate } from '@shared/types'
 import OfficeView from './components/OfficeView'
 import AgentProfileRow from './components/AgentProfileRow'
 import TerminalModal from './components/TerminalModal'
@@ -12,6 +12,7 @@ function App() {
   const [workFolder, setWorkFolder] = useState<string | null>(null)
   const [templates, setTemplates] = useState<AgentTemplate[]>([])
   const [instances, setInstances] = useState<AgentInstance[]>([])
+  const [profiles, setProfiles] = useState<AgentProfile[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
@@ -30,6 +31,7 @@ function App() {
     window.api.workspace.getWorkFolder().then(setWorkFolder)
     refreshTemplates()
     window.api.instances.list().then(setInstances)
+    window.api.profiles.list().then(setProfiles)
     return window.api.templates.onChanged(refreshTemplates)
   }, [])
 
@@ -174,6 +176,7 @@ function App() {
 
         <OfficeView
           instances={instances}
+          profiles={profiles}
           templates={templates}
           statuses={statuses}
           runtimeStates={runtimeStates}
@@ -184,6 +187,7 @@ function App() {
 
         <AgentProfileRow
           instances={instances}
+          profiles={profiles}
           templates={templates}
           statuses={statuses}
           runtimeStates={runtimeStates}
