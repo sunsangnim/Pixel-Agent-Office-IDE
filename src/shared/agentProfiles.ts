@@ -1,4 +1,4 @@
-import type { AgentProfile, AgentRank } from './types'
+import type { AgentProfile, AgentRank, AgentTemplate } from './types'
 import { BUILT_IN_TEAM_IDS } from './orchestrationPolicy'
 
 const TEAM_NAMES: Record<(typeof BUILT_IN_TEAM_IDS)[number], string> = {
@@ -34,4 +34,24 @@ export function listAgentProfiles(): AgentProfile[] {
 
 export function findAgentProfile(profileIdValue: string): AgentProfile | undefined {
   return BUILT_IN_AGENT_PROFILES.find((profile) => profile.profileId === profileIdValue)
+}
+
+export function buildAgentProfiles(
+  templates: Array<Pick<AgentTemplate, 'id' | 'name'>>
+): AgentProfile[] {
+  return templates.flatMap((template) =>
+    Array.from({ length: 4 }, (_, slotIndex) => {
+      const rank: AgentRank = slotIndex === 0 ? 'teamLead' : 'subAgent'
+      return {
+        profileId: profileId(template.id, slotIndex),
+        templateId: template.id,
+        rank,
+        slotIndex,
+        displayName:
+          rank === 'teamLead'
+            ? `${template.name} 팀장`
+            : `${template.name} 하위 세션 ${slotIndex}`
+      }
+    })
+  )
 }

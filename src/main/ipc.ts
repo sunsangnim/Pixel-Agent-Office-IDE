@@ -5,7 +5,7 @@ import { workspaceStore } from './workspaceStore'
 import { instanceManager } from './instanceManager'
 import { openSettingsWindow } from './windowManager'
 import { taskWorkspaceManager } from './taskWorkspaceManager'
-import { listAgentProfiles } from '../shared/agentProfiles'
+import { buildAgentProfiles } from '../shared/agentProfiles'
 import type {
   AgentTemplateInput,
   AgentTemplatePatch,
@@ -90,7 +90,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('instances:list', () => instanceManager.list())
 
-  ipcMain.handle('profiles:list', () => listAgentProfiles())
+  ipcMain.handle('profiles:list', () => buildAgentProfiles(agentTemplateStore.list()))
   ipcMain.handle('runs:list', () => instanceManager.listRuns())
 
   ipcMain.handle('instances:create', (event, templateId: string) => {

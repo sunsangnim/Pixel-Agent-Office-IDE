@@ -5,7 +5,7 @@ import { agentTemplateStore } from './agentStore'
 import type { AgentInstance, AgentRun } from '../shared/types'
 import { ORCHESTRATION_POLICY } from '../shared/orchestrationPolicy'
 import { adapterIdForTemplate } from './cliAdapters'
-import { BUILT_IN_AGENT_PROFILES, findAgentProfile } from '../shared/agentProfiles'
+import { buildAgentProfiles } from '../shared/agentProfiles'
 
 class InstanceManager {
   private runs = new Map<string, AgentRun>()
@@ -14,10 +14,14 @@ class InstanceManager {
     return Array.from(this.runs.values())
   }
 
+  private profiles() {
+    return buildAgentProfiles(agentTemplateStore.list())
+  }
+
   /** Compatibility projection while renderer callers migrate to profiles+runs. */
   list(): AgentInstance[] {
     return this.listRuns().flatMap((run) => {
-      const profile = findAgentProfile(run.profileId)
+      const profile = this.profiles().find((candidate) => candidate.profileId === run.profileId)
       if (!profile) return []
       return [{
         instanceId: run.runId,
@@ -54,7 +58,7 @@ class InstanceManager {
       (index) => !usedSlots.has(index)
     )
     if (slotIndex === undefined) throw new Error(`${template.name} 팀에 빈 좌석이 없습니다.`)
-    const profile = BUILT_IN_AGENT_PROFILES.find(
+    const profile = this.profiles().find(
       (candidate) => candidate.templateId === templateId && candidate.slotIndex === slotIndex
     )
     if (!profile) throw new Error(`${template.name} 팀의 좌석 프로필을 찾을 수 없습니다.`)
@@ -85,7 +89,7 @@ class InstanceManager {
   createChild(parentInstanceId: string, sender: WebContents): AgentInstance[] {
     const parent = this.runs.get(parentInstanceId)
     if (!parent) throw new Error('하위 세션을 생성할 팀장 세션을 찾을 수 없습니다.')
-    const profile = findAgentProfile(parent.profileId)
+    const profile = this.profiles().find((candidate) => candidate.profileId === parent.profileId)
     if (profile?.rank !== 'teamLead') throw new Error('하위 세션은 팀장만 생성할 수 있습니다.')
     return this.create(parent.templateId, parent.cwd, sender)
   }
@@ -114,7 +118,7 @@ class InstanceManager {
   remove(instanceId: string): AgentInstance[] {
     const run = this.runs.get(instanceId)
     if (!run) return this.list()
-    const profile = findAgentProfile(run.profileId)
+    const profile = this.profiles().find((candidate) => candidate.profileId === run.profileId)
     const removals = profile?.rank === 'teamLead'
       ? this.listRuns().filter((candidate) => candidate.templateId === run.templateId)
       : [run]

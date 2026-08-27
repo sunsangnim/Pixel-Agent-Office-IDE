@@ -25,13 +25,13 @@ function App() {
       setTemplates(list)
       setSelectedTemplateId((current) => current || list[0]?.id || '')
     })
+    window.api.profiles.list().then(setProfiles)
   }
 
   useEffect(() => {
     window.api.workspace.getWorkFolder().then(setWorkFolder)
     refreshTemplates()
     window.api.instances.list().then(setInstances)
-    window.api.profiles.list().then(setProfiles)
     return window.api.templates.onChanged(refreshTemplates)
   }, [])
 
@@ -55,12 +55,8 @@ function App() {
     const updated = await window.api.instances.remove(instanceId)
     setInstances(updated)
     setSelectedInstanceId((current) => (current === instanceId ? null : current))
-    setSelectedTargetIds((prev) => {
-      if (!prev.has(instanceId)) return prev
-      const next = new Set(prev)
-      next.delete(instanceId)
-      return next
-    })
+    const remainingIds = new Set(updated.map((instance) => instance.instanceId))
+    setSelectedTargetIds((prev) => new Set(Array.from(prev).filter((id) => remainingIds.has(id))))
   }
 
   const toggleTarget = (instanceId: string): void => {
