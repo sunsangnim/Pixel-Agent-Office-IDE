@@ -137,8 +137,10 @@ function ChatPanel({
                 type="button"
                 role="option"
                 key={option.token}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => insertMention(option.token)}
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  insertMention(option.token)
+                }}
               >
                 <IdenticonAvatar seed={`mention-${option.alias}`} color={option.color} size={28} />
                 <span className="chat-mention-member">
