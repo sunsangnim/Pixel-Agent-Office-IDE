@@ -5,6 +5,25 @@ export interface PtySpawnOptions {
   cols?: number
   rows?: number
   env?: Record<string, string>
+  adapterId?: CliAdapterId
+}
+
+export type CliAdapterId = 'claude' | 'codex' | 'antigravity' | 'generic'
+export type AgentRuntimeState =
+  | 'starting'
+  | 'ready'
+  | 'working'
+  | 'waiting'
+  | 'completed'
+  | 'error'
+  | 'exited'
+
+export interface AgentStatePayload {
+  ptyId: string
+  adapterId: CliAdapterId
+  state: AgentRuntimeState
+  reason?: string
+  timestamp: number
 }
 
 export interface PtySpawnResult {
