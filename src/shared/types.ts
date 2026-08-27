@@ -30,6 +30,25 @@ export interface PtyApi {
   onExit(callback: (payload: PtyExitPayload) => void): () => void
 }
 
+export interface AgentTemplate {
+  id: string
+  name: string
+  command: string
+  args: string[]
+  color: string
+}
+
+export type AgentTemplateInput = Omit<AgentTemplate, 'id'>
+export type AgentTemplatePatch = Partial<AgentTemplateInput>
+
+export interface AgentTemplateApi {
+  list(): Promise<AgentTemplate[]>
+  create(input: AgentTemplateInput): Promise<AgentTemplate[]>
+  update(id: string, patch: AgentTemplatePatch): Promise<AgentTemplate[]>
+  remove(id: string): Promise<AgentTemplate[]>
+}
+
 export interface PreloadApi {
   pty: PtyApi
+  templates: AgentTemplateApi
 }

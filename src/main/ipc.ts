@@ -1,6 +1,12 @@
 import { ipcMain } from 'electron'
 import { ptyManager } from './ptyManager'
-import type { PtySpawnOptions, PtySpawnResult } from '../shared/types'
+import { agentTemplateStore } from './agentStore'
+import type {
+  AgentTemplateInput,
+  AgentTemplatePatch,
+  PtySpawnOptions,
+  PtySpawnResult
+} from '../shared/types'
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('pty:spawn', (event, options: PtySpawnOptions = {}): PtySpawnResult => {
@@ -21,4 +27,16 @@ export function registerIpcHandlers(): void {
   ipcMain.on('pty:kill', (_event, ptyId: string) => {
     ptyManager.kill(ptyId)
   })
+
+  ipcMain.handle('templates:list', () => agentTemplateStore.list())
+
+  ipcMain.handle('templates:create', (_event, input: AgentTemplateInput) =>
+    agentTemplateStore.create(input)
+  )
+
+  ipcMain.handle('templates:update', (_event, id: string, patch: AgentTemplatePatch) =>
+    agentTemplateStore.update(id, patch)
+  )
+
+  ipcMain.handle('templates:remove', (_event, id: string) => agentTemplateStore.remove(id))
 }

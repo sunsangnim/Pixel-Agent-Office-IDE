@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import SettingsModal from './components/SettingsModal'
 
 function App() {
   const ptyIdRef = useRef<string | null>(null)
   const [connected, setConnected] = useState(false)
   const [output, setOutput] = useState('')
   const [input, setInput] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     const unsubscribeData = window.api.pty.onData(({ ptyId, data }) => {
@@ -38,8 +40,12 @@ function App() {
 
   return (
     <div className="app-shell dev-pty-test">
-      <h1>Pixel Agent Office IDE</h1>
-      <p>Phase 2 — node-pty 연동 테스트 (임시 UI, Phase 6에서 xterm.js로 교체 예정)</p>
+      <div className="top-bar">
+        <h1>Pixel Agent Office IDE</h1>
+        <button onClick={() => setSettingsOpen(true)}>설정</button>
+      </div>
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      <p>Phase 2 — node-pty 연동 테스트 (임시 UI, Phase 5~6에서 오피스 뷰/터미널로 교체 예정)</p>
       <button onClick={spawnShell} disabled={connected}>
         {connected ? '셸 연결됨' : '셸 스폰'}
       </button>

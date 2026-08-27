@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AgentTemplate,
+  AgentTemplateInput,
+  AgentTemplatePatch,
   PreloadApi,
   PtyDataPayload,
   PtyExitPayload,
@@ -29,6 +32,14 @@ const api: PreloadApi = {
       ipcRenderer.on('pty:exit', listener)
       return () => ipcRenderer.removeListener('pty:exit', listener)
     }
+  },
+  templates: {
+    list: (): Promise<AgentTemplate[]> => ipcRenderer.invoke('templates:list'),
+    create: (input: AgentTemplateInput): Promise<AgentTemplate[]> =>
+      ipcRenderer.invoke('templates:create', input),
+    update: (id: string, patch: AgentTemplatePatch): Promise<AgentTemplate[]> =>
+      ipcRenderer.invoke('templates:update', id, patch),
+    remove: (id: string): Promise<AgentTemplate[]> => ipcRenderer.invoke('templates:remove', id)
   }
 }
 
