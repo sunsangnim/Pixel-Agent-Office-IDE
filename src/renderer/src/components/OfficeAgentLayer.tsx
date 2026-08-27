@@ -10,8 +10,7 @@ interface OfficeAgentLayerProps {
   presenceByProfile: Record<string, OfficePresence>
 }
 
-const DESK_X = [12, 35, 58, 80]
-const DESK_Y = [44, 66, 86]
+const TEAM_X = [16, 48, 78]
 
 function activityLabel(presence: OfficePresence): string | undefined {
   if (presence === 'pantry') return '휴식 중'
@@ -30,10 +29,10 @@ function position(
 ): { x: number; y: number } {
   if (presence === 'pantry') return { x: 9 + (profileIndex % 3) * 6, y: 18 }
   if (presence === 'meeting') return { x: 42 + (profileIndex % 4) * 6, y: 18 }
-  return {
-    x: DESK_X[profile.slotIndex] ?? 50,
-    y: DESK_Y[teamIndex] ?? Math.min(88, 45 + teamIndex * 18)
-  }
+  const teamX = TEAM_X[teamIndex] ?? 48
+  if (profile.slotIndex === 0) return { x: teamX, y: 47 }
+  const childIndex = profile.slotIndex - 1
+  return { x: teamX + (childIndex % 2 === 0 ? -7 : 7), y: childIndex < 2 ? 68 : 87 }
 }
 
 function OfficeAgentLayer({ profiles, instances, templates, presenceByProfile }: OfficeAgentLayerProps) {

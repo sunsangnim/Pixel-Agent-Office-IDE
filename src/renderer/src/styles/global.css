@@ -325,12 +325,12 @@ body {
     repeating-conic-gradient(#2c3b34 0% 25%, #263129 0% 50%) 0 0 / 32px 32px;
   box-shadow: inset 0 0 0 6px #1c2622;
   background-color: #9bcfc2;
-  background-image: url('../assets/pixel-office/office-background-v1.png');
+  background-image: url('../assets/pixel-office/office-background-v2.png');
   background-repeat: no-repeat;
   background-position: center;
   background-size: 100% 100%;
   image-rendering: pixelated;
-  aspect-ratio: 3 / 2;
+  aspect-ratio: 4 / 3;
 }
 
 .pixel-background-enabled .zone {
@@ -489,7 +489,7 @@ body {
 .office-zones {
   display: grid;
   grid-template-columns: 34% 38% 28%;
-  flex: 0 0 30%;
+  flex: 0 0 35%;
   gap: 0;
 }
 
@@ -527,7 +527,7 @@ body {
 .pantry-glass-wall {
   position: absolute;
   z-index: 2;
-  inset: 48% -2px -2px;
+  inset: 38% -2px -2px;
   display: grid;
   grid-template-columns: 1fr 1fr 38px;
   border: 3px solid #486b65;
@@ -661,6 +661,7 @@ body {
   border: 2px solid #303541;
   background: #6da2b2;
   box-shadow: 0 4px 0 -1px #262b35;
+  transform: rotate(180deg);
 }
 
 .meeting-head-chair {
@@ -710,6 +711,53 @@ body {
   min-height: 0;
   padding: 8px 18px 10px;
 }
+
+.office-team-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  height: 100%;
+  padding-right: 30px;
+}
+
+.office-team-column {
+  position: relative;
+  display: grid;
+  grid-template-rows: 18px minmax(0, 1fr) minmax(0, 2fr);
+  min-width: 0;
+  padding: 0 10px;
+  border-right: 4px solid rgba(73, 105, 98, 0.5);
+  box-shadow: 3px 0 rgba(218, 239, 233, 0.18);
+}
+
+.office-team-column:last-child { border-right: 0; box-shadow: none; }
+
+.office-team-heading {
+  margin: 0;
+  color: rgba(42, 69, 62, 0.78);
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+  text-shadow: 1px 1px rgba(232, 248, 242, 0.55);
+}
+
+.office-team-lead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.office-team-children {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  min-height: 0;
+}
+
+.office-team-column .desk-asset-wrap { width: 84px; height: 80px; }
+.office-team-column .desk-label { max-width: 92px; font-size: 9px; }
+.office-team-column .desk-role { font-size: 8px; }
 
 .office-deco {
   position: absolute;
@@ -1134,7 +1182,7 @@ body {
 
 .profile-team-cards {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 
