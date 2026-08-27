@@ -274,13 +274,69 @@ body {
 .chat-mention-menu small { color: #9298ad; font-size: 9px; }
 
 .chat-input {
-  flex: 1;
+  flex: 1 1 150px;
   min-height: 56px;
   max-height: 140px;
   resize: vertical;
   padding: 8px;
   font-family: inherit;
   font-size: 13px;
+}
+
+.chat-input-shell {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid #35374d;
+  border-radius: 8px;
+  background: #f7f5f0;
+  cursor: text;
+}
+
+.chat-input-shell:focus-within {
+  border-color: #6ea8fe;
+  box-shadow: 0 0 0 1px #6ea8fe;
+}
+
+.chat-input-shell .chat-input {
+  min-width: 120px;
+  min-height: 42px;
+  padding: 3px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #20212c;
+}
+
+.chat-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  border: 1px solid #8ea6d8;
+  border-radius: 6px;
+  background: #dce7ff;
+  color: #345184;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: default;
+}
+
+.chat-mention-chip button {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(52, 81, 132, 0.14);
+  color: #345184;
+  font-size: 12px;
+  line-height: 12px;
+  cursor: pointer;
 }
 
 .chat-send-btn {

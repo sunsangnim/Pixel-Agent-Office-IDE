@@ -23,6 +23,7 @@ function ChatPanel({
   onSend
 }: ChatPanelProps) {
   const [text, setText] = useState('')
+  const [selectedMentions, setSelectedMentions] = useState<string[]>([])
   const threadRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -47,16 +48,30 @@ function ChatPanel({
 
   const send = (): void => {
     if (!text.trim()) return
-    void onSend(text)
+    const prompt = [...selectedMentions, text.trim()].join(' ')
+    void onSend(prompt)
     setText('')
+    setSelectedMentions([])
   }
 
   const insertMention = (token: string): void => {
     const prefix = mentionMatch && mentionMatch.index !== undefined
       ? text.slice(0, mentionMatch.index)
-      : `${text}${text && !text.endsWith(' ') ? ' ' : ''}`
-    setText(`${prefix}${token} `)
-    requestAnimationFrame(() => inputRef.current?.focus())
+      : text
+    setSelectedMentions((current) => current.includes(token) ? current : [...current, token])
+    setText(prefix)
+    setTimeout(() => {
+      const input = inputRef.current
+      if (!input) return
+      input.focus()
+      const end = input.value.length
+      input.setSelectionRange(end, end)
+    }, 0)
+  }
+
+  const removeMention = (token: string): void => {
+    setSelectedMentions((current) => current.filter((mention) => mention !== token))
+    setTimeout(() => inputRef.current?.focus(), 0)
   }
 
   return (
@@ -138,19 +153,37 @@ function ChatPanel({
           </div>
         )}
         <div className="chat-input-row">
-          <textarea
-            ref={inputRef}
-            className="chat-input"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="@를 입력해 에이전트를 선택하고 지시하세요"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault()
-                send()
-              }
-            }}
-          />
+          <div className="chat-input-shell" onClick={() => inputRef.current?.focus()}>
+            {selectedMentions.map((token) => (
+              <span className="chat-mention-chip" key={token}>
+                {token}
+                <button
+                  type="button"
+                  aria-label={`${token} 멘션 제거`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    removeMention(token)
+                  }}
+                >×</button>
+              </span>
+            ))}
+            <textarea
+              ref={inputRef}
+              className="chat-input"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={selectedMentions.length > 0 ? '업무 내용을 입력하세요' : '@를 입력해 에이전트를 선택하고 지시하세요'}
+              onKeyDown={(e) => {
+                if (e.key === 'Backspace' && !text && selectedMentions.length > 0) {
+                  setSelectedMentions((current) => current.slice(0, -1))
+                }
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  send()
+                }
+              }}
+            />
+          </div>
           <button
             className="chat-send-btn"
             onClick={send}
