@@ -847,31 +847,24 @@ body {
 .representative-office {
   position: absolute;
   z-index: 3;
-  right: 24px;
+  right: 48px;
   bottom: 24px;
-  width: 22%;
+  width: 20%;
   height: 50%;
   min-width: 0;
   overflow: hidden;
-  border: 3px solid #405f59;
-  border-top: 4px solid #e0efeb;
+  border: 2px solid rgba(199, 232, 225, 0.82);
+  border-top: 3px solid rgba(235, 249, 245, 0.95);
   border-radius: 0;
   background:
-    linear-gradient(118deg, transparent 18%, rgba(255, 255, 255, 0.18) 19% 21%, transparent 22%),
-    #b7d7cf;
-  box-shadow: inset 2px 0 #d9ebe7, inset -2px 0 #6d9189, inset 0 -2px #294a43;
+    linear-gradient(118deg, transparent 14%, rgba(255, 255, 255, 0.16) 15% 18%, transparent 19% 63%, rgba(255, 255, 255, 0.08) 64% 66%, transparent 67%),
+    rgba(181, 221, 213, 0.08);
+  box-shadow: inset 0 -3px rgba(53, 91, 83, 0.48), inset 2px 0 rgba(255, 255, 255, 0.15);
   image-rendering: pixelated;
 }
 
 .representative-office::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  opacity: 0.24;
-  background-image:
-    linear-gradient(rgba(70, 110, 101, 0.38) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(70, 110, 101, 0.38) 1px, transparent 1px);
-  background-size: 16px 16px;
+  content: none;
 }
 
 .representative-office-title {
@@ -881,9 +874,10 @@ body {
   left: 49px;
   margin: 0;
   padding: 2px 5px;
-  border: 2px solid #46665f;
-  background: #e9f4f0;
-  color: #29443d;
+  border: 1px solid rgba(207, 232, 219, 0.35);
+  background: rgba(24, 38, 34, 0.78);
+  color: #f2fff8;
+  text-shadow: 1px 1px #17231f;
   font-size: 10px;
 }
 
