@@ -27,3 +27,10 @@ npm run build
 - 실제 CLI 검증 시에는 각 도구 로그인 후 앱의 팀장 프로필에서 명령 경로를 확인한다.
 - 데스크톱 캡처 런타임을 사용할 수 없는 환경에서는 화면 픽셀 검증 대신 번들 생성과
   자산 포함 여부를 확인한다.
+
+## 최종 산출물
+
+- 루트 `README.md`: 설치, 실행, 라우팅 정책, 상태 모델, 검증과 제한사항
+- `scripts/integration-runner.ts`: 라우팅·프로필·어댑터·PTY 통합 시나리오
+- `scripts/fixtures/fake-agent.cjs`: 실제 stdin/stdout을 사용하는 테스트용 CLI
+- 이 폴더의 통합 SRS·PRD·화면설계와 Phase 기록
