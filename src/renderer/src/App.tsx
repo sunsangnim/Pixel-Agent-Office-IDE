@@ -3,6 +3,7 @@ import type { AgentInstance, AgentTemplate } from '@shared/types'
 import SettingsModal from './components/SettingsModal'
 import OfficeView from './components/OfficeView'
 import TerminalModal from './components/TerminalModal'
+import PromptPanel from './components/PromptPanel'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
 
 function App() {
@@ -50,37 +51,59 @@ function App() {
     setSelectedInstanceId((current) => (current === instanceId ? null : current))
   }
 
+  const sendPrompt = (text: string, targetInstanceIds: string[]): void => {
+    for (const instanceId of targetInstanceIds) {
+      const instance = instances.find((i) => i.instanceId === instanceId)
+      if (instance) {
+        window.api.pty.write(instance.ptyId, `${text}\r`)
+      }
+    }
+  }
+
   return (
-    <div className="app-shell office-shell">
-      <div className="top-bar">
-        <h1>Pixel Agent Office IDE</h1>
-        <div className="top-bar-actions">
-          <span className="work-folder-label">
-            작업 폴더: {workFolder ?? '미지정'}
-          </span>
-          <button onClick={chooseFolder}>폴더 변경</button>
-          <select
-            value={selectedTemplateId}
-            onChange={(e) => setSelectedTemplateId(e.target.value)}
-          >
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          <button onClick={addInstance} disabled={!workFolder || !selectedTemplateId}>
-            + 에이전트 추가
-          </button>
-          <button
-            onClick={() => {
-              setSettingsOpen(true)
-            }}
-          >
-            설정
-          </button>
+    <div className="app-root">
+      <div className="main-column">
+        <div className="top-bar">
+          <h1>Pixel Agent Office IDE</h1>
+          <div className="top-bar-actions">
+            <span className="work-folder-label">작업 폴더: {workFolder ?? '미지정'}</span>
+            <button onClick={chooseFolder}>폴더 변경</button>
+            <select
+              value={selectedTemplateId}
+              onChange={(e) => setSelectedTemplateId(e.target.value)}
+            >
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <button onClick={addInstance} disabled={!workFolder || !selectedTemplateId}>
+              + 에이전트 추가
+            </button>
+            <button
+              onClick={() => {
+                setSettingsOpen(true)
+              }}
+            >
+              설정
+            </button>
+          </div>
         </div>
+
+        {error && <p className="error-banner">{error}</p>}
+
+        <OfficeView
+          instances={instances}
+          templates={templates}
+          statuses={statuses}
+          selectedInstanceId={selectedInstanceId}
+          onSelect={setSelectedInstanceId}
+          onRemove={removeInstance}
+        />
       </div>
+
+      <PromptPanel instances={instances} templates={templates} onSend={sendPrompt} />
 
       {settingsOpen && (
         <SettingsModal
@@ -90,17 +113,6 @@ function App() {
           }}
         />
       )}
-
-      {error && <p className="error-banner">{error}</p>}
-
-      <OfficeView
-        instances={instances}
-        templates={templates}
-        statuses={statuses}
-        selectedInstanceId={selectedInstanceId}
-        onSelect={setSelectedInstanceId}
-        onRemove={removeInstance}
-      />
 
       {selectedInstanceId &&
         (() => {
