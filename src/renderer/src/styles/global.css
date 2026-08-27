@@ -28,44 +28,64 @@ body {
   text-align: center;
 }
 
-.dev-pty-test {
+.office-shell {
   width: 100%;
-  max-width: 800px;
+  max-width: 960px;
   margin: 0 auto;
   align-items: stretch;
   justify-content: flex-start;
   text-align: left;
   padding: 24px;
-  gap: 12px;
-}
-
-.pty-output {
-  background: #111118;
-  color: #9ee6ff;
-  padding: 12px;
-  border-radius: 6px;
-  height: 320px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-  font-family: Consolas, monospace;
-  font-size: 13px;
-}
-
-.pty-input-row {
-  display: flex;
-  gap: 8px;
-}
-
-.pty-input-row input {
-  flex: 1;
-  padding: 6px 8px;
+  gap: 16px;
 }
 
 .top-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.work-folder-label {
+  font-size: 13px;
+  color: #b8b8c8;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.error-banner {
+  background: #4a1f24;
+  color: #ffb4bd;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.instance-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.instance-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #262638;
+  padding: 10px 12px;
+  border-radius: 8px;
 }
 
 .modal-backdrop {

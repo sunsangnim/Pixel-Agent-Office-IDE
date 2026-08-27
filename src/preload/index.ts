@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AgentInstance,
   AgentTemplate,
   AgentTemplateInput,
   AgentTemplatePatch,
@@ -40,6 +41,17 @@ const api: PreloadApi = {
     update: (id: string, patch: AgentTemplatePatch): Promise<AgentTemplate[]> =>
       ipcRenderer.invoke('templates:update', id, patch),
     remove: (id: string): Promise<AgentTemplate[]> => ipcRenderer.invoke('templates:remove', id)
+  },
+  workspace: {
+    getWorkFolder: (): Promise<string | null> => ipcRenderer.invoke('workspace:get'),
+    chooseWorkFolder: (): Promise<string | null> => ipcRenderer.invoke('workspace:choose')
+  },
+  instances: {
+    list: (): Promise<AgentInstance[]> => ipcRenderer.invoke('instances:list'),
+    create: (templateId: string): Promise<AgentInstance[]> =>
+      ipcRenderer.invoke('instances:create', templateId),
+    remove: (instanceId: string): Promise<AgentInstance[]> =>
+      ipcRenderer.invoke('instances:remove', instanceId)
   }
 }
 

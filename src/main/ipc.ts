@@ -1,6 +1,8 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { ptyManager } from './ptyManager'
 import { agentTemplateStore } from './agentStore'
+import { workspaceStore } from './workspaceStore'
+import { instanceManager } from './instanceManager'
 import type {
   AgentTemplateInput,
   AgentTemplatePatch,
@@ -39,4 +41,33 @@ export function registerIpcHandlers(): void {
   )
 
   ipcMain.handle('templates:remove', (_event, id: string) => agentTemplateStore.remove(id))
+
+  ipcMain.handle('workspace:get', () => workspaceStore.get())
+
+  ipcMain.handle('workspace:choose', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = win
+      ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+      : await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    if (result.canceled || result.filePaths.length === 0) {
+      return workspaceStore.get()
+    }
+    const folder = result.filePaths[0]
+    workspaceStore.set(folder)
+    return folder
+  })
+
+  ipcMain.handle('instances:list', () => instanceManager.list())
+
+  ipcMain.handle('instances:create', (event, templateId: string) => {
+    const cwd = workspaceStore.get()
+    if (!cwd) {
+      throw new Error('작업 폴더를 먼저 지정해주세요.')
+    }
+    return instanceManager.create(templateId, cwd, event.sender)
+  })
+
+  ipcMain.handle('instances:remove', (_event, instanceId: string) =>
+    instanceManager.remove(instanceId)
+  )
 }

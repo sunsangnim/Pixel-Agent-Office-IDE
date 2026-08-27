@@ -48,7 +48,27 @@ export interface AgentTemplateApi {
   remove(id: string): Promise<AgentTemplate[]>
 }
 
+export interface AgentInstance {
+  instanceId: string
+  templateId: string
+  cwd: string
+  ptyId: string
+}
+
+export interface WorkspaceApi {
+  getWorkFolder(): Promise<string | null>
+  chooseWorkFolder(): Promise<string | null>
+}
+
+export interface AgentInstanceApi {
+  list(): Promise<AgentInstance[]>
+  create(templateId: string): Promise<AgentInstance[]>
+  remove(instanceId: string): Promise<AgentInstance[]>
+}
+
 export interface PreloadApi {
   pty: PtyApi
   templates: AgentTemplateApi
+  workspace: WorkspaceApi
+  instances: AgentInstanceApi
 }

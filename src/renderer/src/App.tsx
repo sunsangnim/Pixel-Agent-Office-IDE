@@ -1,69 +1,113 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import type { AgentInstance, AgentTemplate } from '@shared/types'
 import SettingsModal from './components/SettingsModal'
 
 function App() {
-  const ptyIdRef = useRef<string | null>(null)
-  const [connected, setConnected] = useState(false)
-  const [output, setOutput] = useState('')
-  const [input, setInput] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [workFolder, setWorkFolder] = useState<string | null>(null)
+  const [templates, setTemplates] = useState<AgentTemplate[]>([])
+  const [instances, setInstances] = useState<AgentInstance[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const refreshTemplates = (): void => {
+    window.api.templates.list().then((list) => {
+      setTemplates(list)
+      setSelectedTemplateId((current) => current || list[0]?.id || '')
+    })
+  }
 
   useEffect(() => {
-    const unsubscribeData = window.api.pty.onData(({ ptyId, data }) => {
-      if (ptyId === ptyIdRef.current) {
-        setOutput((prev) => prev + data)
-      }
-    })
-    const unsubscribeExit = window.api.pty.onExit(({ ptyId }) => {
-      if (ptyId === ptyIdRef.current) {
-        setConnected(false)
-      }
-    })
-    return () => {
-      unsubscribeData()
-      unsubscribeExit()
-    }
+    window.api.workspace.getWorkFolder().then(setWorkFolder)
+    refreshTemplates()
+    window.api.instances.list().then(setInstances)
   }, [])
 
-  const spawnShell = async (): Promise<void> => {
-    const { ptyId } = await window.api.pty.spawn({})
-    ptyIdRef.current = ptyId
-    setOutput('')
-    setConnected(true)
+  const chooseFolder = async (): Promise<void> => {
+    const folder = await window.api.workspace.chooseWorkFolder()
+    setWorkFolder(folder)
   }
 
-  const sendInput = (): void => {
-    if (!ptyIdRef.current || !input) return
-    window.api.pty.write(ptyIdRef.current, `${input}\r`)
-    setInput('')
+  const addInstance = async (): Promise<void> => {
+    if (!workFolder || !selectedTemplateId) return
+    setError(null)
+    try {
+      const updated = await window.api.instances.create(selectedTemplateId)
+      setInstances(updated)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
   }
+
+  const removeInstance = async (instanceId: string): Promise<void> => {
+    const updated = await window.api.instances.remove(instanceId)
+    setInstances(updated)
+  }
+
+  const templateById = (id: string): AgentTemplate | undefined => templates.find((t) => t.id === id)
 
   return (
-    <div className="app-shell dev-pty-test">
+    <div className="app-shell office-shell">
       <div className="top-bar">
         <h1>Pixel Agent Office IDE</h1>
-        <button onClick={() => setSettingsOpen(true)}>설정</button>
+        <div className="top-bar-actions">
+          <span className="work-folder-label">
+            작업 폴더: {workFolder ?? '미지정'}
+          </span>
+          <button onClick={chooseFolder}>폴더 변경</button>
+          <select
+            value={selectedTemplateId}
+            onChange={(e) => setSelectedTemplateId(e.target.value)}
+          >
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          <button onClick={addInstance} disabled={!workFolder || !selectedTemplateId}>
+            + 에이전트 추가
+          </button>
+          <button
+            onClick={() => {
+              setSettingsOpen(true)
+            }}
+          >
+            설정
+          </button>
+        </div>
       </div>
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
-      <p>Phase 2 — node-pty 연동 테스트 (임시 UI, Phase 5~6에서 오피스 뷰/터미널로 교체 예정)</p>
-      <button onClick={spawnShell} disabled={connected}>
-        {connected ? '셸 연결됨' : '셸 스폰'}
-      </button>
-      <pre className="pty-output">{output}</pre>
-      <div className="pty-input-row">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') sendInput()
+
+      {settingsOpen && (
+        <SettingsModal
+          onClose={() => {
+            setSettingsOpen(false)
+            refreshTemplates()
           }}
-          disabled={!connected}
-          placeholder="명령어 입력 후 Enter"
         />
-        <button onClick={sendInput} disabled={!connected}>
-          전송
-        </button>
-      </div>
+      )}
+
+      {error && <p className="error-banner">{error}</p>}
+
+      <ul className="instance-list">
+        {instances.map((instance) => {
+          const template = templateById(instance.templateId)
+          return (
+            <li key={instance.instanceId} className="instance-row">
+              <span
+                className="template-color"
+                style={{ background: template?.color ?? '#888' }}
+              />
+              <div className="template-info">
+                <strong>{template?.name ?? instance.templateId}</strong>
+                <code>{instance.cwd}</code>
+              </div>
+              <button onClick={() => removeInstance(instance.instanceId)}>제거</button>
+            </li>
+          )
+        })}
+        {instances.length === 0 && <li>아직 배치된 에이전트가 없습니다. 작업 폴더를 지정하고 에이전트를 추가하세요.</li>}
+      </ul>
     </div>
   )
 }
