@@ -839,8 +839,8 @@ body {
 .representative-office {
   position: absolute;
   z-index: 3;
-  right: 16px;
-  bottom: 12px;
+  right: 24px;
+  bottom: 24px;
   width: 22%;
   height: 50%;
   min-width: 0;
