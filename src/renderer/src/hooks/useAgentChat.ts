@@ -19,6 +19,12 @@ interface CaptureEntry {
   timer: ReturnType<typeof setTimeout>
 }
 
+export interface AgentAssignment {
+  instanceId: string
+  prompt: string
+  role: string
+}
+
 export function useAgentChat(instances: AgentInstance[], templates: AgentTemplate[]) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [lastTaskByInstance, setLastTaskByInstance] = useState<Record<string, string>>({})
@@ -115,5 +121,54 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
     }
   }
 
-  return { messages, lastTaskByInstance, sendPrompt }
+  const sendAssignments = (
+    originalText: string,
+    assignments: AgentAssignment[],
+    sourceInstances: AgentInstance[]
+  ): void => {
+    const resolved = assignments.flatMap((assignment) => {
+      const instance = sourceInstances.find((candidate) => candidate.instanceId === assignment.instanceId)
+      return instance ? [{ assignment, instance }] : []
+    })
+    if (resolved.length === 0) return
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        kind: 'user',
+        authorName: '나',
+        authorColor: '#6ea8fe',
+        authorSeed: 'me',
+        text: originalText
+      },
+      {
+        id: crypto.randomUUID(),
+        kind: 'system',
+        authorName: '',
+        authorColor: '',
+        authorSeed: '',
+        text: `${resolved.length}개 세션으로 작업 분해: ${resolved.map(({ assignment }) => assignment.role).join(' · ')}`
+      }
+    ])
+
+    setLastTaskByInstance((prev) => {
+      const next = { ...prev }
+      for (const { assignment } of resolved) next[assignment.instanceId] = assignment.role
+      return next
+    })
+
+    for (const { assignment, instance } of resolved) {
+      const existing = capturesRef.current.get(instance.ptyId)
+      clearTimeout(existing?.timer)
+      capturesRef.current.set(instance.ptyId, {
+        instanceId: instance.instanceId,
+        buffer: '',
+        timer: setTimeout(() => {}, 0)
+      })
+      window.api.pty.write(instance.ptyId, `${assignment.prompt}\r`)
+    }
+  }
+
+  return { messages, lastTaskByInstance, sendPrompt, sendAssignments }
 }

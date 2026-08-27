@@ -17,7 +17,7 @@ function App() {
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const statuses = usePtyStatuses()
-  const { messages, lastTaskByInstance, sendPrompt } = useAgentChat(instances, templates)
+  const { messages, lastTaskByInstance, sendPrompt, sendAssignments } = useAgentChat(instances, templates)
 
   const refreshTemplates = (): void => {
     window.api.templates.list().then((list) => {
@@ -83,7 +83,7 @@ function App() {
     setError(null)
     const plan = planTask(text)
     let availableInstances = instances
-    const targetIds: string[] = []
+    const leaders: AgentInstance[] = []
 
     try {
       for (const templateId of plan.templateIds) {
@@ -96,10 +96,58 @@ function App() {
             (instance) => instance.templateId === templateId && instance.rank === 'teamLead'
           )
         }
-        if (leader) targetIds.push(leader.instanceId)
+        if (leader) leaders.push(leader)
+      }
+
+      if (plan.complexity === 'complex') {
+        for (const leader of leaders) {
+          let child = availableInstances.find(
+            (instance) => instance.parentInstanceId === leader.instanceId && instance.rank === 'subAgent'
+          )
+          if (!child) {
+            try {
+              availableInstances = await window.api.instances.createChild(leader.instanceId)
+              child = availableInstances.find(
+                (instance) => instance.parentInstanceId === leader.instanceId && instance.rank === 'subAgent'
+              )
+            } catch {
+              // The global concurrency policy can leave a team lead working alone.
+            }
+          }
+        }
       }
       setInstances(availableInstances)
-      sendPrompt(text, targetIds, availableInstances)
+      if (plan.complexity === 'simple') {
+        sendPrompt(text, leaders.map((leader) => leader.instanceId), availableInstances)
+      } else {
+        const specialties: Record<string, string> = {
+          'claude-code': '요구사항 분석 및 설계 검토',
+          'codex-cli': '구현 및 테스트',
+          'antigravity-cli': 'UI 품질 및 통합 검증'
+        }
+        const assignments = leaders.flatMap((leader) => {
+          const templateName = templates.find((template) => template.id === leader.templateId)?.name ?? leader.templateId
+          const child = availableInstances.find(
+            (instance) => instance.parentInstanceId === leader.instanceId && instance.rank === 'subAgent'
+          )
+          const leadAssignment = {
+            instanceId: leader.instanceId,
+            role: `${templateName} 팀장 · 조율`,
+            prompt: `[팀장 역할] 아래 요청을 검토하고 ${templateName} 팀의 실행 계획과 최종 취합 기준을 제시하세요.\n\n${text}`
+          }
+          return child
+            ? [
+                leadAssignment,
+                {
+                  instanceId: child.instanceId,
+                  role: `${templateName} 하위 세션 · ${specialties[leader.templateId]}`,
+                  prompt: `[하위 세션 역할: ${specialties[leader.templateId]}] 아래 요청에서 맡은 영역을 수행하고 팀장이 취합할 수 있는 결과와 검증 내용을 명확히 보고하세요.\n\n${text}`
+                }
+              ]
+            : [leadAssignment]
+        })
+        sendAssignments(text, assignments, availableInstances)
+      }
     } catch (e) {
       setInstances(availableInstances)
       setError(e instanceof Error ? `${plan.reason}: ${e.message}` : String(e))

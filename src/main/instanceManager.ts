@@ -18,6 +18,10 @@ class InstanceManager {
       throw new Error(`Unknown agent template: ${templateId}`)
     }
 
+    if (this.instances.size >= ORCHESTRATION_POLICY.maxConcurrentRuns) {
+      throw new Error(`동시 실행 한도(${ORCHESTRATION_POLICY.maxConcurrentRuns}개)에 도달했습니다.`)
+    }
+
     const team = this.list()
       .filter((instance) => instance.templateId === templateId)
       .sort((a, b) => a.slotIndex - b.slotIndex)
@@ -51,6 +55,13 @@ class InstanceManager {
     }
     this.instances.set(instance.instanceId, instance)
     return this.list()
+  }
+
+  createChild(parentInstanceId: string, sender: WebContents): AgentInstance[] {
+    const parent = this.instances.get(parentInstanceId)
+    if (!parent) throw new Error('하위 세션을 생성할 팀장 세션을 찾을 수 없습니다.')
+    if (parent.rank !== 'teamLead') throw new Error('하위 세션은 팀장만 생성할 수 있습니다.')
+    return this.create(parent.templateId, parent.cwd, sender)
   }
 
   remove(instanceId: string): AgentInstance[] {

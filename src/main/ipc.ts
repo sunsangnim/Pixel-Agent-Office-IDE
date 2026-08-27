@@ -86,6 +86,10 @@ export function registerIpcHandlers(): void {
     return instanceManager.create(templateId, cwd, event.sender)
   })
 
+  ipcMain.handle('instances:create-child', (event, parentInstanceId: string) =>
+    instanceManager.createChild(parentInstanceId, event.sender)
+  )
+
   ipcMain.handle('instances:remove', (_event, instanceId: string) =>
     instanceManager.remove(instanceId)
   )
