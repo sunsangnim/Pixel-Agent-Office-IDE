@@ -1,6 +1,6 @@
 # Pixel Agent Office IDE — 구현 페이즈
 
-풀 아키텍처/컨텍스트는 `C:\Users\win10\.claude\plans\frolicking-inventing-sprout.md` 참고.
+풀 아키텍처/컨텍스트는 저장소 밖의 비공개 기획 문서를 참고한다. 로컬 절대경로와 사용자 문서는 공개 저장소에 기록하지 않는다.
 각 페이즈 완료 시: 브리핑 → 커밋 & 푸시(main) → 이 파일 체크박스 갱신 → 다음 페이즈 진행.
 
 ## 요약

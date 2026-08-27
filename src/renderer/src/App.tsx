@@ -95,7 +95,7 @@ function App() {
       return
     }
 
-    const workflowPrompt = `[필수 작업 운영정책]\n작업 폴더: ${taskWorkspace.rootPath}\n1. 다른 작업과 섞지 말고 반드시 위 하위 폴더 안에서 작업하세요.\n2. 구현 전에 ${taskWorkspace.specPath}의 SRS·PRD·화면설계를 먼저 구체화하세요.\n3. ${taskWorkspace.phasesPath}에 작업을 Phase로 나누고 한 번에 한 Phase만 수행하세요.\n4. 각 Phase 완료 시 관련 테스트와 빌드를 실행하고, 문서 체크박스와 결과를 갱신한 뒤 현재 Git 저장소에 커밋하고 origin/main으로 푸시하세요.\n5. 전체 작업 완료 시 ${taskWorkspace.readmePath}에 최종 결과물, 실행법, 검증 결과, 변경 이력을 완성하세요.\n6. 직접 지정된 팀장은 하위 세션 사용 여부와 작업 방법을 자율적으로 결정하세요.\n\n[사용자 요청]\n${text}`
+    const workflowPrompt = `[필수 작업 운영정책]\n프로젝트 폴더: ${workFolder}\n비공개 작업 문서 폴더: ${taskWorkspace.rootPath}\n1. 코드는 프로젝트 폴더에서 작업하고, SRS·PRD·Phase·결과 문서는 비공개 작업 문서 폴더에만 저장하세요.\n2. 구현 전에 ${taskWorkspace.specPath}의 SRS·PRD·화면설계를 먼저 구체화하세요.\n3. ${taskWorkspace.phasesPath}에 작업을 Phase로 나누고 한 번에 한 Phase만 수행하세요.\n4. API 키·토큰·로그인 정보·세션·PTY 버퍼·로컬 절대경로·사용자 작업 문서는 Git에 추가하지 마세요.\n5. 각 Phase 완료 시 테스트와 빌드를 실행하고 공개 가능한 코드·자산만 커밋하세요. 원격 푸시는 저장소 공개 범위와 사용자 승인을 확인한 경우에만 수행하세요.\n6. 전체 작업 완료 시 ${taskWorkspace.readmePath}에 최종 결과물, 실행법, 검증 결과, 변경 이력을 완성하세요.\n7. 직접 지정된 팀장은 하위 세션 사용 여부와 작업 방법을 자율적으로 결정하세요.\n\n[사용자 요청]\n${text}`
     addSystemMessage(`작업 폴더와 기획 문서 생성 완료: ${taskWorkspace.taskId}`)
 
     if (selectedTargetIds.size > 0) {

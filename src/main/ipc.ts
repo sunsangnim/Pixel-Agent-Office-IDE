@@ -1,4 +1,5 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { join } from 'path'
 import { ptyManager } from './ptyManager'
 import { agentTemplateStore } from './agentStore'
 import { workspaceStore } from './workspaceStore'
@@ -85,7 +86,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('tasks:prepare', (_event, request: string) => {
     const workspace = workspaceStore.get()
     if (!workspace) throw new Error('작업 폴더를 먼저 지정해주세요.')
-    return taskWorkspaceManager.prepare(workspace, request)
+    const privateTaskRoot = join(app.getPath('userData'), 'private-tasks')
+    return taskWorkspaceManager.prepare(privateTaskRoot, request)
   })
 
   ipcMain.handle('instances:list', () => instanceManager.list())

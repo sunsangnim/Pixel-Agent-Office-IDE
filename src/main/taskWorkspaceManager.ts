@@ -22,9 +22,9 @@ class TaskWorkspaceManager {
   prepare(workspaceRoot: string, request: string): TaskWorkspace {
     const title = request.split(/\r?\n/).find((line) => line.trim())?.trim().slice(0, 80) ?? '새 작업'
     const taskId = `${stamp()}-${safeSlug(request)}`
-    let rootPath = join(workspaceRoot, 'tasks', taskId)
+    let rootPath = join(workspaceRoot, taskId)
     let suffix = 1
-    while (existsSync(rootPath)) rootPath = join(workspaceRoot, 'tasks', `${taskId}-${suffix++}`)
+    while (existsSync(rootPath)) rootPath = join(workspaceRoot, `${taskId}-${suffix++}`)
     mkdirSync(rootPath, { recursive: true })
 
     const specPath = join(rootPath, 'SRS-PRD-SCREEN-DESIGN.md')

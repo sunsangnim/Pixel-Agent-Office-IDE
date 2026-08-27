@@ -217,7 +217,7 @@ function SettingsWindow() {
             className="settings-env-textarea"
             value={form.env}
             onChange={(e) => setForm({ ...form, env: e.target.value })}
-            placeholder={'ANTHROPIC_API_KEY=sk-...\nOPENAI_API_KEY=sk-...'}
+            placeholder={'ANTHROPIC_API_KEY=<로컬에서만 설정>\nOPENAI_API_KEY=<로컬에서만 설정>'}
             rows={3}
           />
         </label>
