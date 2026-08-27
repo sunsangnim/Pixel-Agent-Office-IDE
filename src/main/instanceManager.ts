@@ -5,6 +5,7 @@ import { agentTemplateStore } from './agentStore'
 import type { AgentInstance } from '../shared/types'
 import { ORCHESTRATION_POLICY } from '../shared/orchestrationPolicy'
 import { adapterIdForTemplate } from './cliAdapters'
+import { BUILT_IN_AGENT_PROFILES } from '../shared/agentProfiles'
 
 class InstanceManager {
   private instances = new Map<string, AgentInstance>()
@@ -58,7 +59,11 @@ class InstanceManager {
       rank,
       slotIndex,
       parentInstanceId: leader?.instanceId ?? null,
-      presence: 'deskIdle'
+      presence: 'deskIdle',
+      profileId:
+        BUILT_IN_AGENT_PROFILES.find(
+          (profile) => profile.templateId === templateId && profile.slotIndex === slotIndex
+        )?.profileId ?? `${templateId}:runtime-${slotIndex}`
     }
     this.instances.set(instance.instanceId, instance)
     return this.list()

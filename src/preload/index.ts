@@ -75,6 +75,9 @@ const api: PreloadApi = {
     remove: (instanceId: string): Promise<AgentInstance[]> =>
       ipcRenderer.invoke('instances:remove', instanceId)
   },
+  profiles: {
+    list: () => ipcRenderer.invoke('profiles:list')
+  },
   system: {
     openSettings: (): void => {
       ipcRenderer.send('settings:open')

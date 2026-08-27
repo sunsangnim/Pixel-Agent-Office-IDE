@@ -95,6 +95,24 @@ export interface OrchestrationPolicy {
   idleProcessTimeoutMs: number
 }
 
+export interface AgentProfile {
+  profileId: string
+  templateId: string
+  rank: AgentRank
+  slotIndex: number
+  displayName: string
+}
+
+export interface AgentRun {
+  runId: string
+  profileId: string
+  templateId: string
+  cwd: string
+  ptyId: string
+  parentRunId: string | null
+  presence: OfficePresence
+}
+
 export interface AgentInstance {
   instanceId: string
   templateId: string
@@ -104,6 +122,11 @@ export interface AgentInstance {
   slotIndex: number
   parentInstanceId: string | null
   presence: OfficePresence
+  profileId: string
+}
+
+export interface AgentProfileApi {
+  list(): Promise<AgentProfile[]>
 }
 
 export interface WorkspaceApi {
@@ -142,5 +165,6 @@ export interface PreloadApi {
   workspace: WorkspaceApi
   tasks: TaskApi
   instances: AgentInstanceApi
+  profiles: AgentProfileApi
   system: SystemApi
 }
