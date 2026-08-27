@@ -16,7 +16,7 @@ function App() {
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
-  const statuses = usePtyStatuses()
+  const { deskStatuses: statuses, runtimeStates } = usePtyStatuses()
   const { messages, lastTaskByInstance, sendPrompt, sendAssignments, addSystemMessage } = useAgentChat(instances, templates)
 
   const refreshTemplates = (): void => {
@@ -176,6 +176,7 @@ function App() {
           instances={instances}
           templates={templates}
           statuses={statuses}
+          runtimeStates={runtimeStates}
           selectedInstanceId={selectedInstanceId}
           onSelect={setSelectedInstanceId}
           onRemove={removeInstance}
@@ -185,6 +186,7 @@ function App() {
           instances={instances}
           templates={templates}
           statuses={statuses}
+          runtimeStates={runtimeStates}
           tasks={lastTaskByInstance}
           selectedTargetIds={selectedTargetIds}
           onToggleTarget={toggleTarget}

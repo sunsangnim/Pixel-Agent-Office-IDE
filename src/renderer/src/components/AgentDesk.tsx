@@ -32,7 +32,11 @@ function AgentDesk({ instance, template, status, selected, onSelect, onRemove, r
       </button>
       <div className="desk-status-dot" />
       <DeskIcon color={template?.color ?? '#888888'} status={status} />
-      {(presence === 'pantry' || presence === 'meeting') && <span className="desk-away">{presence === 'pantry' ? '탕비실' : '회의실'}</span>}
+      {(presence === 'pantry' || presence === 'meeting' || presence === 'requestingHelp') && (
+        <span className={`desk-away${presence === 'requestingHelp' ? ' desk-help' : ''}`}>
+          {presence === 'pantry' ? '탕비실' : presence === 'meeting' ? '회의실' : '승인 필요!'}
+        </span>
+      )}
       <div className="desk-label">{template?.name ?? instance.templateId}</div>
       {roleLabel && <div className="desk-role">{instance.rank === 'teamLead' ? '◆ ' : ''}{roleLabel}</div>}
     </div>

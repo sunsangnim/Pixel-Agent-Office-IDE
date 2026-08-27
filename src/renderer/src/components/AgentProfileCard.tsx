@@ -1,10 +1,11 @@
-import type { AgentInstance, AgentTemplate, DeskStatus } from '@shared/types'
+import type { AgentInstance, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
 import IdenticonAvatar from './IdenticonAvatar'
 
 interface AgentProfileCardProps {
   instance: AgentInstance
   template: AgentTemplate | undefined
   status: DeskStatus
+  runtimeState?: AgentStatePayload
   task?: string
   selected: boolean
   onToggle: () => void
@@ -16,7 +17,7 @@ const statusLabel: Record<DeskStatus, string> = {
   error: '오류'
 }
 
-function AgentProfileCard({ instance, template, status, task, selected, onToggle }: AgentProfileCardProps) {
+function AgentProfileCard({ instance, template, status, runtimeState, task, selected, onToggle }: AgentProfileCardProps) {
   const name = template?.name ?? instance.templateId
   return (
     <button
@@ -27,7 +28,15 @@ function AgentProfileCard({ instance, template, status, task, selected, onToggle
       {selected && <span className="profile-card-check">✓</span>}
       <IdenticonAvatar seed={instance.instanceId} color={template?.color ?? '#888888'} size={48} />
       <span className="profile-card-name">{name}</span>
-      <span className="profile-card-task">{task ?? statusLabel[status]}</span>
+      <span className="profile-card-task">
+        {runtimeState?.state === 'waiting'
+          ? '승인 대기 중'
+          : runtimeState?.state === 'completed'
+            ? '작업 완료'
+            : runtimeState?.state === 'starting'
+              ? 'CLI 시작 중'
+              : task ?? statusLabel[status]}
+      </span>
     </button>
   )
 }

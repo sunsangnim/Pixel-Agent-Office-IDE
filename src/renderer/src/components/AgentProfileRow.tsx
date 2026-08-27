@@ -1,10 +1,11 @@
-import type { AgentInstance, AgentTemplate, DeskStatus } from '@shared/types'
+import type { AgentInstance, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
 import AgentProfileCard from './AgentProfileCard'
 
 interface AgentProfileRowProps {
   instances: AgentInstance[]
   templates: AgentTemplate[]
   statuses: Record<string, DeskStatus>
+  runtimeStates: Record<string, AgentStatePayload>
   tasks: Record<string, string>
   selectedTargetIds: Set<string>
   onToggleTarget: (instanceId: string) => void
@@ -18,6 +19,7 @@ function AgentProfileRow({
   instances,
   templates,
   statuses,
+  runtimeStates,
   tasks,
   selectedTargetIds,
   onToggleTarget,
@@ -34,6 +36,7 @@ function AgentProfileRow({
           instance={instance}
           template={templates.find((t) => t.id === instance.templateId)}
           status={statuses[instance.ptyId] ?? 'idle'}
+          runtimeState={runtimeStates[instance.ptyId]}
           task={tasks[instance.instanceId]}
           selected={selectedTargetIds.has(instance.instanceId)}
           onToggle={() => onToggleTarget(instance.instanceId)}

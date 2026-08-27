@@ -1,32 +1,44 @@
-import { useEffect, useRef, useState } from 'react'
-import type { DeskStatus } from '@shared/types'
+import { useEffect, useState } from 'react'
+import type { AgentRuntimeState, AgentStatePayload, DeskStatus } from '@shared/types'
 
-const IDLE_TIMEOUT_MS = 1500
+export interface PtyStatusSnapshot {
+  deskStatuses: Record<string, DeskStatus>
+  runtimeStates: Record<string, AgentStatePayload>
+}
 
-export function usePtyStatuses(): Record<string, DeskStatus> {
-  const [statuses, setStatuses] = useState<Record<string, DeskStatus>>({})
-  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+function toDeskStatus(state: AgentRuntimeState): DeskStatus {
+  if (state === 'error') return 'error'
+  if (state === 'starting' || state === 'working') return 'running'
+  return 'idle'
+}
+
+export function usePtyStatuses(): PtyStatusSnapshot {
+  const [runtimeStates, setRuntimeStates] = useState<Record<string, AgentStatePayload>>({})
 
   useEffect(() => {
-    const unsubscribeData = window.api.pty.onData(({ ptyId }) => {
-      setStatuses((prev) => (prev[ptyId] === 'running' ? prev : { ...prev, [ptyId]: 'running' }))
-      clearTimeout(timers.current[ptyId])
-      timers.current[ptyId] = setTimeout(() => {
-        setStatuses((prev) => ({ ...prev, [ptyId]: 'idle' }))
-      }, IDLE_TIMEOUT_MS)
+    const unsubscribeState = window.api.pty.onState((payload) => {
+      setRuntimeStates((prev) => ({ ...prev, [payload.ptyId]: payload }))
     })
-
     const unsubscribeExit = window.api.pty.onExit(({ ptyId, exitCode }) => {
-      clearTimeout(timers.current[ptyId])
-      setStatuses((prev) => ({ ...prev, [ptyId]: exitCode === 0 ? 'idle' : 'error' }))
+      setRuntimeStates((prev) => {
+        if (prev[ptyId]?.state === 'error') return prev
+        return {
+          ...prev,
+          [ptyId]: {
+            ptyId,
+            adapterId: prev[ptyId]?.adapterId ?? 'generic',
+            state: exitCode === 0 ? 'exited' : 'error',
+            reason: exitCode === 0 ? 'CLI 프로세스 종료' : `CLI 종료 코드 ${exitCode}`,
+            timestamp: Date.now()
+          }
+        }
+      })
     })
-
-    return () => {
-      unsubscribeData()
-      unsubscribeExit()
-      Object.values(timers.current).forEach(clearTimeout)
-    }
+    return () => { unsubscribeState(); unsubscribeExit() }
   }, [])
 
-  return statuses
+  const deskStatuses = Object.fromEntries(
+    Object.entries(runtimeStates).map(([ptyId, payload]) => [ptyId, toDeskStatus(payload.state)])
+  )
+  return { deskStatuses, runtimeStates }
 }

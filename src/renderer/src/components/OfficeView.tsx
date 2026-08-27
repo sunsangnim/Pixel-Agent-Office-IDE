@@ -1,4 +1,4 @@
-import type { AgentInstance, AgentTemplate, DeskStatus } from '@shared/types'
+import type { AgentInstance, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
 import AgentDesk from './AgentDesk'
 import OfficeZones from './OfficeZones'
 import { BUILT_IN_TEAM_IDS } from '@shared/orchestrationPolicy'
@@ -8,6 +8,7 @@ interface OfficeViewProps {
   instances: AgentInstance[]
   templates: AgentTemplate[]
   statuses: Record<string, DeskStatus>
+  runtimeStates: Record<string, AgentStatePayload>
   selectedInstanceId: string | null
   onSelect: (instanceId: string) => void
   onRemove: (instanceId: string) => void
@@ -17,12 +18,17 @@ function OfficeView({
   instances,
   templates,
   statuses,
+  runtimeStates,
   selectedInstanceId,
   onSelect,
   onRemove
 }: OfficeViewProps) {
   const teamTemplates = BUILT_IN_TEAM_IDS.map((id) => templates.find((template) => template.id === id))
   const getPresence = (instance: AgentInstance): OfficePresence => {
+    const runtimeState = runtimeStates[instance.ptyId]?.state
+    if (runtimeState === 'waiting') return 'requestingHelp'
+    if (runtimeState === 'working' || runtimeState === 'starting') return 'working'
+    if (runtimeState === 'error') return 'error'
     const status = statuses[instance.ptyId] ?? 'idle'
     if (status === 'running') return 'working'
     if (status === 'error') return 'error'

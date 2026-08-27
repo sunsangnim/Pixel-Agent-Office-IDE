@@ -490,6 +490,19 @@ body {
   font-size: 8px;
 }
 
+.desk-help {
+  border-color: #e4a853;
+  background: #fff0c9;
+  color: #6c4316;
+  animation: help-bubble 0.8s steps(2, end) infinite;
+}
+
+.desk[data-presence='requestingHelp'] { border-color: #e4a853; }
+
+@keyframes help-bubble {
+  50% { transform: translateY(-2px); }
+}
+
 .zone-occupants {
   position: absolute;
   right: 6px;
