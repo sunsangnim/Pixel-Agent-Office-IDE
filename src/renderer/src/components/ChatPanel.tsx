@@ -24,6 +24,18 @@ function ChatPanel({
 }: ChatPanelProps) {
   const [text, setText] = useState('')
   const threadRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const mentionOptions = [
+    { token: '@Claude', name: 'Claude', description: '코딩·아키텍처' },
+    { token: '@Codex', name: 'Codex', description: '상호작용·검증' },
+    { token: '@Antigravity', name: 'Antigravity', description: '이미지·픽셀 자산' }
+  ]
+  const mentionMatch = text.match(/@([^\s@]*)$/)
+  const mentionQuery = mentionMatch?.[1].toLowerCase() ?? ''
+  const visibleMentions = mentionMatch
+    ? mentionOptions.filter((option) => option.name.toLowerCase().startsWith(mentionQuery))
+    : []
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
@@ -37,6 +49,14 @@ function ChatPanel({
     if (!text.trim()) return
     void onSend(text)
     setText('')
+  }
+
+  const insertMention = (token: string): void => {
+    const prefix = mentionMatch && mentionMatch.index !== undefined
+      ? text.slice(0, mentionMatch.index)
+      : `${text}${text && !text.endsWith(' ') ? ' ' : ''}`
+    setText(`${prefix}${token} `)
+    requestAnimationFrame(() => inputRef.current?.focus())
   }
 
   return (
@@ -93,26 +113,52 @@ function ChatPanel({
         {selectedNames.length > 0 ? `받는 사람: ${selectedNames.join(', ')}` : '받는 사람: 자동 배정'}
       </div>
 
-      <div className="chat-input-row">
-        <textarea
-          className="chat-input"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="지시할 내용을 입력하세요"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault()
-              send()
-            }
-          }}
-        />
-        <button
-          className="chat-send-btn"
-          onClick={send}
-          disabled={!text.trim()}
-        >
-          ▷
-        </button>
+      <div className="chat-compose">
+        <div className="chat-mention-toolbar" aria-label="에이전트 멘션">
+          {mentionOptions.map((option) => (
+            <button type="button" key={option.token} onClick={() => insertMention(option.token)}>
+              {option.token}
+            </button>
+          ))}
+        </div>
+        {visibleMentions.length > 0 && (
+          <div className="chat-mention-menu" role="listbox" aria-label="에이전트 목록">
+            {visibleMentions.map((option) => (
+              <button
+                type="button"
+                role="option"
+                key={option.token}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => insertMention(option.token)}
+              >
+                <span>{option.token}</span>
+                <small>{option.description}</small>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="chat-input-row">
+          <textarea
+            ref={inputRef}
+            className="chat-input"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="@를 입력해 에이전트를 선택하고 지시하세요"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault()
+                send()
+              }
+            }}
+          />
+          <button
+            className="chat-send-btn"
+            onClick={send}
+            disabled={!text.trim()}
+          >
+            ▷
+          </button>
+        </div>
       </div>
     </div>
   )

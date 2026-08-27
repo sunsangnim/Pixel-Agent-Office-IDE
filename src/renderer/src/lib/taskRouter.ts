@@ -12,16 +12,16 @@ const COMPLEX_MARKERS = ['병렬', '분담', '전체', '아키텍처', '마이�
 export function planTask(text: string): DispatchPlan {
   const normalized = text.toLowerCase()
   const explicitRoutes: Array<{ pattern: RegExp; templateId: string; name: string }> = [
-    { pattern: /클로드(야|에게|가)|claude[,\s]/i, templateId: 'claude-code', name: 'Claude' },
-    { pattern: /코덱스(야|에게|가)|codex[,\s]/i, templateId: 'codex-cli', name: 'Codex' },
-    { pattern: /안티그래(피|비티)(야|에게|가)|antigravity[,\s]/i, templateId: 'antigravity-cli', name: 'Antigravity' }
+    { pattern: /@(?:클로드|claude)(?=\s|$)/i, templateId: 'claude-code', name: 'Claude' },
+    { pattern: /@(?:코덱스|codex)(?=\s|$)/i, templateId: 'codex-cli', name: 'Codex' },
+    { pattern: /@(?:안티그래피|안티그래비티|antigravity)(?=\s|$)/i, templateId: 'antigravity-cli', name: 'Antigravity' }
   ]
-  const explicit = explicitRoutes.find((route) => route.pattern.test(text))
-  if (explicit) {
+  const explicit = explicitRoutes.filter((route) => route.pattern.test(text))
+  if (explicit.length > 0) {
     return {
-      templateIds: [explicit.templateId],
-      complexity: 'simple',
-      reason: `${explicit.name}가 직접 지정되어 해당 팀장에게 전권 배정`,
+      templateIds: explicit.map((route) => route.templateId),
+      complexity: explicit.length > 1 ? 'complex' : 'simple',
+      reason: `${explicit.map((route) => route.name).join(', ')} 멘션을 감지해 해당 팀장에게 직접 배정`,
       explicitlyAssigned: true
     }
   }

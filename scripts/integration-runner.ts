@@ -66,8 +66,10 @@ function verifyRoutingAndProfiles(): void {
   assert.equal(ORCHESTRATION_POLICY.maxChildrenPerLead, 3)
 
   assert.deepEqual(planTask('간단한 버그 고쳐').templateIds, ['claude-code'])
-  assert.deepEqual(planTask('코덱스야 애니메이션 고쳐').templateIds, ['codex-cli'])
-  assert.deepEqual(planTask('안티그래피야 이미지 만들어').templateIds, ['antigravity-cli'])
+  assert.deepEqual(planTask('@코덱스 애니메이션 고쳐').templateIds, ['codex-cli'])
+  assert.deepEqual(planTask('@Codex 테스트 고쳐').templateIds, ['codex-cli'])
+  assert.deepEqual(planTask('@안티그래피 이미지 만들어').templateIds, ['antigravity-cli'])
+  assert.deepEqual(planTask('@claude 기능 만들어').templateIds, ['claude-code'])
   assert.deepEqual(planTask('전체 기능을 병렬로 통합 테스트해').templateIds, [
     'claude-code',
     'codex-cli',
