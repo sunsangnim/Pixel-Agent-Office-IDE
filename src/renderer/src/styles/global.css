@@ -166,28 +166,171 @@ body {
   position: relative;
   border: 3px solid #3a4a40;
   border-radius: 14px;
-  padding: 28px 24px 20px;
-  min-height: 280px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   background:
     repeating-conic-gradient(#2c3b34 0% 25%, #263129 0% 50%) 0 0 / 32px 32px;
   box-shadow: inset 0 0 0 6px #1c2622;
 }
 
-.office-plant {
+.office-zones {
+  display: flex;
+  gap: 10px;
+}
+
+.zone {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: rgba(15, 20, 17, 0.4);
+  border: 1px solid rgba(207, 232, 219, 0.25);
+  border-radius: 10px;
+  padding: 20px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 110px;
+}
+
+.zone-label {
   position: absolute;
-  font-size: 24px;
+  top: 4px;
+  left: 8px;
+  font-size: 11px;
+  color: #cfe8db;
+  opacity: 0.85;
+}
+
+/* pantry */
+.pantry-fridge {
+  width: 26px;
+  height: 42px;
+  background: linear-gradient(180deg, #d8dee2, #b7c0c6);
+  border-radius: 3px;
+  border-bottom: 3px solid #8f9aa2;
+  position: relative;
+}
+
+.pantry-fridge::after {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: #8f9aa2;
+}
+
+.pantry-counter {
+  display: flex;
+  gap: 6px;
+  font-size: 15px;
+}
+
+/* meeting room */
+.meeting-tv {
+  width: 60%;
+  height: 16px;
+  background: #111116;
+  border: 2px solid #4a4a58;
+  border-radius: 2px;
+}
+
+.meeting-chairs-row {
+  display: flex;
+  gap: 10px;
+}
+
+.chair {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: #b5432f;
+}
+
+.meeting-table {
+  position: relative;
+  width: 70%;
+  height: 14px;
+  background: #8a5a3b;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+}
+
+.meeting-head-seat {
+  position: absolute;
+  left: -18px;
+  font-size: 14px;
+}
+
+/* entrance */
+.elevator-door {
+  position: relative;
+  width: 40px;
+  height: 52px;
+  display: flex;
+  background: #2a2f36;
+  border: 2px solid #565f68;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.elevator-door-leaf {
+  flex: 1;
+  background: linear-gradient(90deg, #7d8894, #98a2ac);
+  border-right: 1px solid #3a3f45;
+}
+
+.elevator-door-leaf:last-child {
+  border-right: none;
+  border-left: 1px solid #3a3f45;
+}
+
+.elevator-indicator {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: #7fe08a;
+}
+
+.office-desk-floor {
+  position: relative;
+  flex: 1;
+  min-height: 220px;
+  padding: 20px 16px;
+}
+
+.office-deco {
+  position: absolute;
+  font-size: 22px;
   opacity: 0.9;
   pointer-events: none;
 }
 
-.office-plant-tl {
-  top: 6px;
-  left: 6px;
+.office-deco-tl {
+  top: 0;
+  left: 0;
 }
 
-.office-plant-br {
-  bottom: 6px;
-  right: 6px;
+.office-deco-tr {
+  top: 0;
+  right: 0;
+}
+
+.office-deco-bl {
+  bottom: 0;
+  left: 0;
+}
+
+.office-deco-br {
+  bottom: 0;
+  right: 0;
 }
 
 .office-empty {

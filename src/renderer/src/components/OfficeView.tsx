@@ -1,5 +1,6 @@
 import type { AgentInstance, AgentTemplate, DeskStatus } from '@shared/types'
 import AgentDesk from './AgentDesk'
+import OfficeZones from './OfficeZones'
 
 interface OfficeViewProps {
   instances: AgentInstance[]
@@ -20,28 +21,34 @@ function OfficeView({
 }: OfficeViewProps) {
   return (
     <div className="office-room">
-      <span className="office-plant office-plant-tl">🌿</span>
-      <span className="office-plant office-plant-br">🪴</span>
+      <OfficeZones />
 
-      {instances.length === 0 ? (
-        <p className="office-empty">
-          아직 배치된 에이전트가 없습니다. 작업 폴더를 지정하고 에이전트를 추가하세요.
-        </p>
-      ) : (
-        <div className="office-grid">
-          {instances.map((instance) => (
-            <AgentDesk
-              key={instance.instanceId}
-              instance={instance}
-              template={templates.find((t) => t.id === instance.templateId)}
-              status={statuses[instance.ptyId] ?? 'idle'}
-              selected={instance.instanceId === selectedInstanceId}
-              onSelect={() => onSelect(instance.instanceId)}
-              onRemove={() => onRemove(instance.instanceId)}
-            />
-          ))}
-        </div>
-      )}
+      <div className="office-desk-floor">
+        <span className="office-deco office-deco-tl">🌿</span>
+        <span className="office-deco office-deco-tr">🖨️</span>
+        <span className="office-deco office-deco-bl">🚰</span>
+        <span className="office-deco office-deco-br">🪴</span>
+
+        {instances.length === 0 ? (
+          <p className="office-empty">
+            아직 배치된 에이전트가 없습니다. 작업 폴더를 지정하고 에이전트를 추가하세요.
+          </p>
+        ) : (
+          <div className="office-grid">
+            {instances.map((instance) => (
+              <AgentDesk
+                key={instance.instanceId}
+                instance={instance}
+                template={templates.find((t) => t.id === instance.templateId)}
+                status={statuses[instance.ptyId] ?? 'idle'}
+                selected={instance.instanceId === selectedInstanceId}
+                onSelect={() => onSelect(instance.instanceId)}
+                onRemove={() => onRemove(instance.instanceId)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
