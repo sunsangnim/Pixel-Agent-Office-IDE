@@ -370,6 +370,7 @@ body {
 
 .office-room {
   position: relative;
+  overflow: hidden;
   border: 3px solid #3a4a40;
   border-radius: 14px;
   padding: 16px;
@@ -838,8 +839,8 @@ body {
 .representative-office {
   position: absolute;
   z-index: 3;
-  right: 8px;
-  bottom: 8px;
+  right: 16px;
+  bottom: 12px;
   width: 22%;
   height: 50%;
   min-width: 0;
