@@ -27,3 +27,37 @@ body {
   gap: 8px;
   text-align: center;
 }
+
+.dev-pty-test {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  align-items: stretch;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 24px;
+  gap: 12px;
+}
+
+.pty-output {
+  background: #111118;
+  color: #9ee6ff;
+  padding: 12px;
+  border-radius: 6px;
+  height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: Consolas, monospace;
+  font-size: 13px;
+}
+
+.pty-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.pty-input-row input {
+  flex: 1;
+  padding: 6px 8px;
+}

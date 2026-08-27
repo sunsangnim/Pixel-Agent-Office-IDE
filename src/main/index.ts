@@ -1,5 +1,7 @@
 import { join } from 'path'
 import { app, BrowserWindow, shell } from 'electron'
+import { registerIpcHandlers } from './ipc'
+import { ptyManager } from './ptyManager'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -32,6 +34,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  registerIpcHandlers()
   createWindow()
 
   app.on('activate', () => {
@@ -40,7 +43,12 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  ptyManager.killAll()
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  ptyManager.killAll()
 })

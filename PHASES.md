@@ -11,7 +11,7 @@
 ## 페이즈
 
 - [x] Phase 1 — 프로젝트 부트스트랩: electron-vite 기반 React+TS 스캐폴딩, 기본 창 실행 확인
-- [ ] Phase 2 — node-pty 통합: main에서 PTY spawn/write/kill, IPC로 stdout 스트리밍, 렌더러에서 최소 1개 터미널 동작 확인
+- [x] Phase 2 — node-pty 통합: main에서 PTY spawn/write/kill, IPC로 stdout 스트리밍, 렌더러에서 최소 1개 터미널 동작 확인
 - [ ] Phase 3 — 에이전트 템플릿 스토어 + 설정 모달: Claude/Codex 시드, CRUD UI
 - [ ] Phase 4 — 작업 폴더 선택 + 에이전트 인스턴스 생성 플로우
 - [ ] Phase 5 — 픽셀 오피스 그리드 뷰 + 상태별 스타일링(idle/running/error) + 디바운스 상태 판별
