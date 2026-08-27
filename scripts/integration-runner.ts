@@ -118,7 +118,7 @@ async function main(): Promise<void> {
   const ptyId = spawnFixture(sender, 'generic')
 
   try {
-    await waitForState(events, ptyId, 'ready')
+    await waitFor(() => ptyManager.getBuffer(ptyId).includes('fake agent ready'))
     ptyManager.sendPrompt(ptyId, 'smoke test')
     await waitForState(events, ptyId, 'completed')
     assert.match(ptyManager.getBuffer(ptyId), /working: smoke test/)
@@ -132,8 +132,8 @@ async function main(): Promise<void> {
   const healthyId = spawnFixture(sender, 'codex')
   try {
     await Promise.all([
-      waitForState(events, failedId, 'ready'),
-      waitForState(events, healthyId, 'ready')
+      waitFor(() => ptyManager.getBuffer(failedId).includes('fake agent ready')),
+      waitFor(() => ptyManager.getBuffer(healthyId).includes('fake agent ready'))
     ])
     ptyManager.sendPrompt(failedId, 'fail this task')
     ptyManager.sendPrompt(healthyId, 'continue independently')
@@ -149,7 +149,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exitCode = 1
-})
+main()
+  .then(() => setTimeout(() => process.exit(0), 250))
+  .catch((error) => {
+    console.error(error)
+    ptyManager.killAll()
+    setTimeout(() => process.exit(1), 250)
+  })

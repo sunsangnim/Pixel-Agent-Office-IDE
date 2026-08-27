@@ -9,9 +9,11 @@ buildSync({
   bundle: true,
   platform: 'node',
   format: 'cjs',
+  alias: {
+    '@shared': path.join(process.cwd(), 'src', 'shared')
+  },
   external: ['electron', 'node-pty'],
   logLevel: 'silent'
 })
 
 require(outputFile)
-
