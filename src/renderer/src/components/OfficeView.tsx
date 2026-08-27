@@ -1,5 +1,6 @@
 import type { AgentInstance, AgentProfile, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
 import AgentDesk from './AgentDesk'
+import DeskIcon from './DeskIcon'
 import OfficeZones from './OfficeZones'
 import type { OfficePresence } from '@shared/types'
 import OfficeAgentLayer from './OfficeAgentLayer'
@@ -54,7 +55,7 @@ function OfficeView({
               if (!instance) {
                 return (
                   <div className="desk desk-vacant" data-presence="offDuty" key={profile.profileId}>
-                    <div className="vacant-chair"><i /></div>
+                    <DeskIcon color={template?.color ?? '#66736d'} status="idle" />
                     <div className="desk-label">{profile.displayName}</div>
                     <div className="desk-role">{roleLabel} · 미출근</div>
                   </div>

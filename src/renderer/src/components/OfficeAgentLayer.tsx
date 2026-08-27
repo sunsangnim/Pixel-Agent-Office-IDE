@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import type { AgentInstance, AgentProfile, AgentTemplate, OfficePresence } from '@shared/types'
 import PixelPerson from './PixelPerson'
@@ -9,7 +10,7 @@ interface OfficeAgentLayerProps {
   presenceByProfile: Record<string, OfficePresence>
 }
 
-const DESK_X = [12.5, 37.5, 62.5, 87.5]
+const DESK_X = [12, 35, 58, 80]
 const DESK_Y = [44, 66, 86]
 
 function activityLabel(presence: OfficePresence): string | undefined {
@@ -37,6 +38,12 @@ function position(
 
 function OfficeAgentLayer({ profiles, instances, templates, presenceByProfile }: OfficeAgentLayerProps) {
   const teamIds = Array.from(new Set(profiles.map((profile) => profile.templateId)))
+  const previousPresence = useRef<Record<string, OfficePresence>>({})
+
+  useEffect(() => {
+    previousPresence.current = { ...presenceByProfile }
+  }, [presenceByProfile])
+
   return (
     <div className="office-agent-layer" aria-label="에이전트 위치">
       {profiles.flatMap((profile, profileIndex) => {
@@ -44,15 +51,24 @@ function OfficeAgentLayer({ profiles, instances, templates, presenceByProfile }:
         const presence = presenceByProfile[profile.profileId] ?? 'offDuty'
         if (!instance || presence === 'offDuty') return []
         const template = templates.find((candidate) => candidate.id === profile.templateId)
-        const coords = position(profile, profileIndex, teamIds.indexOf(profile.templateId), presence)
+        const teamIndex = teamIds.indexOf(profile.templateId)
+        const coords = position(profile, profileIndex, teamIndex, presence)
+        const deskCoords = position(profile, profileIndex, teamIndex, 'deskIdle')
+        const fromPresence = previousPresence.current[profile.profileId] ?? 'offDuty'
         return (
           <div
             className={`office-agent office-agent-${presence}`}
             data-profile-id={profile.profileId}
+            data-from-presence={fromPresence}
             key={profile.profileId}
             role="img"
             aria-label={`${profile.displayName}: ${activityLabel(presence) ?? '책상 대기 중'}`}
-            style={{ '--agent-x': `${coords.x}%`, '--agent-y': `${coords.y}%` } as CSSProperties}
+            style={{
+              '--agent-x': `${coords.x}%`,
+              '--agent-y': `${coords.y}%`,
+              '--desk-x': `${deskCoords.x}%`,
+              '--desk-y': `${deskCoords.y}%`
+            } as CSSProperties}
           >
             <PixelPerson
               color={template?.color ?? '#888888'}
