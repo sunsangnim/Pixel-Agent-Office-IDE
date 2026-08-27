@@ -28,9 +28,9 @@ function ChatPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const mentionOptions = [
-    { token: '@Claude', name: 'Claude', description: '코딩·아키텍처' },
-    { token: '@Codex', name: 'Codex', description: '상호작용·검증' },
-    { token: '@Antigravity', name: 'Antigravity', description: '이미지·픽셀 자산' }
+    { token: '@Claude', name: 'Claude', alias: 'claude', description: '코딩·아키텍처', color: '#b28d84' },
+    { token: '@Codex', name: 'Codex', alias: 'codex', description: '상호작용·검증', color: '#568f88' },
+    { token: '@Antigravity', name: 'Antigravity', alias: 'antigravity', description: '이미지·픽셀 자산', color: '#8278b7' }
   ]
   const mentionMatch = text.match(/@([^\s@]*)$/)
   const mentionQuery = mentionMatch?.[1].toLowerCase() ?? ''
@@ -129,15 +129,9 @@ function ChatPanel({
       </div>
 
       <div className="chat-compose">
-        <div className="chat-mention-toolbar" aria-label="에이전트 멘션">
-          {mentionOptions.map((option) => (
-            <button type="button" key={option.token} onClick={() => insertMention(option.token)}>
-              {option.token}
-            </button>
-          ))}
-        </div>
         {visibleMentions.length > 0 && (
           <div className="chat-mention-menu" role="listbox" aria-label="에이전트 목록">
+            <div className="chat-mention-menu-title">에이전트</div>
             {visibleMentions.map((option) => (
               <button
                 type="button"
@@ -146,8 +140,12 @@ function ChatPanel({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => insertMention(option.token)}
               >
-                <span>{option.token}</span>
-                <small>{option.description}</small>
+                <IdenticonAvatar seed={`mention-${option.alias}`} color={option.color} size={28} />
+                <span className="chat-mention-member">
+                  <strong>{option.name}</strong>
+                  <small>{option.description}</small>
+                </span>
+                <code>{option.alias}</code>
               </button>
             ))}
           </div>
