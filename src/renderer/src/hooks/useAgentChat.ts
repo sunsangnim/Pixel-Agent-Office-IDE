@@ -19,6 +19,11 @@ interface CaptureEntry {
   timer: ReturnType<typeof setTimeout>
 }
 
+interface ChildReport {
+  childName: string
+  text: string
+}
+
 export interface AgentAssignment {
   instanceId: string
   prompt: string
@@ -37,6 +42,65 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
   templatesRef.current = templates
 
   const capturesRef = useRef(new Map<string, CaptureEntry>())
+  const pendingReportsRef = useRef(new Map<string, ChildReport[]>())
+  const reportTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+
+  const flushParentReports = (parentInstanceId: string): void => {
+    const parent = instancesRef.current.find((instance) => instance.instanceId === parentInstanceId)
+    const reports = pendingReportsRef.current.get(parentInstanceId)
+    if (!parent || !reports?.length) {
+      pendingReportsRef.current.delete(parentInstanceId)
+      return
+    }
+
+    if (capturesRef.current.has(parent.ptyId)) {
+      const previous = reportTimersRef.current.get(parentInstanceId)
+      clearTimeout(previous)
+      reportTimersRef.current.set(
+        parentInstanceId,
+        setTimeout(() => flushParentReports(parentInstanceId), RESPONSE_IDLE_MS)
+      )
+      return
+    }
+
+    pendingReportsRef.current.delete(parentInstanceId)
+    reportTimersRef.current.delete(parentInstanceId)
+    const reportText = reports
+      .map((report, index) => `### 하위 세션 보고 ${index + 1} · ${report.childName}\n${report.text}`)
+      .join('\n\n')
+    const prompt = `[팀장 취합 단계]\n아래 하위 세션 보고를 검토해 중복을 제거하고, 충돌이나 누락을 확인한 뒤 최종 실행 결과와 다음 조치를 한국어로 정리하세요.\n\n${reportText}`
+
+    capturesRef.current.set(parent.ptyId, {
+      instanceId: parent.instanceId,
+      buffer: '',
+      timer: setTimeout(() => {}, 0)
+    })
+    setLastTaskByInstance((prev) => ({ ...prev, [parent.instanceId]: '하위 세션 결과 취합' }))
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        kind: 'system',
+        authorName: '',
+        authorColor: '',
+        authorSeed: '',
+        text: `${reports.length}개 하위 세션 보고를 팀장에게 전달`
+      }
+    ])
+    window.api.pty.write(parent.ptyId, `${prompt}\r`)
+  }
+
+  const queueChildReport = (parentInstanceId: string, report: ChildReport): void => {
+    const reports = pendingReportsRef.current.get(parentInstanceId) ?? []
+    reports.push(report)
+    pendingReportsRef.current.set(parentInstanceId, reports)
+    const previous = reportTimersRef.current.get(parentInstanceId)
+    clearTimeout(previous)
+    reportTimersRef.current.set(
+      parentInstanceId,
+      setTimeout(() => flushParentReports(parentInstanceId), 350)
+    )
+  }
 
   useEffect(() => {
     const unsubscribe = window.api.pty.onData(({ ptyId, data }) => {
@@ -66,10 +130,21 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
             text
           }
         ])
+
+        if (instance?.parentInstanceId) {
+          queueChildReport(instance.parentInstanceId, {
+            childName: template?.name ?? '하위 세션',
+            text
+          })
+        }
       }, RESPONSE_IDLE_MS)
     })
 
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      for (const timer of reportTimersRef.current.values()) clearTimeout(timer)
+      reportTimersRef.current.clear()
+    }
   }, [])
 
   const sendPrompt = (text: string, targetInstanceIds: string[], sourceInstances = instances): void => {
