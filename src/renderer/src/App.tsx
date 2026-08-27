@@ -176,6 +176,7 @@ function App() {
           templates={templates}
           statuses={statuses}
           runtimeStates={runtimeStates}
+          tasks={lastTaskByInstance}
           selectedInstanceId={selectedInstanceId}
           onSelect={setSelectedInstanceId}
           onRemove={removeInstance}

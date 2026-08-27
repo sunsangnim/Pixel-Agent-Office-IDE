@@ -2,6 +2,8 @@ import type { AgentInstance, AgentProfile, AgentStatePayload, AgentTemplate, Des
 import AgentDesk from './AgentDesk'
 import OfficeZones from './OfficeZones'
 import type { OfficePresence } from '@shared/types'
+import OfficeAgentLayer from './OfficeAgentLayer'
+import { useOfficePresence } from '../hooks/useOfficePresence'
 
 interface OfficeViewProps {
   instances: AgentInstance[]
@@ -9,6 +11,7 @@ interface OfficeViewProps {
   templates: AgentTemplate[]
   statuses: Record<string, DeskStatus>
   runtimeStates: Record<string, AgentStatePayload>
+  tasks: Record<string, string>
   selectedInstanceId: string | null
   onSelect: (instanceId: string) => void
   onRemove: (instanceId: string) => void
@@ -20,30 +23,22 @@ function OfficeView({
   templates,
   statuses,
   runtimeStates,
+  tasks,
   selectedInstanceId,
   onSelect,
   onRemove
 }: OfficeViewProps) {
-  const getPresence = (instance: AgentInstance): OfficePresence => {
-    const runtimeState = runtimeStates[instance.ptyId]?.state
-    if (runtimeState === 'waiting') return 'requestingHelp'
-    if (runtimeState === 'working' || runtimeState === 'starting') return 'working'
-    if (runtimeState === 'error') return 'error'
-    const status = statuses[instance.ptyId] ?? 'idle'
-    if (status === 'running') return 'working'
-    if (status === 'error') return 'error'
-    if (instance.rank === 'teamLead' || instance.slotIndex === 3) return 'deskIdle'
-    return instance.slotIndex === 1 ? 'pantry' : 'meeting'
-  }
-  const occupants = instances.map((instance) => ({
-    instance,
-    template: templates.find((template) => template.id === instance.templateId),
-    presence: getPresence(instance)
-  }))
+  const presenceByProfile = useOfficePresence(profiles, instances, runtimeStates, tasks)
 
   return (
-    <div className="office-room">
-      <OfficeZones occupants={occupants} />
+    <div className="office-room has-agent-layer">
+      <OfficeZones />
+      <OfficeAgentLayer
+        profiles={profiles}
+        instances={instances}
+        templates={templates}
+        presenceByProfile={presenceByProfile}
+      />
 
       <div className="office-desk-floor">
         <span className="office-deco office-deco-tl">🌿</span>
@@ -75,7 +70,7 @@ function OfficeView({
                   onSelect={() => onSelect(instance.instanceId)}
                   onRemove={() => onRemove(instance.instanceId)}
                   roleLabel={roleLabel}
-                  presence={getPresence(instance)}
+                  presence={presenceByProfile[profile.profileId] ?? 'deskIdle'}
                 />
               )
           })}

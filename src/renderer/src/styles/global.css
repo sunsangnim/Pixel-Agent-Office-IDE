@@ -268,6 +268,38 @@ body {
   box-shadow: inset 0 0 0 6px #1c2622;
 }
 
+.office-agent-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.office-agent {
+  position: absolute;
+  left: var(--agent-x);
+  top: var(--agent-y);
+  transform: translate(-50%, -50%);
+  transition: left 0.8s steps(8, end), top 0.8s steps(8, end);
+  animation: agent-clock-in 0.75s steps(7, end) both;
+}
+
+.has-agent-layer .desk:not(.desk-vacant) .pixel-worker { opacity: 0; }
+
+.office-agent-working .room-agent-sprite { animation: agent-work 0.7s steps(2, end) infinite; }
+.office-agent-requestingHelp .room-agent-sprite { filter: drop-shadow(2px 2px 0 #e4a853); }
+.office-agent-error .room-agent-sprite { filter: drop-shadow(2px 2px 0 #ff5c5c); }
+
+@keyframes agent-clock-in {
+  from { left: 86%; top: 18%; opacity: 0; }
+  to { left: var(--agent-x); top: var(--agent-y); opacity: 1; }
+}
+
+@keyframes agent-work {
+  50% { transform: translateY(-2px); }
+}
+
 .office-zones {
   display: flex;
   gap: 10px;
