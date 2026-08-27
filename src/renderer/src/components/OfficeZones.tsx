@@ -5,7 +5,11 @@ function OfficeZones() {
         <span className="zone-label">탕비실</span>
         <div className="pantry-fridge" />
         <div className="pantry-counter"><span>☕</span><span>🍪</span><span>🥤</span><span>🍫</span></div>
-        <div className="pantry-glass-door" aria-label="탕비실 유리문"><i /></div>
+        <div className="pantry-glass-wall" aria-label="탕비실 전면 유리벽과 통합 출입문">
+          <span className="pantry-glass-panel" />
+          <span className="pantry-glass-panel" />
+          <span className="pantry-glass-door"><i /></span>
+        </div>
       </div>
       <div className="zone zone-meeting">
         <span className="zone-label">회의실</span>
