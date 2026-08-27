@@ -17,7 +17,7 @@ function App() {
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const statuses = usePtyStatuses()
-  const { messages, lastTaskByInstance, sendPrompt, sendAssignments } = useAgentChat(instances, templates)
+  const { messages, lastTaskByInstance, sendPrompt, sendAssignments, addSystemMessage } = useAgentChat(instances, templates)
 
   const refreshTemplates = (): void => {
     window.api.templates.list().then((list) => {
@@ -71,17 +71,30 @@ function App() {
   }
 
   const sendPromptToSelected = async (text: string): Promise<void> => {
-    if (selectedTargetIds.size > 0) {
-      sendPrompt(text, Array.from(selectedTargetIds))
-      return
-    }
     if (!workFolder) {
-      setError('자동 배정을 사용하려면 작업 폴더를 먼저 지정해주세요.')
+      setError('작업을 시작하려면 작업 폴더를 먼저 지정해주세요.')
       return
     }
 
     setError(null)
+    let taskWorkspace
+    try {
+      taskWorkspace = await window.api.tasks.prepare(text)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      return
+    }
+
+    const workflowPrompt = `[필수 작업 운영정책]\n작업 폴더: ${taskWorkspace.rootPath}\n1. 다른 작업과 섞지 말고 반드시 위 하위 폴더 안에서 작업하세요.\n2. 구현 전에 ${taskWorkspace.specPath}의 SRS·PRD·화면설계를 먼저 구체화하세요.\n3. ${taskWorkspace.phasesPath}에 작업을 Phase로 나누고 한 번에 한 Phase만 수행하세요.\n4. 각 Phase 완료 시 관련 테스트와 빌드를 실행하고, 문서 체크박스와 결과를 갱신한 뒤 현재 Git 저장소에 커밋하고 origin/main으로 푸시하세요.\n5. 전체 작업 완료 시 ${taskWorkspace.readmePath}에 최종 결과물, 실행법, 검증 결과, 변경 이력을 완성하세요.\n6. 직접 지정된 팀장은 하위 세션 사용 여부와 작업 방법을 자율적으로 결정하세요.\n\n[사용자 요청]\n${text}`
+    addSystemMessage(`작업 폴더와 기획 문서 생성 완료: ${taskWorkspace.taskId}`)
+
+    if (selectedTargetIds.size > 0) {
+      sendPrompt(workflowPrompt, Array.from(selectedTargetIds), instances, text)
+      return
+    }
+
     const plan = planTask(text)
+    addSystemMessage(`작업 계획: ${plan.reason}`)
     let availableInstances = instances
     const leaders: AgentInstance[] = []
 
@@ -118,12 +131,12 @@ function App() {
       }
       setInstances(availableInstances)
       if (plan.complexity === 'simple') {
-        sendPrompt(text, leaders.map((leader) => leader.instanceId), availableInstances)
+        sendPrompt(workflowPrompt, leaders.map((leader) => leader.instanceId), availableInstances, text)
       } else {
         const specialties: Record<string, string> = {
-          'claude-code': '요구사항 분석 및 설계 검토',
-          'codex-cli': '구현 및 테스트',
-          'antigravity-cli': 'UI 품질 및 통합 검증'
+          'claude-code': '코딩·아키텍처·통합 구현',
+          'codex-cli': '애니메이션·상호작용·동작 검증',
+          'antigravity-cli': '이미지 생성·픽셀 자산·시각 품질'
         }
         const assignments = leaders.flatMap((leader) => {
           const templateName = templates.find((template) => template.id === leader.templateId)?.name ?? leader.templateId
@@ -133,7 +146,7 @@ function App() {
           const leadAssignment = {
             instanceId: leader.instanceId,
             role: `${templateName} 팀장 · 조율`,
-            prompt: `[팀장 역할] 아래 요청을 검토하고 ${templateName} 팀의 실행 계획과 최종 취합 기준을 제시하세요.\n\n${text}`
+            prompt: `[팀장 역할] 아래 운영정책을 지키며 ${templateName} 팀의 실행 계획과 최종 취합 기준을 제시하세요.\n\n${workflowPrompt}`
           }
           return child
             ? [
@@ -141,7 +154,7 @@ function App() {
                 {
                   instanceId: child.instanceId,
                   role: `${templateName} 하위 세션 · ${specialties[leader.templateId]}`,
-                  prompt: `[하위 세션 역할: ${specialties[leader.templateId]}] 아래 요청에서 맡은 영역을 수행하고 팀장이 취합할 수 있는 결과와 검증 내용을 명확히 보고하세요.\n\n${text}`
+                  prompt: `[하위 세션 역할: ${specialties[leader.templateId]}] 아래 운영정책을 지키며 맡은 영역을 수행하고 팀장이 취합할 수 있는 결과와 검증 내용을 명확히 보고하세요.\n\n${workflowPrompt}`
                 }
               ]
             : [leadAssignment]

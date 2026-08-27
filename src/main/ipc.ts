@@ -4,6 +4,7 @@ import { agentTemplateStore } from './agentStore'
 import { workspaceStore } from './workspaceStore'
 import { instanceManager } from './instanceManager'
 import { openSettingsWindow } from './windowManager'
+import { taskWorkspaceManager } from './taskWorkspaceManager'
 import type {
   AgentTemplateInput,
   AgentTemplatePatch,
@@ -74,6 +75,12 @@ export function registerIpcHandlers(): void {
     const folder = result.filePaths[0]
     workspaceStore.set(folder)
     return folder
+  })
+
+  ipcMain.handle('tasks:prepare', (_event, request: string) => {
+    const workspace = workspaceStore.get()
+    if (!workspace) throw new Error('작업 폴더를 먼저 지정해주세요.')
+    return taskWorkspaceManager.prepare(workspace, request)
   })
 
   ipcMain.handle('instances:list', () => instanceManager.list())

@@ -54,6 +54,13 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
   const globalAggregationRef = useRef<GlobalAggregation | null>(null)
   const globalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const addSystemMessage = (text: string): void => {
+    setMessages((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), kind: 'system', authorName: '', authorColor: '', authorSeed: '', text }
+    ])
+  }
+
   const flushGlobalAggregation = (): void => {
     const aggregation = globalAggregationRef.current
     if (!aggregation || aggregation.summaries.size < aggregation.expectedLeadIds.size) return
@@ -227,7 +234,12 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
     }
   }, [])
 
-  const sendPrompt = (text: string, targetInstanceIds: string[], sourceInstances = instances): void => {
+  const sendPrompt = (
+    text: string,
+    targetInstanceIds: string[],
+    sourceInstances = instances,
+    displayText = text
+  ): void => {
     const targets = sourceInstances.filter((i) => targetInstanceIds.includes(i.instanceId))
     if (targets.length === 0) return
 
@@ -243,7 +255,7 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
         authorName: '나',
         authorColor: '#6ea8fe',
         authorSeed: 'me',
-        text
+        text: displayText
       },
       {
         id: crypto.randomUUID(),
@@ -345,5 +357,5 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
     }
   }
 
-  return { messages, lastTaskByInstance, sendPrompt, sendAssignments }
+  return { messages, lastTaskByInstance, sendPrompt, sendAssignments, addSystemMessage }
 }

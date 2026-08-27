@@ -52,6 +52,9 @@ const api: PreloadApi = {
     getWorkFolder: (): Promise<string | null> => ipcRenderer.invoke('workspace:get'),
     chooseWorkFolder: (): Promise<string | null> => ipcRenderer.invoke('workspace:choose')
   },
+  tasks: {
+    prepare: (request: string) => ipcRenderer.invoke('tasks:prepare', request)
+  },
   instances: {
     list: (): Promise<AgentInstance[]> => ipcRenderer.invoke('instances:list'),
     create: (templateId: string): Promise<AgentInstance[]> =>

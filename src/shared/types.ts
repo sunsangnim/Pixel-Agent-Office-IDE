@@ -90,6 +90,19 @@ export interface WorkspaceApi {
   chooseWorkFolder(): Promise<string | null>
 }
 
+export interface TaskWorkspace {
+  taskId: string
+  title: string
+  rootPath: string
+  specPath: string
+  phasesPath: string
+  readmePath: string
+}
+
+export interface TaskApi {
+  prepare(request: string): Promise<TaskWorkspace>
+}
+
 export interface AgentInstanceApi {
   list(): Promise<AgentInstance[]>
   create(templateId: string): Promise<AgentInstance[]>
@@ -105,6 +118,7 @@ export interface PreloadApi {
   pty: PtyApi
   templates: AgentTemplateApi
   workspace: WorkspaceApi
+  tasks: TaskApi
   instances: AgentInstanceApi
   system: SystemApi
 }
