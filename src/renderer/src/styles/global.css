@@ -612,23 +612,35 @@ body {
   position: relative;
   width: auto;
   height: auto;
-  border: 3px solid #d4e8e3;
-  border-top-width: 2px;
-  border-bottom: 0;
-  margin: 3px 2px 0;
-  background: linear-gradient(118deg, transparent 20%, rgba(255, 255, 255, 0.25) 21% 25%, transparent 26%), rgba(190, 226, 218, 0.14);
-  box-shadow: inset 3px 0 rgba(255, 255, 255, 0.18), 2px 0 #5f817a;
+  border: 3px solid #e3f1ed;
+  border-bottom: 4px solid #355851;
+  margin: 0;
+  background: linear-gradient(118deg, transparent 17%, rgba(255, 255, 255, 0.34) 18% 25%, transparent 26%), rgba(183, 224, 216, 0.22);
+  box-shadow: inset 3px 0 rgba(255, 255, 255, 0.24), inset -2px 0 #74978f, -2px 0 #345851;
   pointer-events: none;
 }
 
+.pantry-glass-door::before,
+.pantry-glass-door::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  width: 3px;
+  height: 5px;
+  background: #41625b;
+}
+
+.pantry-glass-door::before { top: 5px; }
+.pantry-glass-door::after { bottom: 5px; }
+
 .pantry-glass-door i {
   position: absolute;
-  right: 4px;
+  right: 5px;
   top: 45%;
   width: 3px;
   height: 6px;
-  background: #3d5651;
-  box-shadow: 1px 1px #b8d2cc;
+  background: #223d37;
+  box-shadow: 1px 1px #d6e9e4;
 }
 
 .zone-label {
