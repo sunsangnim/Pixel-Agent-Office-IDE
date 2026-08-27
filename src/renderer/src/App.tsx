@@ -7,6 +7,9 @@ import ChatPanel from './components/ChatPanel'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
 import { useAgentChat } from './hooks/useAgentChat'
 import { planTask } from './lib/taskRouter'
+import { isMeetingEndCommand, isMeetingStartCommand } from './lib/meetingCommands'
+
+const MEETING_CHECKPOINT_KEY = 'pixel-office:meeting-checkpoint'
 
 function App() {
   const [workFolder, setWorkFolder] = useState<string | null>(null)
@@ -16,6 +19,7 @@ function App() {
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
+  const [meetingActive, setMeetingActive] = useState(() => Boolean(localStorage.getItem(MEETING_CHECKPOINT_KEY)))
   const { deskStatuses: statuses, runtimeStates } = usePtyStatuses()
   const { messages, lastTaskByInstance, sendPrompt, sendAssignments, addSystemMessage } = useAgentChat(instances, templates)
 
@@ -56,6 +60,27 @@ function App() {
   }
 
   const sendPromptToSelected = async (text: string): Promise<void> => {
+    if (isMeetingStartCommand(text)) {
+      const checkpoint = {
+        startedAt: new Date().toISOString(),
+        sessions: instances.map((instance) => ({
+          instanceId: instance.instanceId,
+          ptyId: instance.ptyId,
+          runtimeState: runtimeStates[instance.ptyId]?.state ?? 'idle',
+          task: lastTaskByInstance[instance.instanceId] ?? ''
+        }))
+      }
+      localStorage.setItem(MEETING_CHECKPOINT_KEY, JSON.stringify(checkpoint))
+      setMeetingActive(true)
+      addSystemMessage(`전체 회의 시작: ${checkpoint.sessions.length}개 CLI 세션을 종료하지 않고 작업 체크포인트를 저장했습니다.`)
+      return
+    }
+    if (isMeetingEndCommand(text)) {
+      setMeetingActive(false)
+      localStorage.removeItem(MEETING_CHECKPOINT_KEY)
+      addSystemMessage('전체 회의 종료: 보존한 세션과 이전 업무 상태로 복귀합니다.')
+      return
+    }
     if (!workFolder) {
       setError('작업을 시작하려면 작업 폴더를 먼저 지정해주세요.')
       return
@@ -167,6 +192,7 @@ function App() {
           selectedInstanceId={selectedInstanceId}
           onSelect={setSelectedInstanceId}
           onRemove={removeInstance}
+          meetingActive={meetingActive}
         />
 
         <AgentProfileRow

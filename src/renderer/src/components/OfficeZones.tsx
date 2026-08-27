@@ -1,14 +1,29 @@
-function OfficeZones() {
+interface OfficeZonesProps {
+  now: Date
+  elevatorOpen: boolean
+  pantryOpen: boolean
+  meetingOpen: boolean
+}
+
+function OfficeZones({ now, elevatorOpen, pantryOpen, meetingOpen }: OfficeZonesProps) {
+  const hour = now.getHours() % 12
+  const minute = now.getMinutes()
+  const second = now.getSeconds()
   return (
     <div className="office-zones">
       <div className="zone zone-pantry">
         <span className="zone-label">탕비실</span>
+        <div className="pantry-clock" aria-label={`현재 시각 ${now.toLocaleTimeString('ko-KR')}`}>
+          <i className="clock-hour" style={{ transform: `rotate(${hour * 30 + minute * 0.5}deg)` }} />
+          <i className="clock-minute" style={{ transform: `rotate(${minute * 6}deg)` }} />
+          <i className="clock-second" style={{ transform: `rotate(${second * 6}deg)` }} />
+        </div>
         <div className="pantry-fridge" />
         <div className="pantry-counter"><span>☕</span><span>🍪</span><span>🥤</span><span>🍫</span></div>
         <div className="pantry-glass-wall" aria-label="탕비실 전면 유리벽과 통합 출입문">
           <span className="pantry-glass-panel" />
           <span className="pantry-glass-panel" />
-          <span className="office-glass-door pantry-glass-door"><i /></span>
+          <span className={`office-glass-door pantry-glass-door${pantryOpen ? ' office-glass-door-open' : ''}`}><i /></span>
         </div>
       </div>
       <div className="zone zone-meeting">
@@ -26,10 +41,11 @@ function OfficeZones() {
             <span className="chair" /><span className="chair" /><span className="chair" />
           </div>
         </div>
+        <span className={`office-glass-door meeting-access-door${meetingOpen ? ' office-glass-door-open' : ''}`} aria-label="회의실 출입문"><i /></span>
       </div>
       <div className="zone zone-entrance">
         <span className="zone-label">출입구</span>
-        <div className="elevator-door">
+        <div className={`elevator-door office-door-interactive${elevatorOpen ? ' office-door-open' : ''}`}>
           <span className="elevator-door-leaf" /><span className="elevator-door-leaf" />
           <span className="elevator-indicator">▲</span>
         </div>

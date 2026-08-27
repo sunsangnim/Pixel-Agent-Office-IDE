@@ -425,10 +425,47 @@ body {
 
 .pixel-background-enabled .pantry-fridge,
 .pixel-background-enabled .pantry-counter,
-.pixel-background-enabled .elevator-door,
 .pixel-background-enabled .office-deco {
   visibility: hidden;
 }
+
+.pantry-clock {
+  position: absolute;
+  z-index: 5;
+  top: 9px;
+  right: 42px;
+  width: 22px;
+  height: 22px;
+  border: 3px solid #534334;
+  border-radius: 50%;
+  background: #f4ead4;
+  box-shadow: inset 0 0 0 2px #c9b58f, 2px 2px #365b52;
+  image-rendering: pixelated;
+}
+
+.pantry-clock::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  left: 8px;
+  width: 3px;
+  height: 3px;
+  background: #493c31;
+}
+
+.pantry-clock i {
+  position: absolute;
+  bottom: 9px;
+  left: 9px;
+  width: 2px;
+  background: #493c31;
+  transform-origin: 50% 100%;
+}
+
+.pantry-clock .clock-hour { height: 6px; }
+.pantry-clock .clock-minute { height: 8px; background: #273d3a; }
+.pantry-clock .clock-second { width: 1px; height: 8px; background: #b84f3b; }
 
 .pixel-background-enabled .zone-label {
   padding: 2px 5px;
@@ -658,6 +695,26 @@ body {
   border-top-color: #f0faf7;
 }
 
+.office-glass-door-open {
+  transform: translateX(72%);
+  opacity: 0.42;
+  transition: transform 0.42s steps(6, end), opacity 0.42s steps(4, end);
+}
+
+.meeting-access-door {
+  position: absolute;
+  z-index: 6;
+  bottom: -2px;
+  left: 50%;
+  width: 38px;
+  height: 42px;
+  transform: translateX(-50%);
+}
+
+.meeting-access-door.office-glass-door-open {
+  transform: translateX(24%);
+}
+
 .zone-label {
   position: absolute;
   top: 4px;
@@ -779,6 +836,36 @@ body {
   border: 2px solid #565f68;
   border-radius: 2px;
   overflow: hidden;
+}
+
+.pixel-background-enabled .elevator-door.office-door-interactive {
+  visibility: visible;
+  position: absolute;
+  z-index: 6;
+  top: 38px;
+  left: 65%;
+  width: 43px;
+  height: 62px;
+  transform: translateX(-50%);
+  opacity: 0.96;
+}
+
+.office-agent[data-seated='true'] .room-agent-sprite {
+  transform: translateY(3px) scaleY(0.9);
+}
+
+.office-agent[data-pantry-action='snacking'] .room-agent-bubble::before { content: '🍪 '; }
+.office-agent[data-pantry-action='drinking'] .room-agent-bubble::before { content: '🥤 '; }
+
+.elevator-door-leaf {
+  transition: transform 0.48s steps(6, end);
+}
+
+.office-door-open .elevator-door-leaf:first-child { transform: translateX(-92%); }
+.office-door-open .elevator-door-leaf:last-child { transform: translateX(92%); }
+
+.office-door-open {
+  box-shadow: inset 0 0 0 3px #111923, 0 0 0 2px rgba(126, 224, 196, 0.36);
 }
 
 .elevator-door-leaf {
@@ -948,6 +1035,39 @@ body {
 .representative-office .desk-asset-wrap { width: 82px; height: 68px; }
 .representative-office .desk-sprite { width: 82px; height: auto; }
 
+.representative-rug {
+  position: absolute;
+  z-index: 1;
+  top: 31%;
+  left: 48%;
+  width: 88px;
+  height: 70px;
+  transform: translateX(-50%);
+  border: 0;
+  background: repeating-linear-gradient(90deg, rgba(107, 142, 132, 0.16) 0 8px, rgba(210, 228, 217, 0.1) 8px 12px);
+  box-shadow: inset 0 0 0 2px rgba(53, 78, 73, 0.18);
+}
+
+.representative-bookcase {
+  position: absolute;
+  z-index: 2;
+  top: 30px;
+  right: 8px;
+  width: 28px;
+  height: 48px;
+  border: 3px solid #5a3d2c;
+  background: #9b653d;
+  box-shadow: inset 0 4px #c78c55, 2px 2px #36574f;
+}
+
+.representative-bookcase i {
+  display: block;
+  height: 11px;
+  margin: 3px 3px 0;
+  border-bottom: 3px solid #573d2e;
+  background: linear-gradient(90deg, #d5b563 0 22%, #6f8f75 23% 46%, #b95f4b 47% 69%, #e0d0a0 70%);
+}
+
 .representative-sofa {
   position: absolute;
   z-index: 2;
@@ -1002,6 +1122,37 @@ body {
 }
 
 .representative-side-table i { position: absolute; left: 5px; top: -7px; width: 5px; height: 5px; background: #e7c36e; border: 1px solid #72502f; }
+
+.representative-floor-lamp {
+  position: absolute;
+  z-index: 2;
+  right: 58px;
+  bottom: 8px;
+  width: 15px;
+  height: 37px;
+  border-bottom: 4px solid #5a4330;
+}
+
+.representative-floor-lamp::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  bottom: 3px;
+  width: 3px;
+  height: 24px;
+  background: #554b3d;
+}
+
+.representative-floor-lamp i {
+  position: absolute;
+  top: 0;
+  left: 1px;
+  width: 13px;
+  height: 10px;
+  border: 2px solid #715631;
+  background: #eac66f;
+  box-shadow: 0 0 4px rgba(240, 205, 111, 0.5);
+}
 
 .representative-glass-front {
   position: absolute;

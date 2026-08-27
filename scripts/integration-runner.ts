@@ -7,6 +7,8 @@ import { BUILT_IN_AGENT_PROFILES } from '../src/shared/agentProfiles'
 import { ORCHESTRATION_POLICY } from '../src/shared/orchestrationPolicy'
 import type { AgentRuntimeState, AgentStatePayload, CliAdapterId } from '../src/shared/types'
 import { planTask } from '../src/renderer/src/lib/taskRouter'
+import { isMeetingEndCommand, isMeetingStartCommand } from '../src/renderer/src/lib/meetingCommands'
+import { isWorkingTime } from '../src/renderer/src/hooks/useOfficeClock'
 
 interface RecordedEvent {
   channel: string
@@ -78,6 +80,12 @@ function verifyRoutingAndProfiles(): void {
   assert.equal(adapterIdForTemplate('claude-code'), 'claude')
   assert.equal(adapterIdForTemplate('codex-cli'), 'codex')
   assert.equal(adapterIdForTemplate('antigravity-cli'), 'antigravity')
+  assert.equal(isMeetingStartCommand('회의하자'), true)
+  assert.equal(isMeetingStartCommand('다 모여'), true)
+  assert.equal(isMeetingEndCommand('회의 종료'), true)
+  assert.equal(isWorkingTime(new Date(2026, 7, 28, 8, 0)), true)
+  assert.equal(isWorkingTime(new Date(2026, 7, 28, 16, 59)), true)
+  assert.equal(isWorkingTime(new Date(2026, 7, 28, 17, 0)), false)
   console.log('PASS routing, 15 profiles, and orchestration policy')
 }
 

@@ -6,6 +6,7 @@ import type { OfficePresence } from '@shared/types'
 import OfficeAgentLayer from './OfficeAgentLayer'
 import { useOfficePresence } from '../hooks/useOfficePresence'
 import RepresentativeOffice from './RepresentativeOffice'
+import { useOfficeClock } from '../hooks/useOfficeClock'
 
 interface OfficeViewProps {
   instances: AgentInstance[]
@@ -17,6 +18,7 @@ interface OfficeViewProps {
   selectedInstanceId: string | null
   onSelect: (instanceId: string) => void
   onRemove: (instanceId: string) => void
+  meetingActive: boolean
 }
 
 function OfficeView({
@@ -28,9 +30,20 @@ function OfficeView({
   tasks,
   selectedInstanceId,
   onSelect,
-  onRemove
+  onRemove,
+  meetingActive
 }: OfficeViewProps) {
-  const presenceByProfile = useOfficePresence(profiles, instances, runtimeStates, tasks)
+  const officeClock = useOfficeClock()
+  const presenceByProfile = useOfficePresence(
+    profiles,
+    instances,
+    runtimeStates,
+    tasks,
+    officeClock.isWorkingHours,
+    meetingActive
+  )
+  const pantryOccupied = Object.values(presenceByProfile).some((presence) => presence === 'pantry')
+  const meetingOccupied = Object.values(presenceByProfile).some((presence) => presence === 'meeting')
   const teamIds = Array.from(new Set(profiles.map((profile) => profile.templateId)))
   const teamLabels: Record<string, string> = {
     'claude-code': 'Team Claude',
@@ -68,7 +81,12 @@ function OfficeView({
 
   return (
     <div className="office-room has-agent-layer pixel-background-enabled">
-      <OfficeZones />
+      <OfficeZones
+        now={officeClock.now}
+        elevatorOpen={officeClock.isClockInActive}
+        pantryOpen={pantryOccupied}
+        meetingOpen={meetingActive || meetingOccupied}
+      />
       <OfficeAgentLayer
         profiles={profiles}
         instances={instances}

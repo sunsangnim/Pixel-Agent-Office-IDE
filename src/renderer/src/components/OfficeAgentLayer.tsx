@@ -11,9 +11,13 @@ interface OfficeAgentLayerProps {
 }
 
 const TEAM_X = [12, 36, 60]
+const MEETING_SEATS = [
+  { x: 42, y: 14 }, { x: 48, y: 14 }, { x: 54, y: 14 }, { x: 60, y: 14 },
+  { x: 42, y: 24 }, { x: 48, y: 24 }, { x: 54, y: 24 }, { x: 60, y: 24 }
+]
 
 function activityLabel(presence: OfficePresence): string | undefined {
-  if (presence === 'pantry') return '휴식 중'
+  if (presence === 'pantry') return '간식·음료'
   if (presence === 'meeting') return '회의 중'
   if (presence === 'requestingHelp') return '승인 필요!'
   if (presence === 'error') return '오류 발생'
@@ -28,7 +32,7 @@ function position(
   presence: OfficePresence
 ): { x: number; y: number } {
   if (presence === 'pantry') return { x: 9 + (profileIndex % 3) * 6, y: 18 }
-  if (presence === 'meeting') return { x: 42 + (profileIndex % 4) * 6, y: 18 }
+  if (presence === 'meeting') return MEETING_SEATS[profileIndex % MEETING_SEATS.length]
   const teamX = TEAM_X[teamIndex] ?? 48
   if (profile.slotIndex === 0) return { x: teamX, y: 47 }
   const childIndex = profile.slotIndex - 1
@@ -48,7 +52,7 @@ function OfficeAgentLayer({ profiles, instances, templates, presenceByProfile }:
       {profiles.flatMap((profile, profileIndex) => {
         const instance = instances.find((candidate) => candidate.profileId === profile.profileId)
         const presence = presenceByProfile[profile.profileId] ?? 'offDuty'
-        if (!instance || presence === 'offDuty') return []
+        if (presence === 'offDuty') return []
         const template = templates.find((candidate) => candidate.id === profile.templateId)
         const teamIndex = teamIds.indexOf(profile.templateId)
         const coords = position(profile, profileIndex, teamIndex, presence)
@@ -59,6 +63,8 @@ function OfficeAgentLayer({ profiles, instances, templates, presenceByProfile }:
             className={`office-agent office-agent-${presence}`}
             data-profile-id={profile.profileId}
             data-from-presence={fromPresence}
+            data-seated={presence === 'working' || presence === 'meeting' ? 'true' : 'false'}
+            data-pantry-action={presence === 'pantry' ? (profileIndex % 2 === 0 ? 'snacking' : 'drinking') : undefined}
             key={profile.profileId}
             role="img"
             aria-label={`${profile.displayName}: ${activityLabel(presence) ?? '책상 대기 중'}`}

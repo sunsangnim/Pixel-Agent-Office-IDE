@@ -17,7 +17,9 @@ export function useOfficePresence(
   profiles: AgentProfile[],
   instances: AgentInstance[],
   runtimeStates: Record<string, AgentStatePayload>,
-  tasks: Record<string, string>
+  tasks: Record<string, string>,
+  isWorkingHours: boolean,
+  meetingActive: boolean
 ): Record<string, OfficePresence> {
   const [presenceByProfile, setPresenceByProfile] = useState<Record<string, OfficePresence>>({})
   const restTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
@@ -32,13 +34,16 @@ export function useOfficePresence(
         clearTimeout(previousTimer)
         restTimers.current.delete(profile.profileId)
         restedProfiles.current.delete(profile.profileId)
-        immediate[profile.profileId] = 'offDuty'
+        immediate[profile.profileId] = profile.rank === 'teamLead' && isWorkingHours
+          ? meetingActive ? 'meeting' : 'deskIdle'
+          : 'offDuty'
         continue
       }
 
       const runtimeState = runtimeStates[instance.ptyId]?.state
       const task = tasks[instance.instanceId] ?? ''
-      if (runtimeState === 'error') immediate[profile.profileId] = 'error'
+      if (meetingActive) immediate[profile.profileId] = 'meeting'
+      else if (runtimeState === 'error') immediate[profile.profileId] = 'error'
       else if (runtimeState === 'waiting') immediate[profile.profileId] = 'requestingHelp'
       else if (/취합|회의|조율/.test(task) && runtimeState === 'working') {
         immediate[profile.profileId] = 'meeting'
@@ -70,7 +75,7 @@ export function useOfficePresence(
       }
     }
     setPresenceByProfile((prev) => ({ ...prev, ...immediate }))
-  }, [instances, profiles, runtimeStates, tasks])
+  }, [instances, profiles, runtimeStates, tasks, isWorkingHours, meetingActive])
 
   useEffect(
     () => () => {
