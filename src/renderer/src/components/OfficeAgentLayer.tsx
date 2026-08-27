@@ -10,7 +10,7 @@ interface OfficeAgentLayerProps {
   presenceByProfile: Record<string, OfficePresence>
 }
 
-const TEAM_X = [16, 48, 78]
+const TEAM_X = [12, 36, 60]
 
 function activityLabel(presence: OfficePresence): string | undefined {
   if (presence === 'pantry') return '휴식 중'

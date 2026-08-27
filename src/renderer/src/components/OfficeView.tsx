@@ -5,6 +5,7 @@ import OfficeZones from './OfficeZones'
 import type { OfficePresence } from '@shared/types'
 import OfficeAgentLayer from './OfficeAgentLayer'
 import { useOfficePresence } from '../hooks/useOfficePresence'
+import RepresentativeOffice from './RepresentativeOffice'
 
 interface OfficeViewProps {
   instances: AgentInstance[]
@@ -93,6 +94,7 @@ function OfficeView({
             )
           })}
         </div>
+        <RepresentativeOffice />
       </div>
     </div>
   )
