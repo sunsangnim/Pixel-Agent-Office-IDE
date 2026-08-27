@@ -1,0 +1,31 @@
+{
+  "name": "pixel-agent-office-ide",
+  "version": "0.1.0",
+  "description": "Pixel-art multi-agent CLI office IDE",
+  "main": "./out/main/index.js",
+  "private": true,
+  "author": "",
+  "homepage": "https://github.com/sunsangnim/Pixel-Agent-Office-IDE",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "dependencies": {
+    "electron-store": "^11.0.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}
