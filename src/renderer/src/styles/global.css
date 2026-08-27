@@ -432,40 +432,27 @@ body {
 .pantry-clock {
   position: absolute;
   z-index: 5;
-  top: 9px;
-  right: 42px;
-  width: 22px;
-  height: 22px;
-  border: 3px solid #534334;
-  border-radius: 50%;
-  background: #f4ead4;
-  box-shadow: inset 0 0 0 2px #c9b58f, 2px 2px #365b52;
+  top: 11px;
+  right: 1px;
+  width: 48px;
+  height: 20px;
+  box-sizing: border-box;
+  border: 3px solid #4b3c31;
+  background: #1d2828;
+  box-shadow: inset 0 0 0 2px #65746c, 2px 2px #365b52;
   image-rendering: pixelated;
 }
 
-.pantry-clock::after {
-  content: '';
-  position: absolute;
-  z-index: 3;
-  top: 8px;
-  left: 8px;
-  width: 3px;
-  height: 3px;
-  background: #493c31;
+.pantry-clock time {
+  display: block;
+  color: #9ff0b8;
+  font-family: Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  text-shadow: 1px 1px #173223;
 }
-
-.pantry-clock i {
-  position: absolute;
-  bottom: 9px;
-  left: 9px;
-  width: 2px;
-  background: #493c31;
-  transform-origin: 50% 100%;
-}
-
-.pantry-clock .clock-hour { height: 6px; }
-.pantry-clock .clock-minute { height: 8px; background: #273d3a; }
-.pantry-clock .clock-second { width: 1px; height: 8px; background: #b84f3b; }
 
 .pixel-background-enabled .zone-label {
   padding: 2px 5px;
@@ -831,7 +818,7 @@ body {
   position: relative;
   width: 40px;
   height: 52px;
-  display: flex;
+  display: block;
   background: #2a2f36;
   border: 2px solid #565f68;
   border-radius: 2px;
@@ -843,8 +830,8 @@ body {
   position: absolute;
   z-index: 6;
   top: 38px;
-  left: 65%;
-  width: 43px;
+  left: 50%;
+  width: 62px;
   height: 62px;
   transform: translateX(-50%);
   opacity: 0.96;
@@ -858,23 +845,29 @@ body {
 .office-agent[data-pantry-action='drinking'] .room-agent-bubble::before { content: '🥤 '; }
 
 .elevator-door-leaf {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
   transition: transform 0.48s steps(6, end);
 }
 
-.office-door-open .elevator-door-leaf:first-child { transform: translateX(-92%); }
-.office-door-open .elevator-door-leaf:last-child { transform: translateX(92%); }
+.office-door-open .elevator-door-leaf:first-child { transform: translateX(-100%); }
+.office-door-open .elevator-door-leaf:last-child { transform: translateX(100%); }
 
 .office-door-open {
   box-shadow: inset 0 0 0 3px #111923, 0 0 0 2px rgba(126, 224, 196, 0.36);
 }
 
 .elevator-door-leaf {
-  flex: 1;
+  left: 0;
   background: linear-gradient(90deg, #7d8894, #98a2ac);
   border-right: 1px solid #3a3f45;
 }
 
 .elevator-door-leaf:last-child {
+  left: auto;
+  right: 0;
   border-right: none;
   border-left: 1px solid #3a3f45;
 }
@@ -1035,19 +1028,6 @@ body {
 .representative-office .desk-asset-wrap { width: 82px; height: 68px; }
 .representative-office .desk-sprite { width: 82px; height: auto; }
 
-.representative-rug {
-  position: absolute;
-  z-index: 1;
-  top: 31%;
-  left: 48%;
-  width: 88px;
-  height: 70px;
-  transform: translateX(-50%);
-  border: 0;
-  background: repeating-linear-gradient(90deg, rgba(107, 142, 132, 0.16) 0 8px, rgba(210, 228, 217, 0.1) 8px 12px);
-  box-shadow: inset 0 0 0 2px rgba(53, 78, 73, 0.18);
-}
-
 .representative-bookcase {
   position: absolute;
   z-index: 2;
@@ -1154,32 +1134,91 @@ body {
   box-shadow: 0 0 4px rgba(240, 205, 111, 0.5);
 }
 
+.representative-plant,
+.representative-side-table,
+.representative-floor-lamp,
+.representative-bookcase,
+.representative-sofa {
+  width: 38px;
+  height: 62px;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  background-image: url('../assets/pixel-office/representative-furniture-row-v1.png');
+  background-repeat: no-repeat;
+  background-size: 510% 100%;
+  box-shadow: none;
+  image-rendering: pixelated;
+}
+
+.representative-plant {
+  left: 39px;
+  bottom: 2px;
+  width: 38px;
+  height: 58px;
+  background-image: url('../assets/pixel-office/representative-plant-v1.png');
+  background-position: center;
+  background-size: contain;
+}
+.representative-side-table { left: 73px; bottom: -12px; width: 47px; height: 85px; background-position: 25% center; }
+.representative-floor-lamp {
+  right: 55px;
+  bottom: 2px;
+  width: 24px;
+  height: 50px;
+  background-image: url('../assets/pixel-office/representative-floor-lamp-v1.png');
+  background-position: center;
+  background-size: contain;
+}
+.representative-bookcase { top: 13px; right: -3px; width: 42px; height: 76px; background-position: 75% center; clip-path: inset(0 9px 0 0); }
+.representative-sofa {
+  right: 1px;
+  bottom: 2px;
+  width: 55px;
+  height: 38px;
+  background-image: url('../assets/pixel-office/representative-sofa-v1.png');
+  background-position: center;
+  background-size: contain;
+}
+
+.representative-plant i,
+.representative-side-table i,
+.representative-floor-lamp i,
+.representative-bookcase i,
+.representative-sofa i,
+.representative-floor-lamp::before { display: none; }
+
 .representative-glass-front {
   position: absolute;
   z-index: 6;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 42px;
-  display: grid;
-  grid-template-rows: 48px 1fr;
-  border: 3px solid #3d625a;
-  border-left-color: #d9ece7;
-  border-right: 0;
-  background: rgba(145, 201, 191, 0.13);
-  box-shadow: inset 0 2px rgba(255, 255, 255, 0.34), 0 -2px #6b8d85;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
 }
 
 .representative-glass-panel {
-  border-bottom: 2px solid #66877f;
-  background: linear-gradient(120deg, transparent 18%, rgba(255,255,255,.24) 19% 23%, transparent 24% 67%, rgba(255,255,255,.1) 68% 71%, transparent 72%);
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0;
+  left: 42px;
+  height: 35px;
+  border-top: 3px solid #d9ece7;
+  border-bottom: 3px solid #66877f;
+  background: linear-gradient(155deg, rgba(255,255,255,.22) 0 8%, transparent 9% 38%, rgba(255,255,255,.12) 39% 45%, transparent 46%), rgba(145, 201, 191, 0.12);
+  box-shadow: inset 0 2px rgba(255,255,255,.24);
 }
 
-.representative-glass-panel:last-child { border-bottom: 0; border-top: 2px solid #66877f; }
-
 .representative-glass-door {
-  position: relative;
-  margin: 4px 0 0;
+  position: absolute;
+  z-index: 2;
+  top: 3px;
+  left: 0;
+  width: 42px;
+  height: 48px;
+  box-sizing: border-box;
   border: 3px solid #dcece8;
   border-left: 0;
   background: linear-gradient(120deg, transparent 20%, rgba(255,255,255,.3) 21% 26%, transparent 27%), rgba(173, 216, 208, .14);
@@ -1362,29 +1401,28 @@ body {
   width: 54px;
   height: 72px;
   transform: translateX(-50%);
-  background-image: url('../assets/pixel-office/character-sheet-v1.png');
-  background-size: 400% 200%;
-  background-position: 0 0;
+}
+
+.corporate-character-sprite {
+  display: block;
+  background-image: var(--roster-image);
+  background-position: var(--roster-position) center;
+  background-size: 500% 100%;
   background-repeat: no-repeat;
   image-rendering: pixelated;
 }
 
-.office-agent-working .generated-character-sprite {
-  background-position: 66.666% 100%;
-}
+.room-agent > .room-agent-sprite { opacity: 0; }
 
-.office-agent-deskIdle .generated-character-sprite {
-  background-position: 33.333% 100%;
-}
-
-.office-agent-requestingHelp .generated-character-sprite,
-.office-agent-error .generated-character-sprite {
-  background-position: 100% 100%;
-}
-
-.office-agent-pantry .generated-character-sprite,
-.office-agent-meeting .generated-character-sprite {
-  background-position: 0 0;
+.representative-character {
+  position: absolute;
+  left: 50%;
+  bottom: 9px;
+  z-index: 3;
+  width: 30px;
+  height: 60px;
+  transform: translateX(-50%);
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.24));
 }
 
 .room-agent-sprite .hair {
@@ -1669,6 +1707,13 @@ body {
 
 .profile-card .identicon-avatar {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
+}
+
+.profile-character {
+  width: 36px;
+  height: 58px;
+  flex: 0 0 auto;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.28));
 }
 
 .profile-card-running .identicon-avatar {

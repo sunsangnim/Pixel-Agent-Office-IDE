@@ -79,6 +79,7 @@ function OfficeAgentLayer({ profiles, instances, templates, presenceByProfile }:
               color={template?.color ?? '#888888'}
               name={profile.displayName}
               activity={activityLabel(presence)}
+              rosterIndex={profileIndex + 1}
             />
           </div>
         )

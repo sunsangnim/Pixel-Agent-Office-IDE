@@ -6,17 +6,13 @@ interface OfficeZonesProps {
 }
 
 function OfficeZones({ now, elevatorOpen, pantryOpen, meetingOpen }: OfficeZonesProps) {
-  const hour = now.getHours() % 12
-  const minute = now.getMinutes()
-  const second = now.getSeconds()
+  const digitalTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
   return (
     <div className="office-zones">
       <div className="zone zone-pantry">
         <span className="zone-label">탕비실</span>
         <div className="pantry-clock" aria-label={`현재 시각 ${now.toLocaleTimeString('ko-KR')}`}>
-          <i className="clock-hour" style={{ transform: `rotate(${hour * 30 + minute * 0.5}deg)` }} />
-          <i className="clock-minute" style={{ transform: `rotate(${minute * 6}deg)` }} />
-          <i className="clock-second" style={{ transform: `rotate(${second * 6}deg)` }} />
+          <time dateTime={`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`}>{digitalTime}</time>
         </div>
         <div className="pantry-fridge" />
         <div className="pantry-counter"><span>☕</span><span>🍪</span><span>🥤</span><span>🍫</span></div>

@@ -1,5 +1,5 @@
 import type { AgentInstance, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
-import IdenticonAvatar from './IdenticonAvatar'
+import CorporateCharacterSprite from './CorporateCharacterSprite'
 
 interface AgentProfileCardProps {
   instance: AgentInstance
@@ -9,6 +9,8 @@ interface AgentProfileCardProps {
   task?: string
   selected: boolean
   onToggle: () => void
+  displayName: string
+  rosterIndex: number
 }
 
 const statusLabel: Record<DeskStatus, string> = {
@@ -17,8 +19,7 @@ const statusLabel: Record<DeskStatus, string> = {
   error: '오류'
 }
 
-function AgentProfileCard({ instance, template, status, runtimeState, task, selected, onToggle }: AgentProfileCardProps) {
-  const name = template?.name ?? instance.templateId
+function AgentProfileCard({ instance, status, runtimeState, task, selected, onToggle, displayName, rosterIndex }: AgentProfileCardProps) {
   return (
     <button
       className={`profile-card profile-card-${status}${selected ? ' profile-card-selected' : ''}`}
@@ -26,8 +27,8 @@ function AgentProfileCard({ instance, template, status, runtimeState, task, sele
       title={instance.cwd}
     >
       {selected && <span className="profile-card-check">✓</span>}
-      <IdenticonAvatar seed={instance.instanceId} color={template?.color ?? '#888888'} size={48} />
-      <span className="profile-card-name">{name}</span>
+      <CorporateCharacterSprite rosterIndex={rosterIndex} className="profile-character" />
+      <span className="profile-card-name">{displayName}</span>
       <span className="profile-card-task">
         {runtimeState?.state === 'waiting'
           ? '승인 대기 중'

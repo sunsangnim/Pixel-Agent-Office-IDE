@@ -1,6 +1,6 @@
 import type { AgentInstance, AgentProfile, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
 import AgentProfileCard from './AgentProfileCard'
-import IdenticonAvatar from './IdenticonAvatar'
+import CorporateCharacterSprite from './CorporateCharacterSprite'
 
 interface AgentProfileRowProps {
   instances: AgentInstance[]
@@ -37,6 +37,7 @@ function AgentProfileRow({
           <h3 className="profile-team-title">{teamLabels[teamId] ?? `Team ${teamId}`}</h3>
           <div className="profile-team-cards">
             {profiles.filter((profile) => profile.templateId === teamId).map((profile) => {
+              const rosterIndex = profiles.indexOf(profile) + 1
               const instance = instances.find((candidate) => candidate.profileId === profile.profileId)
               const template = templates.find((candidate) => candidate.id === profile.templateId)
               return instance ? (
@@ -49,10 +50,12 @@ function AgentProfileRow({
                   task={tasks[instance.instanceId]}
                   selected={selectedTargetIds.has(instance.instanceId)}
                   onToggle={() => onToggleTarget(instance.instanceId)}
+                  displayName={profile.displayName}
+                  rosterIndex={rosterIndex}
                 />
               ) : (
                 <div className="profile-card profile-card-offduty" key={profile.profileId} title="CLI 프로세스 미실행">
-                  <IdenticonAvatar seed={profile.profileId} color={template?.color ?? '#888888'} size={48} />
+                  <CorporateCharacterSprite rosterIndex={rosterIndex} className="profile-character" />
                   <span className="profile-card-name">{profile.displayName}</span>
                   <span className="profile-card-task">미출근</span>
                 </div>
