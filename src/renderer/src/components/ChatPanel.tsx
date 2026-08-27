@@ -45,7 +45,7 @@ function ChatPanel({
         <div className="chat-user">
           <IdenticonAvatar seed="me-ceo" color="#6ea8fe" size={34} />
           <div className="chat-user-info">
-            <span className="chat-user-name">나</span>
+            <span className="chat-user-name">김태호</span>
             <span className="chat-user-title">대표</span>
           </div>
         </div>
@@ -56,14 +56,6 @@ function ChatPanel({
         >
           ⚙
         </button>
-      </div>
-
-      <div className="chat-folder-row">
-        <span className="chat-folder-label">폴더</span>
-        <span className="chat-folder-path" title={workFolder ?? ''}>
-          {workFolder ?? '미지정'}
-        </span>
-        <button onClick={onChooseFolder}>변경</button>
       </div>
 
       <div className="chat-thread" ref={threadRef}>
@@ -87,6 +79,14 @@ function ChatPanel({
             </div>
           )
         )}
+      </div>
+
+      <div className="chat-folder-row">
+        <span className="chat-folder-label">작업 폴더</span>
+        <span className="chat-folder-path" title={workFolder ?? ''}>
+          {workFolder ?? '미지정'}
+        </span>
+        <button onClick={onChooseFolder}>변경</button>
       </div>
 
       <div className={`chat-selected-row${selectedNames.length === 0 ? ' chat-auto-route' : ''}`}>

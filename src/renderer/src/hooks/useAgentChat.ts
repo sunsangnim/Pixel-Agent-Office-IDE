@@ -247,7 +247,7 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
       {
         id: crypto.randomUUID(),
         kind: 'user',
-        authorName: '나',
+        authorName: '김태호',
         authorColor: '#6ea8fe',
         authorSeed: 'me',
         text: displayText
@@ -318,7 +318,7 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
       {
         id: crypto.randomUUID(),
         kind: 'user',
-        authorName: '나',
+        authorName: '김태호',
         authorColor: '#6ea8fe',
         authorSeed: 'me',
         text: originalText

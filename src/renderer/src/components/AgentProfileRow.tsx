@@ -11,10 +11,6 @@ interface AgentProfileRowProps {
   tasks: Record<string, string>
   selectedTargetIds: Set<string>
   onToggleTarget: (instanceId: string) => void
-  workFolder: string | null
-  selectedTemplateId: string
-  onTemplateChange: (templateId: string) => void
-  onAdd: () => void
 }
 
 function AgentProfileRow({
@@ -25,11 +21,7 @@ function AgentProfileRow({
   runtimeStates,
   tasks,
   selectedTargetIds,
-  onToggleTarget,
-  workFolder,
-  selectedTemplateId,
-  onTemplateChange,
-  onAdd
+  onToggleTarget
 }: AgentProfileRowProps) {
   return (
     <div className="profile-row">
@@ -56,19 +48,6 @@ function AgentProfileRow({
         )
       })}
 
-      <div className="profile-add-card">
-        <span className="profile-add-plus">+</span>
-        <select value={selectedTemplateId} onChange={(e) => onTemplateChange(e.target.value)}>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-        <button onClick={onAdd} disabled={!workFolder || !selectedTemplateId}>
-          추가
-        </button>
-      </div>
     </div>
   )
 }

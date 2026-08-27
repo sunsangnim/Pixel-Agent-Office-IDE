@@ -6,6 +6,8 @@ interface WorkspaceSchema {
   workFolder: string | null
 }
 
+const DEFAULT_WORK_FOLDER = 'C:\\Users\\win10'
+
 function getStorePath(): string {
   return join(app.getPath('userData'), 'workspace.json')
 }
@@ -13,12 +15,12 @@ function getStorePath(): string {
 export const workspaceStore = {
   get(): string | null {
     const path = getStorePath()
-    if (!existsSync(path)) return null
+    if (!existsSync(path)) return DEFAULT_WORK_FOLDER
     try {
       const parsed = JSON.parse(readFileSync(path, 'utf-8')) as WorkspaceSchema
-      return parsed.workFolder ?? null
+      return parsed.workFolder ?? DEFAULT_WORK_FOLDER
     } catch {
-      return null
+      return DEFAULT_WORK_FOLDER
     }
   },
 

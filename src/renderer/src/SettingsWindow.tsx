@@ -168,7 +168,7 @@ function SettingsWindow() {
           submit()
         }}
       >
-        <h3>{editingId ? '템플릿 수정' : '새 템플릿 추가'}</h3>
+        <h3>{editingId ? '에이전트 수정' : '새 에이전트 추가'}</h3>
         <label>
           이름
           <input

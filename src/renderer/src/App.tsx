@@ -13,7 +13,6 @@ function App() {
   const [templates, setTemplates] = useState<AgentTemplate[]>([])
   const [instances, setInstances] = useState<AgentInstance[]>([])
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
-  const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +22,6 @@ function App() {
   const refreshTemplates = (): void => {
     window.api.templates.list().then((list) => {
       setTemplates(list)
-      setSelectedTemplateId((current) => current || list[0]?.id || '')
     })
     window.api.profiles.list().then(setProfiles)
   }
@@ -38,17 +36,6 @@ function App() {
   const chooseFolder = async (): Promise<void> => {
     const folder = await window.api.workspace.chooseWorkFolder()
     setWorkFolder(folder)
-  }
-
-  const addInstance = async (): Promise<void> => {
-    if (!workFolder || !selectedTemplateId) return
-    setError(null)
-    try {
-      const updated = await window.api.instances.create(selectedTemplateId)
-      setInstances(updated)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
   }
 
   const removeInstance = async (instanceId: string): Promise<void> => {
@@ -191,10 +178,6 @@ function App() {
           tasks={lastTaskByInstance}
           selectedTargetIds={selectedTargetIds}
           onToggleTarget={toggleTarget}
-          workFolder={workFolder}
-          selectedTemplateId={selectedTemplateId}
-          onTemplateChange={setSelectedTemplateId}
-          onAdd={addInstance}
         />
       </div>
 
