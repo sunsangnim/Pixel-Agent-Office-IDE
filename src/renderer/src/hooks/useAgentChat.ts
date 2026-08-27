@@ -174,60 +174,55 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
     )
   }
 
+  const finalizeCapture = (ptyId: string): void => {
+    const capture = capturesRef.current.get(ptyId)
+    if (!capture) return
+    capturesRef.current.delete(ptyId)
+    clearTimeout(capture.timer)
+    const text = stripAnsi(capture.buffer)
+    if (!text) return
+
+    const instance = instancesRef.current.find((candidate) => candidate.instanceId === capture.instanceId)
+    const template = instance
+      ? templatesRef.current.find((candidate) => candidate.id === instance.templateId)
+      : undefined
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        kind: 'agent',
+        authorName: template?.name ?? '에이전트',
+        authorColor: template?.color ?? '#888888',
+        authorSeed: capture.instanceId,
+        text
+      }
+    ])
+
+    if (instance?.parentInstanceId) {
+      queueChildReport(instance.parentInstanceId, {
+        childName: template?.name ?? '하위 세션',
+        text
+      })
+    } else if (capture.stage === 'teamSynthesis' && instance) {
+      queueTeamSummary(instance.instanceId, text)
+    } else if (capture.stage === 'globalSynthesis') {
+      addSystemMessage('총괄 코디네이터 최종 취합 완료')
+    }
+  }
+
   useEffect(() => {
-    const unsubscribe = window.api.pty.onData(({ ptyId, data }) => {
+    const unsubscribeData = window.api.pty.onData(({ ptyId, data }) => {
       const capture = capturesRef.current.get(ptyId)
       if (!capture) return
-
       capture.buffer += data
-      clearTimeout(capture.timer)
-      capture.timer = setTimeout(() => {
-        capturesRef.current.delete(ptyId)
-        const text = stripAnsi(capture.buffer)
-        if (!text) return
-
-        const instance = instancesRef.current.find((i) => i.instanceId === capture.instanceId)
-        const template = instance
-          ? templatesRef.current.find((t) => t.id === instance.templateId)
-          : undefined
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            kind: 'agent',
-            authorName: template?.name ?? '에이전트',
-            authorColor: template?.color ?? '#888888',
-            authorSeed: capture.instanceId,
-            text
-          }
-        ])
-
-        if (instance?.parentInstanceId) {
-          queueChildReport(instance.parentInstanceId, {
-            childName: template?.name ?? '하위 세션',
-            text
-          })
-        } else if (capture.stage === 'teamSynthesis' && instance) {
-          queueTeamSummary(instance.instanceId, text)
-        } else if (capture.stage === 'globalSynthesis') {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              kind: 'system',
-              authorName: '',
-              authorColor: '',
-              authorSeed: '',
-              text: '총괄 코디네이터 최종 취합 완료'
-            }
-          ])
-        }
-      }, RESPONSE_IDLE_MS)
+    })
+    const unsubscribeState = window.api.pty.onState(({ ptyId, state }) => {
+      if (state === 'completed' || state === 'error' || state === 'exited') finalizeCapture(ptyId)
     })
 
     return () => {
-      unsubscribe()
+      unsubscribeData()
+      unsubscribeState()
       for (const timer of reportTimersRef.current.values()) clearTimeout(timer)
       reportTimersRef.current.clear()
       if (globalTimerRef.current) clearTimeout(globalTimerRef.current)

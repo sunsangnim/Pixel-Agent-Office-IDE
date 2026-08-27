@@ -71,6 +71,27 @@ class InstanceManager {
     return this.create(parent.templateId, parent.cwd, sender)
   }
 
+  restart(instanceId: string, sender: WebContents): AgentInstance[] {
+    const instance = this.instances.get(instanceId)
+    if (!instance) throw new Error('재시작할 에이전트 세션을 찾을 수 없습니다.')
+    const template = agentTemplateStore.list().find((candidate) => candidate.id === instance.templateId)
+    if (!template) throw new Error(`Unknown agent template: ${instance.templateId}`)
+
+    ptyManager.kill(instance.ptyId)
+    const ptyId = ptyManager.spawn(
+      {
+        command: template.command,
+        args: template.args,
+        cwd: instance.cwd,
+        env: template.env,
+        adapterId: adapterIdForTemplate(template.id)
+      },
+      sender
+    )
+    this.instances.set(instanceId, { ...instance, ptyId, presence: 'deskIdle' })
+    return this.list()
+  }
+
   remove(instanceId: string): AgentInstance[] {
     const instance = this.instances.get(instanceId)
     if (instance) {

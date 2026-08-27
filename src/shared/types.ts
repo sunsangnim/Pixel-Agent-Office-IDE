@@ -128,6 +128,7 @@ export interface AgentInstanceApi {
   list(): Promise<AgentInstance[]>
   create(templateId: string): Promise<AgentInstance[]>
   createChild(parentInstanceId: string): Promise<AgentInstance[]>
+  restart(instanceId: string): Promise<AgentInstance[]>
   remove(instanceId: string): Promise<AgentInstance[]>
 }
 

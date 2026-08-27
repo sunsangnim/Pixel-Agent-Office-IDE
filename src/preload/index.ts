@@ -70,6 +70,8 @@ const api: PreloadApi = {
       ipcRenderer.invoke('instances:create', templateId),
     createChild: (parentInstanceId: string): Promise<AgentInstance[]> =>
       ipcRenderer.invoke('instances:create-child', parentInstanceId),
+    restart: (instanceId: string): Promise<AgentInstance[]> =>
+      ipcRenderer.invoke('instances:restart', instanceId),
     remove: (instanceId: string): Promise<AgentInstance[]> =>
       ipcRenderer.invoke('instances:remove', instanceId)
   },
