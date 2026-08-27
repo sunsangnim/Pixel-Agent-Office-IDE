@@ -26,6 +26,7 @@ export interface PtyApi {
   write(ptyId: string, data: string): void
   resize(ptyId: string, cols: number, rows: number): void
   kill(ptyId: string): void
+  getBuffer(ptyId: string): Promise<string>
   onData(callback: (payload: PtyDataPayload) => void): () => void
   onExit(callback: (payload: PtyExitPayload) => void): () => void
 }

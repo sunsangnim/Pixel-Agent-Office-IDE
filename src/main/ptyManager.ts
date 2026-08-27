@@ -4,9 +4,12 @@ import type { IPty } from 'node-pty'
 import type { WebContents } from 'electron'
 import type { PtySpawnOptions } from '../shared/types'
 
+const MAX_BUFFER_LENGTH = 200_000
+
 interface PtyEntry {
   proc: IPty
   sender: WebContents
+  buffer: string
 }
 
 class PtyManager {
@@ -23,6 +26,10 @@ class PtyManager {
     })
 
     proc.onData((data) => {
+      const entry = this.ptys.get(ptyId)
+      if (entry) {
+        entry.buffer = (entry.buffer + data).slice(-MAX_BUFFER_LENGTH)
+      }
       if (!sender.isDestroyed()) {
         sender.send('pty:data', { ptyId, data })
       }
@@ -35,8 +42,12 @@ class PtyManager {
       this.ptys.delete(ptyId)
     })
 
-    this.ptys.set(ptyId, { proc, sender })
+    this.ptys.set(ptyId, { proc, sender, buffer: '' })
     return ptyId
+  }
+
+  getBuffer(ptyId: string): string {
+    return this.ptys.get(ptyId)?.buffer ?? ''
   }
 
   write(ptyId: string, data: string): void {

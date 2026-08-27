@@ -30,6 +30,8 @@ export function registerIpcHandlers(): void {
     ptyManager.kill(ptyId)
   })
 
+  ipcMain.handle('pty:buffer', (_event, ptyId: string) => ptyManager.getBuffer(ptyId))
+
   ipcMain.handle('templates:list', () => agentTemplateStore.list())
 
   ipcMain.handle('templates:create', (_event, input: AgentTemplateInput) =>

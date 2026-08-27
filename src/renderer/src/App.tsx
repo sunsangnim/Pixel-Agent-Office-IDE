@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AgentInstance, AgentTemplate } from '@shared/types'
 import SettingsModal from './components/SettingsModal'
 import OfficeView from './components/OfficeView'
+import TerminalModal from './components/TerminalModal'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
 
 function App() {
@@ -100,6 +101,20 @@ function App() {
         onSelect={setSelectedInstanceId}
         onRemove={removeInstance}
       />
+
+      {selectedInstanceId &&
+        (() => {
+          const instance = instances.find((i) => i.instanceId === selectedInstanceId)
+          if (!instance) return null
+          const template = templates.find((t) => t.id === instance.templateId)
+          return (
+            <TerminalModal
+              ptyId={instance.ptyId}
+              title={template?.name ?? instance.templateId}
+              onClose={() => setSelectedInstanceId(null)}
+            />
+          )
+        })()}
     </div>
   )
 }
