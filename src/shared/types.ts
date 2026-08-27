@@ -129,6 +129,14 @@ export interface AgentProfileApi {
   list(): Promise<AgentProfile[]>
 }
 
+export interface AgentRunApi {
+  list(): Promise<AgentRun[]>
+  create(templateId: string): Promise<AgentRun[]>
+  createChild(parentRunId: string): Promise<AgentRun[]>
+  restart(runId: string): Promise<AgentRun[]>
+  remove(runId: string): Promise<AgentRun[]>
+}
+
 export interface WorkspaceApi {
   getWorkFolder(): Promise<string | null>
   chooseWorkFolder(): Promise<string | null>
@@ -166,5 +174,6 @@ export interface PreloadApi {
   tasks: TaskApi
   instances: AgentInstanceApi
   profiles: AgentProfileApi
+  runs: AgentRunApi
   system: SystemApi
 }

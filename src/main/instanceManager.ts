@@ -2,25 +2,41 @@ import { randomUUID } from 'crypto'
 import type { WebContents } from 'electron'
 import { ptyManager } from './ptyManager'
 import { agentTemplateStore } from './agentStore'
-import type { AgentInstance } from '../shared/types'
+import type { AgentInstance, AgentRun } from '../shared/types'
 import { ORCHESTRATION_POLICY } from '../shared/orchestrationPolicy'
 import { adapterIdForTemplate } from './cliAdapters'
-import { BUILT_IN_AGENT_PROFILES } from '../shared/agentProfiles'
+import { BUILT_IN_AGENT_PROFILES, findAgentProfile } from '../shared/agentProfiles'
 
 class InstanceManager {
-  private instances = new Map<string, AgentInstance>()
+  private runs = new Map<string, AgentRun>()
 
+  listRuns(): AgentRun[] {
+    return Array.from(this.runs.values())
+  }
+
+  /** Compatibility projection while renderer callers migrate to profiles+runs. */
   list(): AgentInstance[] {
-    return Array.from(this.instances.values())
+    return this.listRuns().flatMap((run) => {
+      const profile = findAgentProfile(run.profileId)
+      if (!profile) return []
+      return [{
+        instanceId: run.runId,
+        templateId: run.templateId,
+        cwd: run.cwd,
+        ptyId: run.ptyId,
+        rank: profile.rank,
+        slotIndex: profile.slotIndex,
+        parentInstanceId: run.parentRunId,
+        presence: run.presence,
+        profileId: run.profileId
+      }]
+    })
   }
 
   create(templateId: string, cwd: string, sender: WebContents): AgentInstance[] {
-    const template = agentTemplateStore.list().find((t) => t.id === templateId)
-    if (!template) {
-      throw new Error(`Unknown agent template: ${templateId}`)
-    }
-
-    if (this.instances.size >= ORCHESTRATION_POLICY.maxConcurrentRuns) {
+    const template = agentTemplateStore.list().find((candidate) => candidate.id === templateId)
+    if (!template) throw new Error(`Unknown agent template: ${templateId}`)
+    if (this.runs.size >= ORCHESTRATION_POLICY.maxConcurrentRuns) {
       throw new Error(`동시 실행 한도(${ORCHESTRATION_POLICY.maxConcurrentRuns}개)에 도달했습니다.`)
     }
 
@@ -33,12 +49,15 @@ class InstanceManager {
     }
 
     const leader = team.find((instance) => instance.rank === 'teamLead')
-    const rank = leader ? 'subAgent' : 'teamLead'
     const usedSlots = new Set(team.map((instance) => instance.slotIndex))
     const slotIndex = Array.from({ length: maxTeamSize }, (_, index) => index).find(
       (index) => !usedSlots.has(index)
     )
     if (slotIndex === undefined) throw new Error(`${template.name} 팀에 빈 좌석이 없습니다.`)
+    const profile = BUILT_IN_AGENT_PROFILES.find(
+      (candidate) => candidate.templateId === templateId && candidate.slotIndex === slotIndex
+    )
+    if (!profile) throw new Error(`${template.name} 팀의 좌석 프로필을 찾을 수 없습니다.`)
 
     const ptyId = ptyManager.spawn(
       {
@@ -50,63 +69,58 @@ class InstanceManager {
       },
       sender
     )
-
-    const instance: AgentInstance = {
-      instanceId: randomUUID(),
+    const run: AgentRun = {
+      runId: randomUUID(),
+      profileId: profile.profileId,
       templateId,
       cwd,
       ptyId,
-      rank,
-      slotIndex,
-      parentInstanceId: leader?.instanceId ?? null,
-      presence: 'deskIdle',
-      profileId:
-        BUILT_IN_AGENT_PROFILES.find(
-          (profile) => profile.templateId === templateId && profile.slotIndex === slotIndex
-        )?.profileId ?? `${templateId}:runtime-${slotIndex}`
+      parentRunId: leader?.instanceId ?? null,
+      presence: 'deskIdle'
     }
-    this.instances.set(instance.instanceId, instance)
+    this.runs.set(run.runId, run)
     return this.list()
   }
 
   createChild(parentInstanceId: string, sender: WebContents): AgentInstance[] {
-    const parent = this.instances.get(parentInstanceId)
+    const parent = this.runs.get(parentInstanceId)
     if (!parent) throw new Error('하위 세션을 생성할 팀장 세션을 찾을 수 없습니다.')
-    if (parent.rank !== 'teamLead') throw new Error('하위 세션은 팀장만 생성할 수 있습니다.')
+    const profile = findAgentProfile(parent.profileId)
+    if (profile?.rank !== 'teamLead') throw new Error('하위 세션은 팀장만 생성할 수 있습니다.')
     return this.create(parent.templateId, parent.cwd, sender)
   }
 
   restart(instanceId: string, sender: WebContents): AgentInstance[] {
-    const instance = this.instances.get(instanceId)
-    if (!instance) throw new Error('재시작할 에이전트 세션을 찾을 수 없습니다.')
-    const template = agentTemplateStore.list().find((candidate) => candidate.id === instance.templateId)
-    if (!template) throw new Error(`Unknown agent template: ${instance.templateId}`)
+    const run = this.runs.get(instanceId)
+    if (!run) throw new Error('재시작할 에이전트 세션을 찾을 수 없습니다.')
+    const template = agentTemplateStore.list().find((candidate) => candidate.id === run.templateId)
+    if (!template) throw new Error(`Unknown agent template: ${run.templateId}`)
 
-    ptyManager.kill(instance.ptyId)
+    ptyManager.kill(run.ptyId)
     const ptyId = ptyManager.spawn(
       {
         command: template.command,
         args: template.args,
-        cwd: instance.cwd,
+        cwd: run.cwd,
         env: template.env,
         adapterId: adapterIdForTemplate(template.id)
       },
       sender
     )
-    this.instances.set(instanceId, { ...instance, ptyId, presence: 'deskIdle' })
+    this.runs.set(instanceId, { ...run, ptyId, presence: 'deskIdle' })
     return this.list()
   }
 
   remove(instanceId: string): AgentInstance[] {
-    const instance = this.instances.get(instanceId)
-    if (instance) {
-      const removals = instance.rank === 'teamLead'
-        ? this.list().filter((candidate) => candidate.templateId === instance.templateId)
-        : [instance]
-      for (const target of removals) {
-        ptyManager.kill(target.ptyId)
-        this.instances.delete(target.instanceId)
-      }
+    const run = this.runs.get(instanceId)
+    if (!run) return this.list()
+    const profile = findAgentProfile(run.profileId)
+    const removals = profile?.rank === 'teamLead'
+      ? this.listRuns().filter((candidate) => candidate.templateId === run.templateId)
+      : [run]
+    for (const target of removals) {
+      ptyManager.kill(target.ptyId)
+      this.runs.delete(target.runId)
     }
     return this.list()
   }

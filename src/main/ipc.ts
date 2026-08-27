@@ -91,6 +91,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('instances:list', () => instanceManager.list())
 
   ipcMain.handle('profiles:list', () => listAgentProfiles())
+  ipcMain.handle('runs:list', () => instanceManager.listRuns())
 
   ipcMain.handle('instances:create', (event, templateId: string) => {
     const cwd = workspaceStore.get()
@@ -100,15 +101,34 @@ export function registerIpcHandlers(): void {
     return instanceManager.create(templateId, cwd, event.sender)
   })
 
+  ipcMain.handle('runs:create', (event, templateId: string) => {
+    const cwd = workspaceStore.get()
+    if (!cwd) throw new Error('작업 폴더를 먼저 지정해주세요.')
+    instanceManager.create(templateId, cwd, event.sender)
+    return instanceManager.listRuns()
+  })
+
   ipcMain.handle('instances:create-child', (event, parentInstanceId: string) =>
     instanceManager.createChild(parentInstanceId, event.sender)
   )
+  ipcMain.handle('runs:create-child', (event, parentRunId: string) => {
+    instanceManager.createChild(parentRunId, event.sender)
+    return instanceManager.listRuns()
+  })
 
   ipcMain.handle('instances:restart', (event, instanceId: string) =>
     instanceManager.restart(instanceId, event.sender)
   )
+  ipcMain.handle('runs:restart', (event, runId: string) => {
+    instanceManager.restart(runId, event.sender)
+    return instanceManager.listRuns()
+  })
 
   ipcMain.handle('instances:remove', (_event, instanceId: string) =>
     instanceManager.remove(instanceId)
   )
+  ipcMain.handle('runs:remove', (_event, runId: string) => {
+    instanceManager.remove(runId)
+    return instanceManager.listRuns()
+  })
 }

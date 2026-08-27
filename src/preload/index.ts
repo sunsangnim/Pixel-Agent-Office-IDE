@@ -78,6 +78,13 @@ const api: PreloadApi = {
   profiles: {
     list: () => ipcRenderer.invoke('profiles:list')
   },
+  runs: {
+    list: () => ipcRenderer.invoke('runs:list'),
+    create: (templateId: string) => ipcRenderer.invoke('runs:create', templateId),
+    createChild: (parentRunId: string) => ipcRenderer.invoke('runs:create-child', parentRunId),
+    restart: (runId: string) => ipcRenderer.invoke('runs:restart', runId),
+    remove: (runId: string) => ipcRenderer.invoke('runs:remove', runId)
+  },
   system: {
     openSettings: (): void => {
       ipcRenderer.send('settings:open')
