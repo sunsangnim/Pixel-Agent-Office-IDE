@@ -17,11 +17,18 @@ interface CaptureEntry {
   instanceId: string
   buffer: string
   timer: ReturnType<typeof setTimeout>
+  stage: 'task' | 'teamSynthesis' | 'globalSynthesis'
 }
 
 interface ChildReport {
   childName: string
   text: string
+}
+
+interface GlobalAggregation {
+  coordinatorId: string
+  expectedLeadIds: Set<string>
+  summaries: Map<string, string>
 }
 
 export interface AgentAssignment {
@@ -44,6 +51,63 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
   const capturesRef = useRef(new Map<string, CaptureEntry>())
   const pendingReportsRef = useRef(new Map<string, ChildReport[]>())
   const reportTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const globalAggregationRef = useRef<GlobalAggregation | null>(null)
+  const globalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const flushGlobalAggregation = (): void => {
+    const aggregation = globalAggregationRef.current
+    if (!aggregation || aggregation.summaries.size < aggregation.expectedLeadIds.size) return
+    const coordinator = instancesRef.current.find(
+      (instance) => instance.instanceId === aggregation.coordinatorId
+    )
+    if (!coordinator) {
+      globalAggregationRef.current = null
+      return
+    }
+    if (capturesRef.current.has(coordinator.ptyId)) {
+      if (globalTimerRef.current) clearTimeout(globalTimerRef.current)
+      globalTimerRef.current = setTimeout(flushGlobalAggregation, RESPONSE_IDLE_MS)
+      return
+    }
+
+    const summaries = Array.from(aggregation.summaries.entries()).map(([leadId, text], index) => {
+      const lead = instancesRef.current.find((instance) => instance.instanceId === leadId)
+      const template = lead
+        ? templatesRef.current.find((candidate) => candidate.id === lead.templateId)
+        : undefined
+      return `## 팀 보고 ${index + 1} · ${template?.name ?? 'Agent'}\n${text}`
+    })
+    const prompt = `[총괄 코디네이터 최종 취합]\n아래 팀별 보고를 하나의 최종 결과로 통합하세요. 팀 간 결론이 충돌하면 근거를 비교해 결론을 선택하고, 완료된 작업·검증 결과·남은 위험·권장 다음 조치를 명확히 구분해 한국어로 보고하세요.\n\n${summaries.join('\n\n')}`
+
+    globalAggregationRef.current = null
+    globalTimerRef.current = null
+    capturesRef.current.set(coordinator.ptyId, {
+      instanceId: coordinator.instanceId,
+      buffer: '',
+      timer: setTimeout(() => {}, 0),
+      stage: 'globalSynthesis'
+    })
+    setLastTaskByInstance((prev) => ({ ...prev, [coordinator.instanceId]: '전체 팀 최종 취합' }))
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        kind: 'system',
+        authorName: '',
+        authorColor: '',
+        authorSeed: '',
+        text: `${summaries.length}개 팀 보고가 도착해 총괄 코디네이터가 최종 취합 시작`
+      }
+    ])
+    window.api.pty.write(coordinator.ptyId, `${prompt}\r`)
+  }
+
+  const queueTeamSummary = (leadInstanceId: string, text: string): void => {
+    const aggregation = globalAggregationRef.current
+    if (!aggregation || !aggregation.expectedLeadIds.has(leadInstanceId)) return
+    aggregation.summaries.set(leadInstanceId, text)
+    flushGlobalAggregation()
+  }
 
   const flushParentReports = (parentInstanceId: string): void => {
     const parent = instancesRef.current.find((instance) => instance.instanceId === parentInstanceId)
@@ -73,7 +137,8 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
     capturesRef.current.set(parent.ptyId, {
       instanceId: parent.instanceId,
       buffer: '',
-      timer: setTimeout(() => {}, 0)
+      timer: setTimeout(() => {}, 0),
+      stage: 'teamSynthesis'
     })
     setLastTaskByInstance((prev) => ({ ...prev, [parent.instanceId]: '하위 세션 결과 취합' }))
     setMessages((prev) => [
@@ -136,6 +201,20 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
             childName: template?.name ?? '하위 세션',
             text
           })
+        } else if (capture.stage === 'teamSynthesis' && instance) {
+          queueTeamSummary(instance.instanceId, text)
+        } else if (capture.stage === 'globalSynthesis') {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              kind: 'system',
+              authorName: '',
+              authorColor: '',
+              authorSeed: '',
+              text: '총괄 코디네이터 최종 취합 완료'
+            }
+          ])
         }
       }, RESPONSE_IDLE_MS)
     })
@@ -144,6 +223,7 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
       unsubscribe()
       for (const timer of reportTimersRef.current.values()) clearTimeout(timer)
       reportTimersRef.current.clear()
+      if (globalTimerRef.current) clearTimeout(globalTimerRef.current)
     }
   }, [])
 
@@ -190,7 +270,8 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
       capturesRef.current.set(instance.ptyId, {
         instanceId: instance.instanceId,
         buffer: '',
-        timer: setTimeout(() => {}, 0)
+        timer: setTimeout(() => {}, 0),
+        stage: 'task'
       })
       window.api.pty.write(instance.ptyId, `${text}\r`)
     }
@@ -206,6 +287,24 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
       return instance ? [{ assignment, instance }] : []
     })
     if (resolved.length === 0) return
+
+    const assignedIds = new Set(assignments.map((assignment) => assignment.instanceId))
+    const leadIdsWithChildren = resolved
+      .filter(({ instance }) => instance.rank === 'teamLead')
+      .map(({ instance }) => instance.instanceId)
+      .filter((leadId) => sourceInstances.some(
+        (candidate) => candidate.parentInstanceId === leadId && assignedIds.has(candidate.instanceId)
+      ))
+    const coordinator = sourceInstances.find(
+      (instance) => leadIdsWithChildren.includes(instance.instanceId) && instance.templateId === 'claude-code'
+    ) ?? sourceInstances.find((instance) => leadIdsWithChildren.includes(instance.instanceId))
+    globalAggregationRef.current = coordinator && leadIdsWithChildren.length > 0
+      ? {
+          coordinatorId: coordinator.instanceId,
+          expectedLeadIds: new Set(leadIdsWithChildren),
+          summaries: new Map()
+        }
+      : null
 
     setMessages((prev) => [
       ...prev,
@@ -239,7 +338,8 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
       capturesRef.current.set(instance.ptyId, {
         instanceId: instance.instanceId,
         buffer: '',
-        timer: setTimeout(() => {}, 0)
+        timer: setTimeout(() => {}, 0),
+        stage: 'task'
       })
       window.api.pty.write(instance.ptyId, `${assignment.prompt}\r`)
     }
