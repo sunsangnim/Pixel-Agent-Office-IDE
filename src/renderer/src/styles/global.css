@@ -1047,6 +1047,45 @@ body {
   padding: 4px 2px;
 }
 
+.profile-team-list {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.profile-team {
+  padding: 10px 12px 12px;
+  border: 1px solid #303043;
+  border-left: 4px solid #806f73;
+  border-radius: 12px;
+  background: rgba(28, 28, 39, 0.78);
+}
+
+.profile-team[data-team='claude-code'] { border-left-color: #b28d84; }
+.profile-team[data-team='codex-cli'] { border-left-color: #568f88; }
+.profile-team[data-team='antigravity-cli'] { border-left-color: #8278b7; }
+
+.profile-team-title {
+  margin: 0 0 8px;
+  color: #dfe4ee;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.profile-team-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-team-cards .profile-card {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
 .profile-card {
   display: flex;
   flex-direction: column;
