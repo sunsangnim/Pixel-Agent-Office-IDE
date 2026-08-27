@@ -1,4 +1,5 @@
 import type { DeskStatus } from '@shared/types'
+import type { CSSProperties } from 'react'
 
 interface DeskIconProps {
   color: string
@@ -13,7 +14,9 @@ const screenColor: Record<DeskStatus, string> = {
 
 function DeskIcon({ color, status }: DeskIconProps) {
   return (
-    <svg className="desk-sprite" viewBox="0 0 96 92" width="96" height="92" shapeRendering="crispEdges">
+    <div className="desk-asset-wrap" style={{ '--desk-accent': color } as CSSProperties}>
+      <div className="generated-desk-sprite" aria-hidden="true" />
+      <svg className="desk-sprite" viewBox="0 0 96 92" width="96" height="92" shapeRendering="crispEdges">
       <g className="pixel-worker">
         {/* chair and afro silhouette */}
         <path fill="#252431" d="M26 33h44v35H26zM20 42h8v22h-8zM68 42h8v22h-8z" />
@@ -39,7 +42,9 @@ function DeskIcon({ color, status }: DeskIconProps) {
       <path fill="#9a5a34" d="M5 80h86v7H5z" />
       <path fill="#63371f" d="M5 87h86v5H5zM10 92h7v-9h-7zm69 0h7v-9h-7z" />
       <path fill="#20212a" d="M24 83h28v3H24zm34 0h6v4h-6z" />
-    </svg>
+      </svg>
+      <span className={`generated-monitor-state generated-monitor-${status}`} />
+    </div>
   )
 }
 

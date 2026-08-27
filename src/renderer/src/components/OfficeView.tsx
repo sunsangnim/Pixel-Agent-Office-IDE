@@ -31,7 +31,7 @@ function OfficeView({
   const presenceByProfile = useOfficePresence(profiles, instances, runtimeStates, tasks)
 
   return (
-    <div className="office-room has-agent-layer">
+    <div className="office-room has-agent-layer pixel-background-enabled">
       <OfficeZones />
       <OfficeAgentLayer
         profiles={profiles}
