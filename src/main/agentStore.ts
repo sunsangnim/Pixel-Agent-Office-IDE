@@ -6,7 +6,14 @@ import type { AgentTemplate, AgentTemplateInput, AgentTemplatePatch } from '../s
 
 const defaultTemplates: AgentTemplate[] = [
   { id: 'claude-code', name: 'Claude Code', command: 'claude', args: [], color: '#d97757' },
-  { id: 'codex-cli', name: 'Codex CLI', command: 'codex', args: [], color: '#10a37f' }
+  { id: 'codex-cli', name: 'Codex CLI', command: 'codex', args: [], color: '#10a37f' },
+  {
+    id: 'antigravity-cli',
+    name: 'Antigravity CLI',
+    command: 'antigravity',
+    args: [],
+    color: '#8b7cf6'
+  }
 ]
 
 function getStorePath(): string {
@@ -21,7 +28,11 @@ function readTemplates(): AgentTemplate[] {
   try {
     const raw = readFileSync(path, 'utf-8')
     const parsed = JSON.parse(raw) as AgentTemplate[]
-    return Array.isArray(parsed) ? parsed : defaultTemplates
+    if (!Array.isArray(parsed)) return defaultTemplates
+    // Built-in teams are additive so existing installations also receive newly
+    // introduced CLI adapters without overwriting user customizations.
+    const existingIds = new Set(parsed.map((template) => template.id))
+    return [...parsed, ...defaultTemplates.filter((template) => !existingIds.has(template.id))]
   } catch {
     return defaultTemplates
   }

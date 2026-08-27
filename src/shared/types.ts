@@ -55,6 +55,25 @@ export interface AgentTemplateApi {
 
 export type DeskStatus = 'idle' | 'running' | 'error'
 
+export type AgentRank = 'teamLead' | 'subAgent'
+export type OfficePresence =
+  | 'offDuty'
+  | 'deskIdle'
+  | 'pantry'
+  | 'meeting'
+  | 'working'
+  | 'requestingHelp'
+  | 'error'
+
+export interface OrchestrationPolicy {
+  maxChildrenPerLead: number
+  maxConcurrentRuns: number
+  maxDepth: number
+  simpleTaskMaxAgents: number
+  cancelChildrenWithParent: boolean
+  idleProcessTimeoutMs: number
+}
+
 export interface AgentInstance {
   instanceId: string
   templateId: string

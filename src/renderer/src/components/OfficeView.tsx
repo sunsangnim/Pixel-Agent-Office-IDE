@@ -1,6 +1,7 @@
 import type { AgentInstance, AgentTemplate, DeskStatus } from '@shared/types'
 import AgentDesk from './AgentDesk'
 import OfficeZones from './OfficeZones'
+import { BUILT_IN_TEAM_IDS } from '@shared/orchestrationPolicy'
 
 interface OfficeViewProps {
   instances: AgentInstance[]
@@ -19,6 +20,8 @@ function OfficeView({
   onSelect,
   onRemove
 }: OfficeViewProps) {
+  const teamTemplates = BUILT_IN_TEAM_IDS.map((id) => templates.find((template) => template.id === id))
+
   return (
     <div className="office-room">
       <OfficeZones />
@@ -29,25 +32,36 @@ function OfficeView({
         <span className="office-deco office-deco-bl">🚰</span>
         <span className="office-deco office-deco-br">🪴</span>
 
-        {instances.length === 0 ? (
-          <p className="office-empty">
-            아직 배치된 에이전트가 없습니다. 작업 폴더를 지정하고 에이전트를 추가하세요.
-          </p>
-        ) : (
-          <div className="office-grid">
-            {instances.map((instance) => (
-              <AgentDesk
-                key={instance.instanceId}
-                instance={instance}
-                template={templates.find((t) => t.id === instance.templateId)}
-                status={statuses[instance.ptyId] ?? 'idle'}
-                selected={instance.instanceId === selectedInstanceId}
-                onSelect={() => onSelect(instance.instanceId)}
-                onRemove={() => onRemove(instance.instanceId)}
-              />
-            ))}
-          </div>
-        )}
+        <div className="office-grid office-grid-fixed">
+          {teamTemplates.flatMap((template, teamIndex) => {
+            const teamInstances = instances.filter((instance) => instance.templateId === template?.id).slice(0, 4)
+            return Array.from({ length: 4 }, (_, seatIndex) => {
+              const instance = teamInstances[seatIndex]
+              const roleLabel = seatIndex === 0 ? '팀장' : `하위 세션 ${seatIndex}`
+              if (!instance) {
+                return (
+                  <div className="desk desk-vacant" key={`${teamIndex}-${seatIndex}`}>
+                    <div className="vacant-chair"><i /></div>
+                    <div className="desk-label">{template?.name ?? ['Claude Code', 'Codex CLI', 'Antigravity CLI'][teamIndex]}</div>
+                    <div className="desk-role">{roleLabel} · 미출근</div>
+                  </div>
+                )
+              }
+              return (
+                <AgentDesk
+                  key={instance.instanceId}
+                  instance={instance}
+                  template={template}
+                  status={statuses[instance.ptyId] ?? 'idle'}
+                  selected={instance.instanceId === selectedInstanceId}
+                  onSelect={() => onSelect(instance.instanceId)}
+                  onRemove={() => onRemove(instance.instanceId)}
+                  roleLabel={roleLabel}
+                />
+              )
+            })
+          })}
+        </div>
       </div>
     </div>
   )
