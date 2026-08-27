@@ -50,6 +50,8 @@ function OfficeAgentLayer({ profiles, instances, templates, presenceByProfile }:
             className={`office-agent office-agent-${presence}`}
             data-profile-id={profile.profileId}
             key={profile.profileId}
+            role="img"
+            aria-label={`${profile.displayName}: ${activityLabel(presence) ?? '책상 대기 중'}`}
             style={{ '--agent-x': `${coords.x}%`, '--agent-y': `${coords.y}%` } as CSSProperties}
           >
             <PixelPerson

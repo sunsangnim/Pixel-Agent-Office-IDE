@@ -285,11 +285,21 @@ body {
   animation: agent-clock-in 0.75s steps(7, end) both;
 }
 
+.office-agent .room-agent-bubble {
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .has-agent-layer .desk:not(.desk-vacant) .pixel-worker { opacity: 0; }
 
 .office-agent-working .room-agent-sprite { animation: agent-work 0.7s steps(2, end) infinite; }
 .office-agent-requestingHelp .room-agent-sprite { filter: drop-shadow(2px 2px 0 #e4a853); }
 .office-agent-error .room-agent-sprite { filter: drop-shadow(2px 2px 0 #ff5c5c); }
+.office-agent-error .room-agent-bubble { background: #ffd7d7; color: #761e28; border-color: #a74753; }
+.office-agent-requestingHelp .room-agent-bubble { background: #fff0c9; color: #6c4316; border-color: #e4a853; }
+.office-agent-meeting .room-agent-bubble { background: #dce7ff; color: #233f78; border-color: #7898d5; }
 
 @keyframes agent-clock-in {
   from { left: 86%; top: 18%; opacity: 0; }
@@ -298,6 +308,16 @@ body {
 
 @keyframes agent-work {
   50% { transform: translateY(-2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .office-agent,
+  .office-agent-working .room-agent-sprite,
+  .desk-help,
+  .room-agent {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 .office-zones {

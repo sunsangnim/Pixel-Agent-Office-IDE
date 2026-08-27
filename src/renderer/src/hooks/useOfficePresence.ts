@@ -21,6 +21,7 @@ export function useOfficePresence(
 ): Record<string, OfficePresence> {
   const [presenceByProfile, setPresenceByProfile] = useState<Record<string, OfficePresence>>({})
   const restTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const restedProfiles = useRef(new Set<string>())
 
   useEffect(() => {
     const immediate: Record<string, OfficePresence> = {}
@@ -30,6 +31,7 @@ export function useOfficePresence(
       if (!instance) {
         clearTimeout(previousTimer)
         restTimers.current.delete(profile.profileId)
+        restedProfiles.current.delete(profile.profileId)
         immediate[profile.profileId] = 'offDuty'
         continue
       }
@@ -46,9 +48,10 @@ export function useOfficePresence(
         immediate[profile.profileId] = 'offDuty'
       } else if (runtimeState === 'completed') {
         immediate[profile.profileId] = presenceByProfile[profile.profileId] ?? 'deskIdle'
-        if (!previousTimer) {
+        if (!previousTimer && !restedProfiles.current.has(profile.profileId)) {
           const timer = setTimeout(() => {
             restTimers.current.delete(profile.profileId)
+            restedProfiles.current.add(profile.profileId)
             setPresenceByProfile((prev) => ({
               ...prev,
               [profile.profileId]: restPresence(profile)
@@ -63,6 +66,7 @@ export function useOfficePresence(
       if (runtimeState !== 'completed') {
         clearTimeout(previousTimer)
         restTimers.current.delete(profile.profileId)
+        restedProfiles.current.delete(profile.profileId)
       }
     }
     setPresenceByProfile((prev) => ({ ...prev, ...immediate }))
@@ -72,6 +76,7 @@ export function useOfficePresence(
     () => () => {
       for (const timer of restTimers.current.values()) clearTimeout(timer)
       restTimers.current.clear()
+      restedProfiles.current.clear()
     },
     []
   )
