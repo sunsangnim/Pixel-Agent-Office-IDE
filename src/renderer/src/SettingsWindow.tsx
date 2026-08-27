@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { AgentTemplate } from '@shared/types'
+import TerminalModal from './components/TerminalModal'
 
 interface FormState {
   name: string
@@ -7,9 +8,17 @@ interface FormState {
   args: string
   color: string
   env: string
+  loginArgs: string
 }
 
-const emptyForm: FormState = { name: '', command: '', args: '', color: '#6ea8fe', env: '' }
+const emptyForm: FormState = {
+  name: '',
+  command: '',
+  args: '',
+  color: '#6ea8fe',
+  env: '',
+  loginArgs: ''
+}
 
 function toFormState(template: AgentTemplate): FormState {
   return {
@@ -19,7 +28,8 @@ function toFormState(template: AgentTemplate): FormState {
     color: template.color,
     env: Object.entries(template.env ?? {})
       .map(([k, v]) => `${k}=${v}`)
-      .join('\n')
+      .join('\n'),
+    loginArgs: (template.loginArgs ?? []).join(' ')
   }
 }
 
@@ -45,6 +55,7 @@ function SettingsWindow() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [loading, setLoading] = useState(true)
+  const [loginSession, setLoginSession] = useState<{ ptyId: string; title: string } | null>(null)
 
   useEffect(() => {
     window.api.templates.list().then((list) => {
@@ -73,7 +84,8 @@ function SettingsWindow() {
       command: form.command.trim(),
       args: parseArgs(form.args),
       color: form.color,
-      env: parseEnv(form.env)
+      env: parseEnv(form.env),
+      loginArgs: parseArgs(form.loginArgs)
     }
     const updated = editingId
       ? await window.api.templates.update(editingId, input)
@@ -88,32 +100,60 @@ function SettingsWindow() {
     if (editingId === id) resetForm()
   }
 
+  const startLogin = async (template: AgentTemplate): Promise<void> => {
+    const loginArgs = template.loginArgs && template.loginArgs.length > 0 ? template.loginArgs : ['login']
+    const { ptyId } = await window.api.pty.spawn({
+      command: template.command,
+      args: loginArgs,
+      env: template.env
+    })
+    setLoginSession({ ptyId, title: `${template.name} 계정 로그인` })
+  }
+
+  const closeLogin = (): void => {
+    if (loginSession) window.api.pty.kill(loginSession.ptyId)
+    setLoginSession(null)
+  }
+
   return (
     <div className="settings-page">
-      <h1>에이전트 설정</h1>
+      <div className="settings-header">
+        <h1>에이전트 설정</h1>
+        <span className="settings-count-badge">{templates.length}개 등록됨</span>
+      </div>
       <p className="settings-hint">
-        오피스에 배치할 수 있는 에이전트 템플릿을 관리합니다. 실제 CLI 실행 명령어를 등록하세요.
+        오피스에 배치할 수 있는 에이전트 템플릿을 관리합니다. 실제 CLI 실행 명령어를 등록하고, API
+        키를 넣거나 계정으로 직접 로그인하세요.
       </p>
 
       {loading ? (
         <p>불러오는 중...</p>
       ) : (
-        <ul className="template-list">
+        <ul className="settings-card-list">
           {templates.map((t) => (
-            <li key={t.id} className="template-row">
-              <span className="template-color" style={{ background: t.color }} />
-              <div className="template-info">
-                <strong>{t.name}</strong>
-                <code>
+            <li key={t.id} className="settings-card">
+              <span className="settings-card-icon" style={{ background: t.color }}>
+                {t.name.slice(0, 1).toUpperCase()}
+              </span>
+              <div className="settings-card-body">
+                <span className="settings-card-name">{t.name}</span>
+                <code className="settings-card-command">
                   {t.command} {t.args.join(' ')}
                 </code>
                 {t.env && Object.keys(t.env).length > 0 && (
-                  <span className="template-env-badge">환경변수 {Object.keys(t.env).length}개</span>
+                  <span className="settings-env-badge">환경변수 {Object.keys(t.env).length}개</span>
                 )}
               </div>
-              <div className="template-actions">
-                <button onClick={() => startEdit(t)}>수정</button>
-                <button onClick={() => remove(t.id)}>삭제</button>
+              <div className="settings-card-actions">
+                <button className="pill-btn" onClick={() => startLogin(t)}>
+                  계정 로그인
+                </button>
+                <button className="pill-btn" onClick={() => startEdit(t)}>
+                  수정
+                </button>
+                <button className="pill-btn pill-btn-danger" onClick={() => remove(t.id)}>
+                  삭제
+                </button>
               </div>
             </li>
           ))}
@@ -122,7 +162,7 @@ function SettingsWindow() {
       )}
 
       <form
-        className="template-form"
+        className="settings-form-card"
         onSubmit={(e) => {
           e.preventDefault()
           submit()
@@ -156,6 +196,14 @@ function SettingsWindow() {
           />
         </label>
         <label>
+          로그인 명령 인자 (공백 구분, 기본값: login)
+          <input
+            value={form.loginArgs}
+            onChange={(e) => setForm({ ...form, loginArgs: e.target.value })}
+            placeholder="예: auth login"
+          />
+        </label>
+        <label>
           색상
           <input
             type="color"
@@ -166,22 +214,28 @@ function SettingsWindow() {
         <label>
           API 키 / 환경변수 (한 줄에 KEY=VALUE)
           <textarea
-            className="template-env-textarea"
+            className="settings-env-textarea"
             value={form.env}
             onChange={(e) => setForm({ ...form, env: e.target.value })}
             placeholder={'ANTHROPIC_API_KEY=sk-...\nOPENAI_API_KEY=sk-...'}
             rows={3}
           />
         </label>
-        <div className="template-form-actions">
-          <button type="submit">{editingId ? '저장' : '추가'}</button>
+        <div className="settings-form-actions">
+          <button type="submit" className="pill-btn pill-btn-primary">
+            {editingId ? '저장' : '추가'}
+          </button>
           {editingId && (
-            <button type="button" onClick={resetForm}>
+            <button type="button" className="pill-btn" onClick={resetForm}>
               취소
             </button>
           )}
         </div>
       </form>
+
+      {loginSession && (
+        <TerminalModal ptyId={loginSession.ptyId} title={loginSession.title} onClose={closeLogin} />
+      )}
     </div>
   )
 }

@@ -69,25 +69,47 @@ class PtyManager {
   }
 
   write(ptyId: string, data: string): void {
-    this.ptys.get(ptyId)?.proc.write(data)
+    const entry = this.ptys.get(ptyId)
+    if (!entry) return
+    try {
+      entry.proc.write(data)
+    } catch {
+      // the process may have exited between the write request and this call
+    }
   }
 
   resize(ptyId: string, cols: number, rows: number): void {
-    this.ptys.get(ptyId)?.proc.resize(cols, rows)
+    const entry = this.ptys.get(ptyId)
+    if (!entry) return
+    try {
+      entry.proc.resize(cols, rows)
+    } catch {
+      // the process may have exited between the resize request and this call
+      // (e.g. a short-lived login command finishing right as the terminal
+      // view mounts and fires its first ResizeObserver callback)
+    }
   }
 
   kill(ptyId: string): void {
     const entry = this.ptys.get(ptyId)
     if (!entry) return
     forceKillWindowsTree(entry.proc.pid)
-    entry.proc.kill()
+    try {
+      entry.proc.kill()
+    } catch {
+      // already exited
+    }
     this.ptys.delete(ptyId)
   }
 
   killAll(): void {
     for (const { proc } of this.ptys.values()) {
       forceKillWindowsTree(proc.pid)
-      proc.kill()
+      try {
+        proc.kill()
+      } catch {
+        // already exited
+      }
     }
     this.ptys.clear()
   }

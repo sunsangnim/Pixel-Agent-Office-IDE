@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AgentInstance, AgentTemplate } from '@shared/types'
 import OfficeView from './components/OfficeView'
-import AgentDock from './components/AgentDock'
+import AgentProfileRow from './components/AgentProfileRow'
 import TerminalModal from './components/TerminalModal'
 import ChatPanel from './components/ChatPanel'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
@@ -13,6 +13,7 @@ function App() {
   const [instances, setInstances] = useState<AgentInstance[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
+  const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const statuses = usePtyStatuses()
   const { messages, lastTaskByInstance, sendPrompt } = useAgentChat(instances, templates)
@@ -51,30 +52,30 @@ function App() {
     const updated = await window.api.instances.remove(instanceId)
     setInstances(updated)
     setSelectedInstanceId((current) => (current === instanceId ? null : current))
+    setSelectedTargetIds((prev) => {
+      if (!prev.has(instanceId)) return prev
+      const next = new Set(prev)
+      next.delete(instanceId)
+      return next
+    })
+  }
+
+  const toggleTarget = (instanceId: string): void => {
+    setSelectedTargetIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(instanceId)) next.delete(instanceId)
+      else next.add(instanceId)
+      return next
+    })
+  }
+
+  const sendPromptToSelected = (text: string): void => {
+    sendPrompt(text, Array.from(selectedTargetIds))
   }
 
   return (
     <div className="app-root">
       <div className="main-column">
-        <div className="top-bar">
-          <h1>Pixel Agent Office IDE</h1>
-          <div className="top-bar-actions">
-            <select
-              value={selectedTemplateId}
-              onChange={(e) => setSelectedTemplateId(e.target.value)}
-            >
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-            <button onClick={addInstance} disabled={!workFolder || !selectedTemplateId}>
-              + 에이전트 추가
-            </button>
-          </div>
-        </div>
-
         {error && <p className="error-banner">{error}</p>}
 
         <OfficeView
@@ -86,12 +87,17 @@ function App() {
           onRemove={removeInstance}
         />
 
-        <AgentDock
+        <AgentProfileRow
           instances={instances}
           templates={templates}
           statuses={statuses}
           tasks={lastTaskByInstance}
-          onSelect={setSelectedInstanceId}
+          selectedTargetIds={selectedTargetIds}
+          onToggleTarget={toggleTarget}
+          workFolder={workFolder}
+          selectedTemplateId={selectedTemplateId}
+          onTemplateChange={setSelectedTemplateId}
+          onAdd={addInstance}
         />
       </div>
 
@@ -101,7 +107,8 @@ function App() {
         workFolder={workFolder}
         onChooseFolder={chooseFolder}
         messages={messages}
-        onSend={sendPrompt}
+        selectedTargetIds={selectedTargetIds}
+        onSend={sendPromptToSelected}
       />
 
       {selectedInstanceId &&

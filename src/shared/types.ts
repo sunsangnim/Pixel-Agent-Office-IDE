@@ -39,6 +39,7 @@ export interface AgentTemplate {
   args: string[]
   color: string
   env?: Record<string, string>
+  loginArgs?: string[]
 }
 
 export type AgentTemplateInput = Omit<AgentTemplate, 'id'>

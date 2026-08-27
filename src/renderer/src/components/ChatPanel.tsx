@@ -9,7 +9,8 @@ interface ChatPanelProps {
   workFolder: string | null
   onChooseFolder: () => void
   messages: ChatMessage[]
-  onSend: (text: string, targetInstanceIds: string[]) => void
+  selectedTargetIds: Set<string>
+  onSend: (text: string) => void
 }
 
 function ChatPanel({
@@ -18,31 +19,23 @@ function ChatPanel({
   workFolder,
   onChooseFolder,
   messages,
+  selectedTargetIds,
   onSend
 }: ChatPanelProps) {
   const [text, setText] = useState('')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
   const threadRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages.length])
 
-  const templateName = (id: string): string => templates.find((t) => t.id === id)?.name ?? id
-
-  const toggle = (instanceId: string): void => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(instanceId)) next.delete(instanceId)
-      else next.add(instanceId)
-      return next
-    })
-  }
+  const selectedNames = instances
+    .filter((i) => selectedTargetIds.has(i.instanceId))
+    .map((i) => templates.find((t) => t.id === i.templateId)?.name ?? i.templateId)
 
   const send = (): void => {
-    const targets = instances.filter((i) => selected.has(i.instanceId))
-    if (!text.trim() || targets.length === 0) return
-    onSend(text, targets.map((t) => t.instanceId))
+    if (!text.trim() || selectedTargetIds.size === 0) return
+    onSend(text)
     setText('')
   }
 
@@ -50,8 +43,11 @@ function ChatPanel({
     <div className="chat-panel">
       <div className="chat-header">
         <div className="chat-user">
-          <span className="chat-user-avatar">나</span>
-          <span className="chat-user-name">나</span>
+          <IdenticonAvatar seed="me-ceo" color="#6ea8fe" size={34} />
+          <div className="chat-user-info">
+            <span className="chat-user-name">나</span>
+            <span className="chat-user-title">대표</span>
+          </div>
         </div>
         <button
           className="chat-settings-btn"
@@ -72,7 +68,9 @@ function ChatPanel({
 
       <div className="chat-thread" ref={threadRef}>
         {messages.length === 0 && (
-          <p className="chat-empty">아직 대화가 없습니다. 아래에서 에이전트를 선택하고 지시해보세요.</p>
+          <p className="chat-empty">
+            아직 대화가 없습니다. 아래 사무실에서 에이전트 프로필을 선택하고 지시해보세요.
+          </p>
         )}
         {messages.map((m) =>
           m.kind === 'system' ? (
@@ -91,19 +89,9 @@ function ChatPanel({
         )}
       </div>
 
-      <div className="chat-targets">
-        {instances.length === 0 && <p className="prompt-empty">배치된 에이전트가 없습니다.</p>}
-        {instances.map((instance) => (
-          <label key={instance.instanceId} className="prompt-target-row">
-            <input
-              type="checkbox"
-              checked={selected.has(instance.instanceId)}
-              onChange={() => toggle(instance.instanceId)}
-            />
-            {templateName(instance.templateId)}
-          </label>
-        ))}
-      </div>
+      {selectedNames.length > 0 && (
+        <div className="chat-selected-row">받는 사람: {selectedNames.join(', ')}</div>
+      )}
 
       <div className="chat-input-row">
         <textarea
@@ -121,7 +109,7 @@ function ChatPanel({
         <button
           className="chat-send-btn"
           onClick={send}
-          disabled={!text.trim() || selected.size === 0}
+          disabled={!text.trim() || selectedTargetIds.size === 0}
         >
           ▷
         </button>
