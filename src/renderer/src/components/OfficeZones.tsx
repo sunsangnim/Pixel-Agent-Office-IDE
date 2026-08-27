@@ -8,11 +8,12 @@ function OfficeZones() {
         <div className="pantry-glass-wall" aria-label="탕비실 전면 유리벽과 통합 출입문">
           <span className="pantry-glass-panel" />
           <span className="pantry-glass-panel" />
-          <span className="pantry-glass-door"><i /></span>
+          <span className="office-glass-door pantry-glass-door"><i /></span>
         </div>
       </div>
       <div className="zone zone-meeting">
         <span className="zone-label">회의실</span>
+        <span className="office-glass-door meeting-glass-door" aria-label="회의실 유리문"><i /></span>
         <div className="meeting-furniture" aria-label="긴 회의 테이블과 의자">
           <div className="meeting-chairs-row">
             <span className="chair" /><span className="chair" /><span className="chair" />

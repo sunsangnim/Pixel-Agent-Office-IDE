@@ -609,24 +609,16 @@ body {
   background: linear-gradient(118deg, transparent 18%, rgba(255, 255, 255, 0.21) 19% 23%, transparent 24% 70%, rgba(255, 255, 255, 0.1) 71% 73%, transparent 74%);
 }
 
-.pantry-glass-door {
+.office-glass-door {
   position: relative;
-  width: auto;
-  height: auto;
   border: 3px solid #d9ebe7;
   border-bottom: 0;
-  margin: 4px 2px 0;
   background: linear-gradient(118deg, transparent 20%, rgba(255, 255, 255, 0.28) 21% 26%, transparent 27%), rgba(158, 205, 196, 0.18);
   box-shadow: inset 3px 0 rgba(255, 255, 255, 0.2), 2px 0 #5f817a;
   pointer-events: none;
 }
 
-.pantry-glass-door::before,
-.pantry-glass-door::after {
-  content: none;
-}
-
-.pantry-glass-door i {
+.office-glass-door i {
   position: absolute;
   right: 4px;
   top: 45%;
@@ -634,6 +626,22 @@ body {
   height: 6px;
   background: #45625b;
   box-shadow: 1px 1px #bed8d2;
+}
+
+.pantry-glass-door {
+  width: auto;
+  height: auto;
+  margin: 4px 2px 0;
+}
+
+.meeting-glass-door {
+  position: absolute;
+  z-index: 4;
+  bottom: -2px;
+  left: 50%;
+  width: 38px;
+  height: 40px;
+  transform: translateX(-50%);
 }
 
 .zone-label {
