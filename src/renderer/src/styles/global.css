@@ -381,7 +381,7 @@ body {
     repeating-conic-gradient(#2c3b34 0% 25%, #263129 0% 50%) 0 0 / 32px 32px;
   box-shadow: inset 0 0 0 6px #1c2622;
   background-color: #9bcfc2;
-  background-image: url('../assets/pixel-office/office-background-v3.png');
+  background-image: url('../assets/pixel-office/office-background-v4.png?v=4');
   background-repeat: no-repeat;
   background-position: center;
   background-size: 100% 100%;
@@ -835,7 +835,7 @@ body {
   z-index: 4;
   top: 0;
   right: 0;
-  bottom: 12px;
+  bottom: 17px;
   width: 4px;
   background: rgba(73, 105, 98, 0.5);
   box-shadow: 3px 0 rgba(218, 239, 233, 0.18);
@@ -890,6 +890,17 @@ body {
     rgba(181, 221, 213, 0.08);
   box-shadow: inset 0 -3px rgba(53, 91, 83, 0.48), inset 2px 0 rgba(255, 255, 255, 0.15);
   image-rendering: pixelated;
+}
+
+@media (min-width: 1600px) {
+  .office-team-column::after {
+    bottom: 28px;
+  }
+
+  .representative-office {
+    right: 24px;
+    bottom: 44px;
+  }
 }
 
 .representative-office::before {
