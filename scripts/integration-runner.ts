@@ -59,11 +59,11 @@ async function stopPty(events: RecordedEvent[], ptyId: string): Promise<void> {
 }
 
 function verifyRoutingAndProfiles(): void {
-  assert.equal(BUILT_IN_AGENT_PROFILES.length, 12)
-  assert.equal(new Set(BUILT_IN_AGENT_PROFILES.map((profile) => profile.profileId)).size, 12)
+  assert.equal(BUILT_IN_AGENT_PROFILES.length, 15)
+  assert.equal(new Set(BUILT_IN_AGENT_PROFILES.map((profile) => profile.profileId)).size, 15)
   assert.equal(BUILT_IN_AGENT_PROFILES.filter((profile) => profile.rank === 'teamLead').length, 3)
-  assert.equal(BUILT_IN_AGENT_PROFILES.filter((profile) => profile.rank === 'subAgent').length, 9)
-  assert.equal(ORCHESTRATION_POLICY.maxChildrenPerLead, 3)
+  assert.equal(BUILT_IN_AGENT_PROFILES.filter((profile) => profile.rank === 'subAgent').length, 12)
+  assert.equal(ORCHESTRATION_POLICY.maxChildrenPerLead, 4)
 
   assert.deepEqual(planTask('간단한 버그 고쳐').templateIds, ['claude-code'])
   assert.deepEqual(planTask('@코덱스 애니메이션 고쳐').templateIds, ['codex-cli'])
@@ -78,7 +78,7 @@ function verifyRoutingAndProfiles(): void {
   assert.equal(adapterIdForTemplate('claude-code'), 'claude')
   assert.equal(adapterIdForTemplate('codex-cli'), 'codex')
   assert.equal(adapterIdForTemplate('antigravity-cli'), 'antigravity')
-  console.log('PASS routing, 12 profiles, and orchestration policy')
+  console.log('PASS routing, 15 profiles, and orchestration policy')
 }
 
 function verifyAdapters(): void {

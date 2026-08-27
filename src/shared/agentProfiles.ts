@@ -13,7 +13,7 @@ function profileId(templateId: string, slotIndex: number): string {
 
 export const BUILT_IN_AGENT_PROFILES: readonly AgentProfile[] = BUILT_IN_TEAM_IDS.flatMap(
   (templateId) =>
-    Array.from({ length: 4 }, (_, slotIndex) => {
+    Array.from({ length: 5 }, (_, slotIndex) => {
       const rank: AgentRank = slotIndex === 0 ? 'teamLead' : 'subAgent'
       return {
         profileId: profileId(templateId, slotIndex),
@@ -40,7 +40,7 @@ export function buildAgentProfiles(
   templates: Array<Pick<AgentTemplate, 'id' | 'name'>>
 ): AgentProfile[] {
   return templates.flatMap((template) =>
-    Array.from({ length: 4 }, (_, slotIndex) => {
+    Array.from({ length: 5 }, (_, slotIndex) => {
       const rank: AgentRank = slotIndex === 0 ? 'teamLead' : 'subAgent'
       return {
         profileId: profileId(template.id, slotIndex),

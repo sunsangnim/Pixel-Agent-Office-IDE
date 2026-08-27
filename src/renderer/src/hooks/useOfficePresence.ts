@@ -9,7 +9,7 @@ import type {
 const REST_DELAY_MS = 1200
 
 function restPresence(profile: AgentProfile): OfficePresence {
-  if (profile.rank === 'teamLead' || profile.slotIndex === 3) return 'deskIdle'
+  if (profile.rank === 'teamLead' || profile.slotIndex >= 3) return 'deskIdle'
   return profile.slotIndex === 1 ? 'pantry' : 'meeting'
 }
 

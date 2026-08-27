@@ -2,7 +2,7 @@ import type { OrchestrationPolicy } from './types'
 
 /** Safe defaults for the three-team, twelve-seat office. */
 export const ORCHESTRATION_POLICY: Readonly<OrchestrationPolicy> = {
-  maxChildrenPerLead: 3,
+  maxChildrenPerLead: 4,
   maxConcurrentRuns: 6,
   maxDepth: 2,
   simpleTaskMaxAgents: 1,
