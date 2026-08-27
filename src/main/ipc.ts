@@ -3,12 +3,19 @@ import { ptyManager } from './ptyManager'
 import { agentTemplateStore } from './agentStore'
 import { workspaceStore } from './workspaceStore'
 import { instanceManager } from './instanceManager'
+import { openSettingsWindow } from './windowManager'
 import type {
   AgentTemplateInput,
   AgentTemplatePatch,
   PtySpawnOptions,
   PtySpawnResult
 } from '../shared/types'
+
+function broadcastTemplatesChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('templates:changed')
+  }
+}
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('pty:spawn', (event, options: PtySpawnOptions = {}): PtySpawnResult => {
@@ -34,15 +41,25 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('templates:list', () => agentTemplateStore.list())
 
-  ipcMain.handle('templates:create', (_event, input: AgentTemplateInput) =>
-    agentTemplateStore.create(input)
-  )
+  ipcMain.handle('templates:create', (_event, input: AgentTemplateInput) => {
+    const result = agentTemplateStore.create(input)
+    broadcastTemplatesChanged()
+    return result
+  })
 
-  ipcMain.handle('templates:update', (_event, id: string, patch: AgentTemplatePatch) =>
-    agentTemplateStore.update(id, patch)
-  )
+  ipcMain.handle('templates:update', (_event, id: string, patch: AgentTemplatePatch) => {
+    const result = agentTemplateStore.update(id, patch)
+    broadcastTemplatesChanged()
+    return result
+  })
 
-  ipcMain.handle('templates:remove', (_event, id: string) => agentTemplateStore.remove(id))
+  ipcMain.handle('templates:remove', (_event, id: string) => {
+    const result = agentTemplateStore.remove(id)
+    broadcastTemplatesChanged()
+    return result
+  })
+
+  ipcMain.on('settings:open', () => openSettingsWindow())
 
   ipcMain.handle('workspace:get', () => workspaceStore.get())
 

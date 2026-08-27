@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { AgentInstance, AgentTemplate } from '@shared/types'
-import SettingsModal from './components/SettingsModal'
 import OfficeView from './components/OfficeView'
+import AgentDock from './components/AgentDock'
 import TerminalModal from './components/TerminalModal'
 import PromptPanel from './components/PromptPanel'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
 
 function App() {
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [workFolder, setWorkFolder] = useState<string | null>(null)
   const [templates, setTemplates] = useState<AgentTemplate[]>([])
   const [instances, setInstances] = useState<AgentInstance[]>([])
@@ -27,6 +26,7 @@ function App() {
     window.api.workspace.getWorkFolder().then(setWorkFolder)
     refreshTemplates()
     window.api.instances.list().then(setInstances)
+    return window.api.templates.onChanged(refreshTemplates)
   }, [])
 
   const chooseFolder = async (): Promise<void> => {
@@ -81,13 +81,7 @@ function App() {
             <button onClick={addInstance} disabled={!workFolder || !selectedTemplateId}>
               + 에이전트 추가
             </button>
-            <button
-              onClick={() => {
-                setSettingsOpen(true)
-              }}
-            >
-              설정
-            </button>
+            <button onClick={() => window.api.system.openSettings()}>설정</button>
           </div>
         </div>
 
@@ -101,18 +95,16 @@ function App() {
           onSelect={setSelectedInstanceId}
           onRemove={removeInstance}
         />
+
+        <AgentDock
+          instances={instances}
+          templates={templates}
+          statuses={statuses}
+          onSelect={setSelectedInstanceId}
+        />
       </div>
 
       <PromptPanel instances={instances} templates={templates} onSend={sendPrompt} />
-
-      {settingsOpen && (
-        <SettingsModal
-          onClose={() => {
-            setSettingsOpen(false)
-            refreshTemplates()
-          }}
-        />
-      )}
 
       {selectedInstanceId &&
         (() => {

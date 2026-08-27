@@ -1,5 +1,5 @@
-import type { CSSProperties } from 'react'
 import type { AgentInstance, AgentTemplate, DeskStatus } from '@shared/types'
+import DeskIcon from './DeskIcon'
 
 interface AgentDeskProps {
   instance: AgentInstance
@@ -14,7 +14,6 @@ function AgentDesk({ instance, template, status, selected, onSelect, onRemove }:
   return (
     <div
       className={`desk desk-${status}${selected ? ' desk-selected' : ''}`}
-      style={{ '--desk-color': template?.color ?? '#888888' } as CSSProperties}
       onClick={onSelect}
       title={instance.cwd}
     >
@@ -28,9 +27,7 @@ function AgentDesk({ instance, template, status, selected, onSelect, onRemove }:
         ✕
       </button>
       <div className="desk-status-dot" />
-      <div className="desk-surface">
-        <div className="desk-avatar" />
-      </div>
+      <DeskIcon color={template?.color ?? '#888888'} status={status} />
       <div className="desk-label">{template?.name ?? instance.templateId}</div>
     </div>
   )

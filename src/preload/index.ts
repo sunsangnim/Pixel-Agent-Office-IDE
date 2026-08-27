@@ -41,7 +41,12 @@ const api: PreloadApi = {
       ipcRenderer.invoke('templates:create', input),
     update: (id: string, patch: AgentTemplatePatch): Promise<AgentTemplate[]> =>
       ipcRenderer.invoke('templates:update', id, patch),
-    remove: (id: string): Promise<AgentTemplate[]> => ipcRenderer.invoke('templates:remove', id)
+    remove: (id: string): Promise<AgentTemplate[]> => ipcRenderer.invoke('templates:remove', id),
+    onChanged: (callback: () => void): (() => void) => {
+      const listener = (): void => callback()
+      ipcRenderer.on('templates:changed', listener)
+      return () => ipcRenderer.removeListener('templates:changed', listener)
+    }
   },
   workspace: {
     getWorkFolder: (): Promise<string | null> => ipcRenderer.invoke('workspace:get'),
@@ -53,6 +58,11 @@ const api: PreloadApi = {
       ipcRenderer.invoke('instances:create', templateId),
     remove: (instanceId: string): Promise<AgentInstance[]> =>
       ipcRenderer.invoke('instances:remove', instanceId)
+  },
+  system: {
+    openSettings: (): void => {
+      ipcRenderer.send('settings:open')
+    }
   }
 }
 

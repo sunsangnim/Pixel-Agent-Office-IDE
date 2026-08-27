@@ -47,6 +47,7 @@ export interface AgentTemplateApi {
   create(input: AgentTemplateInput): Promise<AgentTemplate[]>
   update(id: string, patch: AgentTemplatePatch): Promise<AgentTemplate[]>
   remove(id: string): Promise<AgentTemplate[]>
+  onChanged(callback: () => void): () => void
 }
 
 export type DeskStatus = 'idle' | 'running' | 'error'
@@ -69,9 +70,14 @@ export interface AgentInstanceApi {
   remove(instanceId: string): Promise<AgentInstance[]>
 }
 
+export interface SystemApi {
+  openSettings(): void
+}
+
 export interface PreloadApi {
   pty: PtyApi
   templates: AgentTemplateApi
   workspace: WorkspaceApi
   instances: AgentInstanceApi
+  system: SystemApi
 }

@@ -18,6 +18,26 @@ body {
     sans-serif;
 }
 
+.settings-page {
+  height: 100%;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-page h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.settings-hint {
+  margin: 0;
+  color: #9a9ab0;
+  font-size: 13px;
+}
+
 .app-root {
   height: 100%;
   display: flex;
@@ -142,69 +162,83 @@ body {
   border-radius: 6px;
 }
 
+.office-room {
+  position: relative;
+  border: 3px solid #3a4a40;
+  border-radius: 14px;
+  padding: 28px 24px 20px;
+  min-height: 280px;
+  background:
+    repeating-conic-gradient(#2c3b34 0% 25%, #263129 0% 50%) 0 0 / 32px 32px;
+  box-shadow: inset 0 0 0 6px #1c2622;
+}
+
+.office-plant {
+  position: absolute;
+  font-size: 24px;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.office-plant-tl {
+  top: 6px;
+  left: 6px;
+}
+
+.office-plant-br {
+  bottom: 6px;
+  right: 6px;
+}
+
 .office-empty {
-  color: #9a9ab0;
+  color: #cfe8db;
   padding: 24px;
   text-align: center;
-  border: 1px dashed #3a3a4d;
+  border: 1px dashed rgba(207, 232, 219, 0.4);
   border-radius: 8px;
 }
 
 .office-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 12px 4px;
 }
 
 .desk {
-  --desk-color: #888888;
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 14px 8px 10px;
+  gap: 2px;
+  padding: 6px 4px;
   border-radius: 10px;
-  background: #21212f;
   border: 2px solid transparent;
   cursor: pointer;
   transition:
     border-color 0.15s,
-    transform 0.1s;
+    transform 0.1s,
+    background 0.15s;
 }
 
 .desk:hover {
   transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .desk-selected {
   border-color: #6ea8fe;
+  background: rgba(110, 168, 254, 0.12);
 }
 
-.desk-surface {
-  width: 64px;
-  height: 44px;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #8a5a3b, #6b4327);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 4px;
-}
-
-.desk-avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--desk-color);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+.desk-error {
+  border-color: #ff5c5c;
 }
 
 .desk-label {
-  font-size: 12px;
+  font-size: 11px;
   text-align: center;
-  color: #e4e4ef;
-  max-width: 100px;
+  color: #eef7f1;
+  max-width: 76px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -216,8 +250,8 @@ body {
   border-radius: 50%;
   background: #6a6a7a;
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 2px;
+  right: 2px;
 }
 
 .desk-running .desk-status-dot {
@@ -227,10 +261,6 @@ body {
 
 .desk-error .desk-status-dot {
   background: #ff5c5c;
-}
-
-.desk-error {
-  border-color: #ff5c5c;
 }
 
 @keyframes desk-pulse {
@@ -243,17 +273,31 @@ body {
   }
 }
 
+.desk-screen-glow {
+  animation: screen-glow 1s infinite;
+}
+
+@keyframes screen-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
 .desk-remove {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: -4px;
+  left: -4px;
   width: 18px;
   height: 18px;
   padding: 0;
   line-height: 1;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.5);
   color: #ccc;
   cursor: pointer;
   opacity: 0;
@@ -262,6 +306,70 @@ body {
 
 .desk:hover .desk-remove {
   opacity: 1;
+}
+
+.agent-dock {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #17171f;
+  border-radius: 10px;
+  border: 1px solid #2f2f42;
+  overflow-x: auto;
+}
+
+.dock-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 8px;
+  min-width: 64px;
+  color: inherit;
+  font-family: inherit;
+}
+
+.dock-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dock-portrait {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #14141c;
+  font-size: 13px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
+}
+
+.dock-item-running .dock-portrait {
+  box-shadow: 0 0 0 2px #f5c542;
+}
+
+.dock-item-error .dock-portrait {
+  box-shadow: 0 0 0 2px #ff5c5c;
+}
+
+.dock-name {
+  font-size: 11px;
+  color: #e4e4ef;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock-status {
+  font-size: 10px;
+  color: #9a9ab0;
 }
 
 .modal-backdrop {
