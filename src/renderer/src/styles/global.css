@@ -586,7 +586,10 @@ body {
 .pantry-glass-wall {
   position: absolute;
   z-index: 2;
-  inset: 38% -2px -2px;
+  right: -2px;
+  bottom: -2px;
+  left: -2px;
+  height: 46px;
   display: grid;
   grid-template-columns: 1fr 1fr 38px;
   border: 3px solid #486b65;
@@ -1040,6 +1043,16 @@ body {
 
 .desk-vacant .generated-monitor-state {
   opacity: 0.35;
+}
+
+.desk-sprite {
+  position: relative;
+  z-index: 2;
+  image-rendering: pixelated;
+}
+
+.desk-vacant .pixel-chair {
+  opacity: 0.82;
 }
 
 .desk[data-rank='teamLead'] {

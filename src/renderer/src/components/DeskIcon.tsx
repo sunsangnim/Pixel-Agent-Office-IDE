@@ -15,11 +15,12 @@ const screenColor: Record<DeskStatus, string> = {
 function DeskIcon({ color, status }: DeskIconProps) {
   return (
     <div className="desk-asset-wrap" style={{ '--desk-accent': color } as CSSProperties}>
-      <div className="generated-desk-sprite" aria-hidden="true" />
       <svg className="desk-sprite" viewBox="0 0 96 92" width="96" height="92" shapeRendering="crispEdges">
-      <g className="pixel-worker">
-        {/* chair and afro silhouette */}
+      <g className="pixel-chair">
         <path fill="#252431" d="M26 33h44v35H26zM20 42h8v22h-8zM68 42h8v22h-8z" />
+      </g>
+      <g className="pixel-worker">
+        {/* afro silhouette */}
         <path fill="#24140f" d="M31 5h8V1h20v4h8v4h7v6h5v16h-5v7h-8v4H30v-4h-8v-7h-5V15h5V9h9z" />
         <path fill="#4b2517" d="M31 9h9V5h18v4h10v5h6v12h-5v7h-8V18H34v15h-8v-7h-4V15h9z" />
         <path fill="#6d3520" d="M26 13h8V9h8v4h-5v5h-7v7h-5zM59 9h8v5h5v9h-5v-5h-8z" />
@@ -43,7 +44,6 @@ function DeskIcon({ color, status }: DeskIconProps) {
       <path fill="#63371f" d="M5 87h86v5H5zM10 92h7v-9h-7zm69 0h7v-9h-7z" />
       <path fill="#20212a" d="M24 83h28v3H24zm34 0h6v4h-6z" />
       </svg>
-      <span className={`generated-monitor-state generated-monitor-${status}`} />
     </div>
   )
 }
