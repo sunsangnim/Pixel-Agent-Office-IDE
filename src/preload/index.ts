@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AgentInstance,
+  AgentStatePayload,
   AgentTemplate,
   AgentTemplateInput,
   AgentTemplatePatch,
@@ -16,6 +17,9 @@ const api: PreloadApi = {
     spawn: (options: PtySpawnOptions): Promise<PtySpawnResult> => ipcRenderer.invoke('pty:spawn', options),
     write: (ptyId: string, data: string): void => {
       ipcRenderer.send('pty:write', ptyId, data)
+    },
+    sendPrompt: (ptyId: string, prompt: string): void => {
+      ipcRenderer.send('pty:send-prompt', ptyId, prompt)
     },
     resize: (ptyId: string, cols: number, rows: number): void => {
       ipcRenderer.send('pty:resize', ptyId, cols, rows)
@@ -33,6 +37,11 @@ const api: PreloadApi = {
       const listener = (_event: Electron.IpcRendererEvent, payload: PtyExitPayload): void => callback(payload)
       ipcRenderer.on('pty:exit', listener)
       return () => ipcRenderer.removeListener('pty:exit', listener)
+    },
+    onState: (callback: (payload: AgentStatePayload) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: AgentStatePayload): void => callback(payload)
+      ipcRenderer.on('agent:state', listener)
+      return () => ipcRenderer.removeListener('agent:state', listener)
     }
   },
   templates: {

@@ -106,7 +106,7 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
         text: `${summaries.length}개 팀 보고가 도착해 총괄 코디네이터가 최종 취합 시작`
       }
     ])
-    window.api.pty.write(coordinator.ptyId, `${prompt}\r`)
+    window.api.pty.sendPrompt(coordinator.ptyId, prompt)
   }
 
   const queueTeamSummary = (leadInstanceId: string, text: string): void => {
@@ -159,7 +159,7 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
         text: `${reports.length}개 하위 세션 보고를 팀장에게 전달`
       }
     ])
-    window.api.pty.write(parent.ptyId, `${prompt}\r`)
+    window.api.pty.sendPrompt(parent.ptyId, prompt)
   }
 
   const queueChildReport = (parentInstanceId: string, report: ChildReport): void => {
@@ -285,7 +285,7 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
         timer: setTimeout(() => {}, 0),
         stage: 'task'
       })
-      window.api.pty.write(instance.ptyId, `${text}\r`)
+      window.api.pty.sendPrompt(instance.ptyId, text)
     }
   }
 
@@ -353,7 +353,7 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
         timer: setTimeout(() => {}, 0),
         stage: 'task'
       })
-      window.api.pty.write(instance.ptyId, `${assignment.prompt}\r`)
+      window.api.pty.sendPrompt(instance.ptyId, assignment.prompt)
     }
   }
 

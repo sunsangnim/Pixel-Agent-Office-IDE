@@ -30,6 +30,10 @@ export function registerIpcHandlers(): void {
     ptyManager.write(ptyId, data)
   })
 
+  ipcMain.on('pty:send-prompt', (_event, ptyId: string, prompt: string) => {
+    ptyManager.sendPrompt(ptyId, prompt)
+  })
+
   ipcMain.on('pty:resize', (_event, ptyId: string, cols: number, rows: number) => {
     ptyManager.resize(ptyId, cols, rows)
   })

@@ -28,6 +28,9 @@ function inspectCommon(output: string, readyPattern: RegExp): AdapterSignal | nu
   const text = clean(output)
   const error = text.match(ERROR_PATTERN)?.[0]
   if (error) return { state: 'error', reason: error }
+  if (/allow|approve|confirm|permission|press enter|\by\/n\b/i.test(text)) {
+    return { state: 'waiting', reason: '사용자 확인 또는 권한 승인을 기다리는 중' }
+  }
   if (readyPattern.test(text)) return { state: 'ready' }
   if (/thinking|working|running tool|executing|searching|analyzing/i.test(text)) return { state: 'working' }
   return null

@@ -4,6 +4,7 @@ import { ptyManager } from './ptyManager'
 import { agentTemplateStore } from './agentStore'
 import type { AgentInstance } from '../shared/types'
 import { ORCHESTRATION_POLICY } from '../shared/orchestrationPolicy'
+import { adapterIdForTemplate } from './cliAdapters'
 
 class InstanceManager {
   private instances = new Map<string, AgentInstance>()
@@ -39,7 +40,13 @@ class InstanceManager {
     if (slotIndex === undefined) throw new Error(`${template.name} 팀에 빈 좌석이 없습니다.`)
 
     const ptyId = ptyManager.spawn(
-      { command: template.command, args: template.args, cwd, env: template.env },
+      {
+        command: template.command,
+        args: template.args,
+        cwd,
+        env: template.env,
+        adapterId: adapterIdForTemplate(template.id)
+      },
       sender
     )
 
