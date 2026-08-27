@@ -3,8 +3,9 @@ import type { AgentInstance, AgentTemplate } from '@shared/types'
 import OfficeView from './components/OfficeView'
 import AgentDock from './components/AgentDock'
 import TerminalModal from './components/TerminalModal'
-import PromptPanel from './components/PromptPanel'
+import ChatPanel from './components/ChatPanel'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
+import { useAgentChat } from './hooks/useAgentChat'
 
 function App() {
   const [workFolder, setWorkFolder] = useState<string | null>(null)
@@ -14,6 +15,7 @@ function App() {
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const statuses = usePtyStatuses()
+  const { messages, lastTaskByInstance, sendPrompt } = useAgentChat(instances, templates)
 
   const refreshTemplates = (): void => {
     window.api.templates.list().then((list) => {
@@ -51,23 +53,12 @@ function App() {
     setSelectedInstanceId((current) => (current === instanceId ? null : current))
   }
 
-  const sendPrompt = (text: string, targetInstanceIds: string[]): void => {
-    for (const instanceId of targetInstanceIds) {
-      const instance = instances.find((i) => i.instanceId === instanceId)
-      if (instance) {
-        window.api.pty.write(instance.ptyId, `${text}\r`)
-      }
-    }
-  }
-
   return (
     <div className="app-root">
       <div className="main-column">
         <div className="top-bar">
           <h1>Pixel Agent Office IDE</h1>
           <div className="top-bar-actions">
-            <span className="work-folder-label">작업 폴더: {workFolder ?? '미지정'}</span>
-            <button onClick={chooseFolder}>폴더 변경</button>
             <select
               value={selectedTemplateId}
               onChange={(e) => setSelectedTemplateId(e.target.value)}
@@ -81,7 +72,6 @@ function App() {
             <button onClick={addInstance} disabled={!workFolder || !selectedTemplateId}>
               + 에이전트 추가
             </button>
-            <button onClick={() => window.api.system.openSettings()}>설정</button>
           </div>
         </div>
 
@@ -100,11 +90,19 @@ function App() {
           instances={instances}
           templates={templates}
           statuses={statuses}
+          tasks={lastTaskByInstance}
           onSelect={setSelectedInstanceId}
         />
       </div>
 
-      <PromptPanel instances={instances} templates={templates} onSend={sendPrompt} />
+      <ChatPanel
+        instances={instances}
+        templates={templates}
+        workFolder={workFolder}
+        onChooseFolder={chooseFolder}
+        messages={messages}
+        onSend={sendPrompt}
+      />
 
       {selectedInstanceId &&
         (() => {

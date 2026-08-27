@@ -55,24 +55,148 @@ body {
   overflow-y: auto;
 }
 
-.prompt-panel {
-  width: 300px;
+.chat-panel {
+  width: 320px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 20px 16px;
+  gap: 8px;
+  padding: 14px 14px 16px;
   border-left: 1px solid #2f2f42;
   background: #1a1a25;
-  overflow-y: auto;
+  min-height: 0;
 }
 
-.prompt-panel h2 {
-  margin: 0;
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chat-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-user-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #6ea8fe;
+  color: #0f1420;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chat-user-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.chat-settings-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid #3a3a4d;
+  background: #21212f;
+  color: #e4e4ef;
+  cursor: pointer;
   font-size: 15px;
+  line-height: 1;
 }
 
-.prompt-targets {
+.chat-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  background: #21212f;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.chat-folder-label {
+  color: #8a8a9c;
+  flex-shrink: 0;
+}
+
+.chat-folder-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #cfd6e4;
+}
+
+.chat-thread {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px;
+}
+
+.chat-empty {
+  color: #8a8a9c;
+  font-size: 12px;
+  margin: 0;
+}
+
+.chat-system-line {
+  align-self: center;
+  color: #7a8296;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 3px 10px;
+}
+
+.chat-message {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.chat-message-user {
+  flex-direction: row-reverse;
+}
+
+.chat-message-user .chat-bubble {
+  background: #2b4a7a;
+  align-items: flex-end;
+}
+
+.chat-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #262638;
+  border-radius: 8px;
+  padding: 6px 10px;
+  max-width: 220px;
+}
+
+.chat-author {
+  font-size: 11px;
+  color: #9aa4c0;
+  font-weight: 600;
+}
+
+.chat-text {
+  font-size: 13px;
+  color: #eef0f6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-targets {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -96,39 +220,43 @@ body {
   font-size: 13px;
 }
 
-.prompt-textarea {
-  min-height: 110px;
+.chat-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.chat-input {
+  flex: 1;
+  min-height: 56px;
+  max-height: 140px;
   resize: vertical;
   padding: 8px;
   font-family: inherit;
   font-size: 13px;
 }
 
-.prompt-log {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow-y: auto;
+.chat-send-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: none;
+  background: #6ea8fe;
+  color: #0f1420;
+  font-size: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
-.prompt-log-entry {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: #21212f;
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
+.chat-send-btn:disabled {
+  background: #3a3a4d;
+  color: #7a7a8c;
+  cursor: not-allowed;
 }
 
-.prompt-log-targets {
-  color: #6ea8fe;
-}
-
-.prompt-log-text {
-  color: #d0d0dc;
-  white-space: pre-wrap;
-  word-break: break-word;
+.identicon-avatar {
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .top-bar {
@@ -471,7 +599,7 @@ body {
   cursor: pointer;
   padding: 6px 8px;
   border-radius: 8px;
-  min-width: 64px;
+  min-width: 90px;
   color: inherit;
   font-family: inherit;
 }
@@ -480,31 +608,22 @@ body {
   background: rgba(255, 255, 255, 0.06);
 }
 
-.dock-portrait {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  color: #14141c;
-  font-size: 13px;
+.dock-item .identicon-avatar {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
 }
 
-.dock-item-running .dock-portrait {
+.dock-item-running .identicon-avatar {
   box-shadow: 0 0 0 2px #f5c542;
 }
 
-.dock-item-error .dock-portrait {
+.dock-item-error .identicon-avatar {
   box-shadow: 0 0 0 2px #ff5c5c;
 }
 
 .dock-name {
   font-size: 11px;
   color: #e4e4ef;
-  max-width: 64px;
+  max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -513,6 +632,10 @@ body {
 .dock-status {
   font-size: 10px;
   color: #9a9ab0;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .modal-backdrop {
@@ -621,6 +744,22 @@ body {
 
 .template-form input {
   padding: 6px 8px;
+}
+
+.template-env-textarea {
+  padding: 6px 8px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.template-env-badge {
+  align-self: flex-start;
+  font-size: 11px;
+  color: #7fe08a;
+  background: rgba(127, 224, 138, 0.12);
+  border-radius: 4px;
+  padding: 1px 6px;
 }
 
 .template-form-actions {

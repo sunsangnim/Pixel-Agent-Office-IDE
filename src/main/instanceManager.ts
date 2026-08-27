@@ -18,7 +18,7 @@ class InstanceManager {
     }
 
     const ptyId = ptyManager.spawn(
-      { command: template.command, args: template.args, cwd },
+      { command: template.command, args: template.args, cwd, env: template.env },
       sender
     )
 

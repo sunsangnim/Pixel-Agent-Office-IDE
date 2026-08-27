@@ -4,6 +4,7 @@ export interface PtySpawnOptions {
   cwd?: string
   cols?: number
   rows?: number
+  env?: Record<string, string>
 }
 
 export interface PtySpawnResult {
@@ -37,6 +38,7 @@ export interface AgentTemplate {
   command: string
   args: string[]
   color: string
+  env?: Record<string, string>
 }
 
 export type AgentTemplateInput = Omit<AgentTemplate, 'id'>

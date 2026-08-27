@@ -6,21 +6,38 @@ interface FormState {
   command: string
   args: string
   color: string
+  env: string
 }
 
-const emptyForm: FormState = { name: '', command: '', args: '', color: '#6ea8fe' }
+const emptyForm: FormState = { name: '', command: '', args: '', color: '#6ea8fe', env: '' }
 
 function toFormState(template: AgentTemplate): FormState {
   return {
     name: template.name,
     command: template.command,
     args: template.args.join(' '),
-    color: template.color
+    color: template.color,
+    env: Object.entries(template.env ?? {})
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n')
   }
 }
 
 function parseArgs(raw: string): string[] {
   return raw.trim().length === 0 ? [] : raw.trim().split(/\s+/)
+}
+
+function parseEnv(raw: string): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || !trimmed.includes('=')) continue
+    const idx = trimmed.indexOf('=')
+    const key = trimmed.slice(0, idx).trim()
+    const value = trimmed.slice(idx + 1).trim()
+    if (key) env[key] = value
+  }
+  return env
 }
 
 function SettingsWindow() {
@@ -55,7 +72,8 @@ function SettingsWindow() {
       name: form.name.trim(),
       command: form.command.trim(),
       args: parseArgs(form.args),
-      color: form.color
+      color: form.color,
+      env: parseEnv(form.env)
     }
     const updated = editingId
       ? await window.api.templates.update(editingId, input)
@@ -89,6 +107,9 @@ function SettingsWindow() {
                 <code>
                   {t.command} {t.args.join(' ')}
                 </code>
+                {t.env && Object.keys(t.env).length > 0 && (
+                  <span className="template-env-badge">환경변수 {Object.keys(t.env).length}개</span>
+                )}
               </div>
               <div className="template-actions">
                 <button onClick={() => startEdit(t)}>수정</button>
@@ -140,6 +161,16 @@ function SettingsWindow() {
             type="color"
             value={form.color}
             onChange={(e) => setForm({ ...form, color: e.target.value })}
+          />
+        </label>
+        <label>
+          API 키 / 환경변수 (한 줄에 KEY=VALUE)
+          <textarea
+            className="template-env-textarea"
+            value={form.env}
+            onChange={(e) => setForm({ ...form, env: e.target.value })}
+            placeholder={'ANTHROPIC_API_KEY=sk-...\nOPENAI_API_KEY=sk-...'}
+            rows={3}
           />
         </label>
         <div className="template-form-actions">

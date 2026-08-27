@@ -40,7 +40,7 @@ class PtyManager {
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
       cwd: options.cwd,
-      env: process.env as Record<string, string>
+      env: { ...process.env, ...options.env } as Record<string, string>
     })
 
     proc.onData((data) => {

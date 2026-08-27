@@ -1,9 +1,11 @@
 import type { AgentInstance, AgentTemplate, DeskStatus } from '@shared/types'
+import IdenticonAvatar from './IdenticonAvatar'
 
 interface AgentDockProps {
   instances: AgentInstance[]
   templates: AgentTemplate[]
   statuses: Record<string, DeskStatus>
+  tasks: Record<string, string>
   onSelect: (instanceId: string) => void
 }
 
@@ -13,7 +15,7 @@ const statusLabel: Record<DeskStatus, string> = {
   error: '오류'
 }
 
-function AgentDock({ instances, templates, statuses, onSelect }: AgentDockProps) {
+function AgentDock({ instances, templates, statuses, tasks, onSelect }: AgentDockProps) {
   if (instances.length === 0) return null
 
   return (
@@ -22,6 +24,7 @@ function AgentDock({ instances, templates, statuses, onSelect }: AgentDockProps)
         const template = templates.find((t) => t.id === instance.templateId)
         const status = statuses[instance.ptyId] ?? 'idle'
         const name = template?.name ?? instance.templateId
+        const task = tasks[instance.instanceId]
         return (
           <button
             key={instance.instanceId}
@@ -29,11 +32,9 @@ function AgentDock({ instances, templates, statuses, onSelect }: AgentDockProps)
             onClick={() => onSelect(instance.instanceId)}
             title={instance.cwd}
           >
-            <span className="dock-portrait" style={{ background: template?.color ?? '#888888' }}>
-              {name.slice(0, 1).toUpperCase()}
-            </span>
+            <IdenticonAvatar seed={instance.instanceId} color={template?.color ?? '#888888'} size={34} />
             <span className="dock-name">{name}</span>
-            <span className="dock-status">{statusLabel[status]}</span>
+            <span className="dock-status">{task ? task : statusLabel[status]}</span>
           </button>
         )
       })}
