@@ -13,7 +13,6 @@ function OfficeZones() {
       </div>
       <div className="zone zone-meeting">
         <span className="zone-label">회의실</span>
-        <span className="office-glass-door meeting-glass-door" aria-label="회의실 유리문"><i /></span>
         <div className="meeting-furniture" aria-label="긴 회의 테이블과 의자">
           <div className="meeting-chairs-row">
             <span className="chair" /><span className="chair" /><span className="chair" />
