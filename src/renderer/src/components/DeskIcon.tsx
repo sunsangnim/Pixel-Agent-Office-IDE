@@ -15,9 +15,11 @@ const screenColor: Record<DeskStatus, string> = {
 function DeskIcon({ color, status }: DeskIconProps) {
   return (
     <div className="desk-asset-wrap" style={{ '--desk-accent': color } as CSSProperties}>
-      <svg className="desk-sprite" viewBox="0 0 96 92" width="96" height="92" shapeRendering="crispEdges">
+      <svg className="desk-sprite" viewBox="0 0 120 96" width="120" height="96" shapeRendering="crispEdges">
       <g className="pixel-chair">
-        <path fill="#252431" d="M26 33h44v35H26zM20 42h8v22h-8zM68 42h8v22h-8z" />
+        <path fill="#b88758" d="M48 70h24v18H48z" />
+        <path fill="#875d3f" d="M45 73h3v15h-3zm27 0h3v15h-3zM51 88h4v8h-4zm14 0h4v8h-4z" />
+        <path fill="#d2a36d" d="M51 73h18v12H51z" />
       </g>
       <g className="pixel-worker">
         {/* afro silhouette */}
@@ -35,14 +37,19 @@ function DeskIcon({ color, status }: DeskIconProps) {
         <rect x="21" y="55" width="7" height="20" fill={color} />
         <rect x="68" y="55" width="7" height="20" fill={color} />
       </g>
-      {/* monitor and workstation */}
-      <path fill="#171820" d="M32 52h35v25H32z" />
-      <rect x="36" y="56" width="27" height="16" fill={screenColor[status]} className={status === 'running' ? 'desk-screen-glow' : undefined} />
-      <path fill="#232b35" d="M39 59h12v2H39zm0 4h18v2H39zm0 4h8v2h-8z" opacity=".8" />
-      <path fill="#171820" d="M46 77h7v5h8v3H38v-3h8z" />
-      <path fill="#9a5a34" d="M5 80h86v7H5z" />
-      <path fill="#63371f" d="M5 87h86v5H5zM10 92h7v-9h-7zm69 0h7v-9h-7z" />
-      <path fill="#20212a" d="M24 83h28v3H24zm34 0h6v4h-6z" />
+      {/* clear front-facing pixel workstation */}
+      <path fill="#20232b" d="M42 8h37v29H42z" />
+      <path fill="#59636b" d="M45 11h31v23H45z" />
+      <rect x="49" y="15" width="23" height="15" fill={screenColor[status]} className={status === 'running' ? 'desk-screen-glow' : undefined} />
+      <path fill="#afb9b4" d="M56 37h9v7h10v4H46v-4h10z" />
+      <path fill="#7b8380" d="M50 44h21v3H50z" />
+      <path fill="#d9aa69" d="M7 48h106v10H7z" />
+      <path fill="#b77c45" d="M7 58h106v7H7z" />
+      <path fill="#754b31" d="M12 65h8v14h-8zm88 0h8v14h-8z" />
+      <path fill="#f0e2c7" d="M43 53h35v5H43z" />
+      <path fill="#8e8171" d="M47 54h27v2H47z" />
+      <path fill="#e8ded0" d="M86 51h7v6h-7z" />
+      <path fill="#88796b" d="M88 52h3v3h-3z" />
       </svg>
     </div>
   )
