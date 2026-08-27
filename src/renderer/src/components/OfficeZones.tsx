@@ -9,9 +9,19 @@ function OfficeZones() {
       <div className="zone zone-meeting">
         <span className="zone-label">회의실</span>
         <div className="meeting-tv" />
-        <div className="meeting-chairs-row"><span className="chair" /><span className="chair" /><span className="chair" /></div>
-        <div className="meeting-table"><span className="meeting-head-seat">💻</span></div>
-        <div className="meeting-chairs-row"><span className="chair" /><span className="chair" /><span className="chair" /></div>
+        <div className="meeting-furniture" aria-label="긴 회의 테이블과 의자">
+          <div className="meeting-chairs-row">
+            <span className="chair" /><span className="chair" /><span className="chair" />
+          </div>
+          <div className="meeting-table-row">
+            <span className="chair meeting-head-chair" />
+            <div className="meeting-table"><span className="meeting-laptop" /></div>
+            <span className="chair meeting-end-chair" />
+          </div>
+          <div className="meeting-chairs-row">
+            <span className="chair" /><span className="chair" /><span className="chair" />
+          </div>
+        </div>
       </div>
       <div className="zone zone-entrance">
         <span className="zone-label">출입구</span>

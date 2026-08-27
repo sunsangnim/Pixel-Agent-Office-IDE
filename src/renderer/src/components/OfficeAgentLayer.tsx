@@ -10,7 +10,7 @@ interface OfficeAgentLayerProps {
 }
 
 const DESK_X = [12.5, 37.5, 62.5, 87.5]
-const DESK_Y = [45, 67, 87]
+const DESK_Y = [44, 66, 86]
 
 function activityLabel(presence: OfficePresence): string | undefined {
   if (presence === 'pantry') return '휴식 중'
@@ -27,8 +27,8 @@ function position(
   teamIndex: number,
   presence: OfficePresence
 ): { x: number; y: number } {
-  if (presence === 'pantry') return { x: 8 + (profileIndex % 3) * 5, y: 14 }
-  if (presence === 'meeting') return { x: 43 + (profileIndex % 4) * 5, y: 14 }
+  if (presence === 'pantry') return { x: 9 + (profileIndex % 3) * 6, y: 18 }
+  if (presence === 'meeting') return { x: 42 + (profileIndex % 4) * 6, y: 18 }
   return {
     x: DESK_X[profile.slotIndex] ?? 50,
     y: DESK_Y[teamIndex] ?? Math.min(88, 45 + teamIndex * 18)

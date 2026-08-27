@@ -282,9 +282,6 @@ body {
 
 .pixel-background-enabled .pantry-fridge,
 .pixel-background-enabled .pantry-counter,
-.pixel-background-enabled .meeting-tv,
-.pixel-background-enabled .meeting-chairs-row,
-.pixel-background-enabled .meeting-table,
 .pixel-background-enabled .elevator-door,
 .pixel-background-enabled .office-deco {
   visibility: hidden;
@@ -384,8 +381,10 @@ body {
 }
 
 .office-zones {
-  display: flex;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 34% 38% 28%;
+  flex: 0 0 30%;
+  gap: 0;
 }
 
 .zone {
@@ -400,7 +399,37 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  min-height: 110px;
+  min-height: 0;
+}
+
+.pixel-background-enabled .zone-pantry,
+.pixel-background-enabled .zone-meeting {
+  overflow: hidden;
+  border: 2px solid rgba(199, 232, 225, 0.72);
+  border-top-color: rgba(235, 249, 245, 0.9);
+  border-radius: 2px;
+  background:
+    linear-gradient(118deg, transparent 18%, rgba(255, 255, 255, 0.14) 19% 21%, transparent 22% 54%, rgba(255, 255, 255, 0.08) 55% 57%, transparent 58%),
+    rgba(181, 221, 213, 0.07);
+  box-shadow: inset 0 -3px rgba(53, 91, 83, 0.48);
+}
+
+.pixel-background-enabled .zone-pantry::after,
+.pixel-background-enabled .zone-meeting::after {
+  content: '';
+  position: absolute;
+  right: 12%;
+  bottom: -2px;
+  width: 22px;
+  height: 42px;
+  border: 2px solid rgba(221, 241, 236, 0.76);
+  border-bottom: 0;
+  background: rgba(166, 211, 203, 0.12);
+  box-shadow: inset 3px 0 rgba(255, 255, 255, 0.12);
+}
+
+.pixel-background-enabled .zone-entrance {
+  border: 0;
 }
 
 .zone-label {
@@ -440,8 +469,10 @@ body {
 
 /* meeting room */
 .meeting-tv {
-  width: 60%;
-  height: 16px;
+  position: absolute;
+  top: 16px;
+  width: 34%;
+  height: 13px;
   background: #111116;
   border: 2px solid #4a4a58;
   border-radius: 2px;
@@ -449,30 +480,65 @@ body {
 
 .meeting-chairs-row {
   display: flex;
-  gap: 10px;
+  justify-content: space-evenly;
+  width: 68%;
 }
 
 .chair {
-  width: 8px;
+  width: 12px;
   height: 8px;
-  border-radius: 2px;
-  background: #b5432f;
+  border: 2px solid #4b3529;
+  border-radius: 2px 2px 4px 4px;
+  background: #8a5a3b;
+  box-shadow: 2px 2px 0 rgba(39, 31, 25, 0.42);
+}
+
+.meeting-furniture {
+  position: absolute;
+  inset: 35px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.meeting-table-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 94%;
 }
 
 .meeting-table {
   position: relative;
-  width: 70%;
-  height: 14px;
-  background: #8a5a3b;
-  border-radius: 2px;
-  display: flex;
-  align-items: center;
+  width: 76%;
+  height: 26px;
+  border: 2px solid #68472f;
+  background: linear-gradient(180deg, #c5925f, #9b683f);
+  border-radius: 3px;
+  box-shadow: 0 3px 0 #5f4634, inset 0 2px rgba(255, 226, 174, 0.28);
 }
 
-.meeting-head-seat {
+.meeting-laptop {
   position: absolute;
-  left: -18px;
-  font-size: 14px;
+  left: 7px;
+  top: 5px;
+  width: 17px;
+  height: 11px;
+  border: 2px solid #303541;
+  background: #6da2b2;
+  box-shadow: 0 4px 0 -1px #262b35;
+}
+
+.meeting-head-chair {
+  border-color: #242937;
+  background: #3f4658;
+}
+
+.meeting-end-chair {
+  opacity: 0.9;
 }
 
 /* entrance */
@@ -510,8 +576,8 @@ body {
 .office-desk-floor {
   position: relative;
   flex: 1;
-  min-height: 380px;
-  padding: 20px 16px;
+  min-height: 0;
+  padding: 8px 18px 10px;
 }
 
 .office-deco {
@@ -557,7 +623,10 @@ body {
 
 .office-grid-fixed {
   grid-template-columns: repeat(4, minmax(92px, 1fr));
-  gap: 16px 8px;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 4px 14px;
+  height: 100%;
+  align-items: center;
 }
 
 .desk-role {
