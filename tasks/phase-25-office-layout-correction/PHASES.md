@@ -3,4 +3,4 @@
 - [x] Phase 25.1 — 통합 SRS·PRD·화면설계 문서
 - [x] Phase 25.2 — 데스크 SVG·탕비실 문·노트북 방향 교정
 - [x] Phase 25.3 — 캔버스 확장·대표실 독립 구획·충돌 제거
-- [ ] Phase 25.4 — 화면 검증·README·완료
+- [x] Phase 25.4 — 화면 검증·README·완료
