@@ -799,9 +799,9 @@ body {
   content: '';
   position: absolute;
   z-index: 2;
-  top: 18px;
+  top: 0;
   right: 0;
-  bottom: 4px;
+  bottom: 0;
   width: 4px;
   background: rgba(73, 105, 98, 0.5);
   box-shadow: 3px 0 rgba(218, 239, 233, 0.18);
