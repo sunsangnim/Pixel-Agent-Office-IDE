@@ -18,7 +18,7 @@ import { OFFICE_COLLISIONS, findOfficePath } from '../src/renderer/src/game/navi
 import { intersectsAabb, pushApart, resolveAxisSeparated } from '../src/renderer/src/game/collisionResolution'
 import { parseOfficeLayout } from '../src/renderer/src/game/layoutPersistence'
 import {
-  FURNITURE_FOOTPRINTS, OFFICE_GRID_COLUMNS, OFFICE_GRID_ROWS, OFFICE_WALL_COLLISIONS,
+  FURNITURE_FOOTPRINTS, OFFICE_FLOOR_REGION, OFFICE_GRID_COLUMNS, OFFICE_GRID_ROWS, OFFICE_WALL_COLLISIONS,
   furnitureCollision, rotatedFootprint, snapFurniturePoint
 } from '../src/renderer/src/game/officeGrid'
 import { ActorStateMachine, actionForPresence } from '../src/renderer/src/game/actorStateMachine'
@@ -175,6 +175,7 @@ function verifyLivingOfficeAndRoster(): void {
   assert.deepEqual(rotatedFootprint(15, 90), { columns: 2, rows: 1 })
   assert.deepEqual(snapFurniturePoint({ x: 103, y: 99 }, FURNITURE_FOOTPRINTS[15]), { x: 104, y: 96 })
   assert.deepEqual(furnitureCollision({ x: 104, y: 96 }, FURNITURE_FOOTPRINTS[15]), { x: 96, y: 80, width: 16, height: 32 })
+  assert.deepEqual(OFFICE_FLOOR_REGION, { x: 480, y: 320, width: 928, height: 608 })
   const throughPantryDoor = findOfficePath({ x: 240, y: 240 }, { x: 240, y: 160 }, OFFICE_WALL_COLLISIONS)
   assert.ok(throughPantryDoor.every((point) => !OFFICE_WALL_COLLISIONS.some((wall) =>
     point.x > wall.x && point.x < wall.x + wall.width && point.y > wall.y && point.y < wall.y + wall.height
@@ -223,8 +224,6 @@ function verifyLivingOfficeAndRoster(): void {
     }
     assert.ok(transparentPixels / (decoded.width * decoded.height) > 0.45)
   }
-  const architecture = PNG.sync.read(fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'office-architecture-background-v1.png')))
-  assert.ok(Math.abs(architecture.width / architecture.height - 1.5) < 0.01)
   const furnitureDirectory = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'furniture')
   const furnitureAssets = fs.readdirSync(furnitureDirectory).filter((file) => file.endsWith('.png'))
   assert.equal(furnitureAssets.length, 12)

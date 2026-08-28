@@ -22,6 +22,8 @@ export const OFFICE_WALL_COLLISIONS: CollisionRect[] = [
   tiles(45, 25, 14, 1), tiles(45, 25, 1, 3), tiles(45, 30, 1, 9)
 ]
 
+export const OFFICE_FLOOR_REGION = { x: 480, y: 320, width: 928, height: 608 }
+
 export const FURNITURE_FOOTPRINTS: Record<number, TileFootprint> = {
   0: { columns: 2, rows: 3 }, 1: { columns: 2, rows: 4 }, 2: { columns: 4, rows: 2 },
   5: { columns: 5, rows: 1 }, 6: { columns: 12, rows: 6 }, 10: { columns: 6, rows: 3 },
@@ -50,4 +52,3 @@ export function furnitureCollision(point: WorldPoint, footprint: TileFootprint):
   const height = footprint.rows * NAV_TILE_SIZE
   return { x: point.x - width / 2, y: point.y - height / 2, width, height }
 }
-

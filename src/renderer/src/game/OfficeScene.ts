@@ -8,7 +8,6 @@ import codexTeamAnimationAtlas from '../assets/pixel-office/codex-team-animation
 import antigravityTeamAnimationAtlas from '../assets/pixel-office/antigravity-team-animation-atlas-v1.png'
 import rosterRow4AnimationAtlas from '../assets/pixel-office/roster-row-4-animation-atlas-v1.png'
 import claudeTeamAnimationAtlas from '../assets/pixel-office/claude-team-animation-atlas-v1.png'
-import officeArchitectureBackground from '../assets/pixel-office/office-architecture-background-v1.png'
 import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-v1.png'
 import refrigeratorAsset from '../assets/pixel-office/furniture/refrigerator-v1.png'
 import pantryCabinetAsset from '../assets/pixel-office/furniture/pantry-cabinet-v1.png'
@@ -37,7 +36,9 @@ import {
   type WorldPoint
 } from './officeWorld'
 import { findOfficePath } from './navigation'
-import { furnitureCollision, OFFICE_WALL_COLLISIONS, rotatedFootprint, snapFurniturePoint } from './officeGrid'
+import {
+  furnitureCollision, OFFICE_FLOOR_REGION, OFFICE_WALL_COLLISIONS, rotatedFootprint, snapFurniturePoint
+} from './officeGrid'
 import { intersectsAabb, pushApart, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
 import { OFFICE_LAYOUT_SAVE_KEY, parseOfficeLayout, type OfficeLayoutSave } from './layoutPersistence'
 import { ActorStateMachine } from './actorStateMachine'
@@ -110,7 +111,10 @@ export class OfficeScene extends Phaser.Scene {
   setLayoutEditing(editing: boolean): void {
     this.layoutEditing = editing
     this.setEditorUiVisible(editing)
-    if (!editing) this.selectFurniture(null)
+    if (!editing) {
+      this.selectFurniture(null)
+      this.sanitizeFurniturePlacements()
+    }
   }
 
   preload(): void {
@@ -120,7 +124,6 @@ export class OfficeScene extends Phaser.Scene {
     this.load.image('antigravity-team-animation-atlas', antigravityTeamAnimationAtlas)
     this.load.image('roster-row-4-animation-atlas', rosterRow4AnimationAtlas)
     this.load.image('claude-team-animation-atlas', claudeTeamAnimationAtlas)
-    this.load.image('office-architecture-background', officeArchitectureBackground)
     const furnitureAssets: Array<[string, string]> = [
       ['furniture-coffee-machine', coffeeMachineAsset], ['furniture-refrigerator', refrigeratorAsset],
       ['furniture-pantry-cabinet', pantryCabinetAsset], ['furniture-presentation-screen', presentationScreenAsset],
@@ -165,10 +168,9 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createWorld(): void {
-    this.add.image(OFFICE_WORLD_WIDTH / 2, OFFICE_WORLD_HEIGHT / 2, 'office-architecture-background')
-      .setDisplaySize(OFFICE_WORLD_WIDTH, OFFICE_WORLD_HEIGHT)
-      .setDepth(0)
+    this.add.rectangle(480, 320, 960, 640, 0x18352e).setDepth(0)
     this.createFloorLayers()
+    this.createHardcodedArchitecture()
 
     this.createRoom(8, 8, 280, 205, '탕비실')
     this.createRoom(296, 8, 370, 205, '회의실')
@@ -183,7 +185,7 @@ export class OfficeScene extends Phaser.Scene {
     this.restoreCustomFurniture()
   }
 
-  private addFurniture(id: string, frame: number, x: number, y: number, width: number, height: number, depth = y): Phaser.GameObjects.Image {
+  private addFurniture(id: string, frame: number, x: number, y: number, _width: number, _height: number, depth = y): Phaser.GameObjects.Image {
     const saved = this.layoutSave[id]
     const angle = saved?.rotation ?? 0
     const requested = snapFurniturePoint({ x: saved?.x ?? x, y: saved?.y ?? y }, rotatedFootprint(frame, angle))
@@ -192,7 +194,7 @@ export class OfficeScene extends Phaser.Scene {
       ? (this.furniturePlacementCollides(id, frame, fallback, angle) ? this.findFreeFurniturePoint(frame, angle) : fallback)
       : requested
     const image = this.add.image(initial.x, initial.y, FURNITURE_TEXTURES[frame] ?? 'furniture-workstation-desk')
-      .setDisplaySize(width, height)
+      .setDisplaySize(rotatedFootprint(frame, 0).columns * 16, rotatedFootprint(frame, 0).rows * 16)
       .setAngle(angle)
       .setDepth(initial.y ?? depth)
       .setInteractive({ useHandCursor: true, draggable: true })
@@ -202,11 +204,15 @@ export class OfficeScene extends Phaser.Scene {
     image.on('dragstart', () => image.setData({ dragStartX: image.x, dragStartY: image.y }))
     image.on('drag', (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
       if (!this.layoutEditing) return
-      image.setPosition(
-        Phaser.Math.Clamp(dragX, image.displayWidth / 2, OFFICE_WORLD_WIDTH - image.displayWidth / 2),
-        Phaser.Math.Clamp(dragY, image.displayHeight / 2, OFFICE_WORLD_HEIGHT - image.displayHeight / 2)
-      ).setDepth(image.y)
-      this.updateSelectionOutline()
+      const footprint = rotatedFootprint(frame, image.angle)
+      const snapped = snapFurniturePoint({
+        x: Phaser.Math.Clamp(dragX, footprint.columns * 8, OFFICE_WORLD_WIDTH - footprint.columns * 8),
+        y: Phaser.Math.Clamp(dragY, footprint.rows * 8, OFFICE_WORLD_HEIGHT - footprint.rows * 8)
+      }, footprint)
+      if (!this.furniturePlacementCollides(id, frame, snapped, image.angle)) {
+        image.setPosition(snapped.x, snapped.y).setDepth(snapped.y)
+        this.updateSelectionOutline()
+      }
     })
     image.on('dragend', () => {
       if (!this.layoutEditing) return
@@ -269,16 +275,25 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createFloorLayers(): void {
-    const regions = [
-      { x: 480, y: 424, width: 928, height: 400 },
-      { x: 148, y: 112, width: 264, height: 176 },
-      { x: 480, y: 112, width: 352, height: 176 },
-      { x: 812, y: 112, width: 264, height: 176 },
-      { x: 840, y: 520, width: 208, height: 192 }
-    ]
-    this.floorLayers = regions.map((region) => this.add.tileSprite(
-      region.x, region.y, region.width, region.height, this.selectedFloor
-    ).setDepth(1))
+    const region = OFFICE_FLOOR_REGION
+    this.floorLayers = [this.add.tileSprite(region.x, region.y, region.width, region.height, this.selectedFloor).setDepth(1)]
+  }
+
+  private createHardcodedArchitecture(): void {
+    const addWindowBand = (x: number, width: number): void => {
+      this.add.rectangle(x, 58, width, 64, 0x9ac9c3, 0.82).setStrokeStyle(3, 0x315b54).setDepth(12)
+      for (let divider = x - width / 2 + 64; divider < x + width / 2; divider += 64) {
+        this.add.rectangle(divider, 58, 3, 64, 0x315b54).setDepth(13)
+      }
+    }
+    addWindowBand(144, 256)
+    addWindowBand(480, 352)
+    this.add.rectangle(712, 92, 42, 92, 0x9ac9c3, 0.75).setStrokeStyle(3, 0x315b54).setDepth(12)
+    this.add.rectangle(880, 92, 42, 92, 0x9ac9c3, 0.75).setStrokeStyle(3, 0x315b54).setDepth(12)
+    OFFICE_WALL_COLLISIONS.forEach((wall) => {
+      this.add.rectangle(wall.x, wall.y, wall.width, wall.height, 0xd6c3a5)
+        .setOrigin(0).setStrokeStyle(2, 0x37564d).setDepth(20)
+    })
   }
 
   private setFloorTexture(texture: typeof FLOOR_TEXTURES[number]): void {
@@ -401,6 +416,20 @@ export class OfficeScene extends Phaser.Scene {
       }
     }
     return { x: 480, y: 340 }
+  }
+
+  private sanitizeFurniturePlacements(): void {
+    if (this.furniture.size === 0) return
+    for (const furniture of this.furniture.values()) {
+      const { id, frame, image, defaultPoint } = furniture
+      if (!this.furniturePlacementCollides(id, frame, image, image.angle)) continue
+      const fallback = snapFurniturePoint(defaultPoint, rotatedFootprint(frame, image.angle))
+      const point = this.furniturePlacementCollides(id, frame, fallback, image.angle)
+        ? this.findFreeFurniturePoint(frame, image.angle)
+        : fallback
+      image.setPosition(point.x, point.y).setDepth(point.y)
+    }
+    this.saveFurnitureLayout()
   }
 
   private createRoom(x: number, y: number, width: number, height: number, label: string): void {

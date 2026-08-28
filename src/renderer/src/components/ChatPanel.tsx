@@ -43,6 +43,13 @@ function ChatPanel({
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages.length])
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('office:layout-edit', { detail: { editing: false } }))
+    return () => {
+      window.dispatchEvent(new CustomEvent('office:layout-edit', { detail: { editing: false } }))
+    }
+  }, [])
+
   const selectedNames = instances
     .filter((i) => selectedTargetIds.has(i.instanceId))
     .map((i) => templates.find((t) => t.id === i.templateId)?.name ?? i.templateId)

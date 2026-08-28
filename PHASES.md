@@ -78,3 +78,8 @@
 - [x] Add selectable seamless floor assets
 - [x] Apply the selected tile to every interior floor while preserving hardcoded rooms
 - [x] Enforce a 60×40 wall grid and per-asset tile footprints
+## Phase 44 — Visual/Grid Collision Consistency
+
+- [x] Match furniture pixels to assigned tile footprints
+- [x] Block invalid placement during drag and always clear edit selection
+- [x] Render hardcoded architecture from the same collision grid
