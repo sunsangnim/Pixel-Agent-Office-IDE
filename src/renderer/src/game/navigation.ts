@@ -24,18 +24,6 @@ export const OFFICE_COLLISIONS: CollisionRect[] = [
   { x: 882, y: 520, width: 65, height: 108 }
 ]
 
-export const OFFICE_STRUCTURE_COLLISIONS: CollisionRect[] = [
-  { x: 0, y: 0, width: OFFICE_WORLD_WIDTH, height: 12 },
-  { x: 0, y: OFFICE_WORLD_HEIGHT - 12, width: OFFICE_WORLD_WIDTH, height: 12 },
-  { x: 0, y: 0, width: 12, height: OFFICE_WORLD_HEIGHT },
-  { x: OFFICE_WORLD_WIDTH - 12, y: 0, width: 12, height: OFFICE_WORLD_HEIGHT },
-  { x: 8, y: 205, width: 245, height: 10 }, { x: 287, y: 8, width: 10, height: 207 },
-  { x: 296, y: 205, width: 160, height: 10 }, { x: 494, y: 205, width: 172, height: 10 },
-  { x: 666, y: 8, width: 10, height: 207 }, { x: 674, y: 205, width: 278, height: 10 },
-  { x: 725, y: 405, width: 10, height: 42 }, { x: 725, y: 485, width: 10, height: 147 },
-  { x: 725, y: 405, width: 227, height: 10 }
-]
-
 function toTile(point: WorldPoint): TilePoint {
   return {
     col: PhaserMathClamp(Math.round(point.x / NAV_TILE_SIZE), 1, COLS - 2),

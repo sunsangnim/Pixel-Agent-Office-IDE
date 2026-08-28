@@ -21,6 +21,10 @@ import sideTableAsset from '../assets/pixel-office/furniture/side-table-v1.png'
 import officeSofaAsset from '../assets/pixel-office/furniture/office-sofa-v1.png'
 import floorLampAsset from '../assets/pixel-office/furniture/floor-lamp-v1.png'
 import bookcaseAsset from '../assets/pixel-office/furniture/bookcase-v1.png'
+import mintFloorAsset from '../assets/pixel-office/floors/mint-tile-v1.png'
+import oakFloorAsset from '../assets/pixel-office/floors/oak-parquet-v1.png'
+import stoneFloorAsset from '../assets/pixel-office/floors/blue-stone-v1.png'
+import carpetFloorAsset from '../assets/pixel-office/floors/teal-carpet-v1.png'
 import {
   MEETING_SEATS,
   OFFICE_WORLD_HEIGHT,
@@ -32,8 +36,9 @@ import {
   type OfficeWorldSnapshot,
   type WorldPoint
 } from './officeWorld'
-import { OFFICE_STRUCTURE_COLLISIONS, findOfficePath } from './navigation'
-import { pushApart, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
+import { findOfficePath } from './navigation'
+import { furnitureCollision, OFFICE_WALL_COLLISIONS, rotatedFootprint, snapFurniturePoint } from './officeGrid'
+import { intersectsAabb, pushApart, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
 import { OFFICE_LAYOUT_SAVE_KEY, parseOfficeLayout, type OfficeLayoutSave } from './layoutPersistence'
 import { ActorStateMachine } from './actorStateMachine'
 import { OFFICE_WORLD_SAVE_KEY, parseOfficeWorldSave, upsertSavedActor, type OfficeWorldSave } from './worldPersistence'
@@ -74,11 +79,8 @@ const FURNITURE_TEXTURES: Record<number, string> = {
   15: 'furniture-office-plant', 16: 'furniture-side-table', 17: 'furniture-office-sofa',
   18: 'furniture-floor-lamp', 19: 'furniture-bookcase'
 }
-const FURNITURE_COLLISION_SCALE: Record<number, [number, number]> = {
-  0: [0.65, 0.55], 1: [0.55, 0.76], 2: [0.82, 0.55], 5: [0.86, 0.3],
-  6: [0.88, 0.64], 10: [0.86, 0.55], 12: [0.5, 0.5], 13: [0.5, 0.5], 14: [0.5, 0.5],
-  15: [0.45, 0.45], 16: [0.62, 0.5], 17: [0.82, 0.62], 18: [0.34, 0.34], 19: [0.65, 0.76]
-}
+const FLOOR_TEXTURES = ['floor-mint', 'floor-oak', 'floor-stone', 'floor-carpet'] as const
+const OFFICE_FLOOR_SAVE_KEY = 'pixel-office-floor-v1'
 
 export class OfficeScene extends Phaser.Scene {
   private actors = new Map<string, ActorView>()
@@ -94,6 +96,8 @@ export class OfficeScene extends Phaser.Scene {
   private selectionOutline?: Phaser.GameObjects.Rectangle
   private editorUi: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text | Phaser.GameObjects.Image> = []
   private nextFurnitureId = 1
+  private floorLayers: Phaser.GameObjects.TileSprite[] = []
+  private selectedFloor = 'floor-mint'
 
   constructor() {
     super(OFFICE_SCENE_KEY)
@@ -126,11 +130,17 @@ export class OfficeScene extends Phaser.Scene {
       ['furniture-floor-lamp', floorLampAsset], ['furniture-bookcase', bookcaseAsset]
     ]
     furnitureAssets.forEach(([key, url]) => this.load.image(key, url))
+    this.load.image('floor-mint', mintFloorAsset)
+    this.load.image('floor-oak', oakFloorAsset)
+    this.load.image('floor-stone', stoneFloorAsset)
+    this.load.image('floor-carpet', carpetFloorAsset)
   }
 
   create(): void {
     this.worldSave = parseOfficeWorldSave(localStorage.getItem(OFFICE_WORLD_SAVE_KEY))
     this.layoutSave = parseOfficeLayout(localStorage.getItem(OFFICE_LAYOUT_SAVE_KEY))
+    const savedFloor = localStorage.getItem(OFFICE_FLOOR_SAVE_KEY)
+    this.selectedFloor = FLOOR_TEXTURES.includes(savedFloor as typeof FLOOR_TEXTURES[number]) ? savedFloor! : 'floor-mint'
     this.cameras.main.setBackgroundColor('#17221f')
     this.createWorld()
     this.createLayoutEditor()
@@ -158,6 +168,7 @@ export class OfficeScene extends Phaser.Scene {
     this.add.image(OFFICE_WORLD_WIDTH / 2, OFFICE_WORLD_HEIGHT / 2, 'office-architecture-background')
       .setDisplaySize(OFFICE_WORLD_WIDTH, OFFICE_WORLD_HEIGHT)
       .setDepth(0)
+    this.createFloorLayers()
 
     this.createRoom(8, 8, 280, 205, '탕비실')
     this.createRoom(296, 8, 370, 205, '회의실')
@@ -174,14 +185,21 @@ export class OfficeScene extends Phaser.Scene {
 
   private addFurniture(id: string, frame: number, x: number, y: number, width: number, height: number, depth = y): Phaser.GameObjects.Image {
     const saved = this.layoutSave[id]
-    const image = this.add.image(saved?.x ?? x, saved?.y ?? y, FURNITURE_TEXTURES[frame] ?? 'furniture-workstation-desk')
+    const angle = saved?.rotation ?? 0
+    const requested = snapFurniturePoint({ x: saved?.x ?? x, y: saved?.y ?? y }, rotatedFootprint(frame, angle))
+    const fallback = snapFurniturePoint({ x, y }, rotatedFootprint(frame, angle))
+    const initial = this.furniturePlacementCollides(id, frame, requested, angle)
+      ? (this.furniturePlacementCollides(id, frame, fallback, angle) ? this.findFreeFurniturePoint(frame, angle) : fallback)
+      : requested
+    const image = this.add.image(initial.x, initial.y, FURNITURE_TEXTURES[frame] ?? 'furniture-workstation-desk')
       .setDisplaySize(width, height)
-      .setAngle(saved?.rotation ?? 0)
-      .setDepth(saved?.y ?? depth)
+      .setAngle(angle)
+      .setDepth(initial.y ?? depth)
       .setInteractive({ useHandCursor: true, draggable: true })
     image.setData({ furnitureId: id, furnitureFrame: frame })
     this.input.setDraggable(image)
     image.on('pointerdown', () => this.selectFurniture(id))
+    image.on('dragstart', () => image.setData({ dragStartX: image.x, dragStartY: image.y }))
     image.on('drag', (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
       if (!this.layoutEditing) return
       image.setPosition(
@@ -191,7 +209,16 @@ export class OfficeScene extends Phaser.Scene {
       this.updateSelectionOutline()
     })
     image.on('dragend', () => {
-      if (this.layoutEditing) this.saveFurnitureLayout()
+      if (!this.layoutEditing) return
+      const snapped = snapFurniturePoint({ x: image.x, y: image.y }, rotatedFootprint(frame, image.angle))
+      if (this.furniturePlacementCollides(id, frame, snapped, image.angle)) {
+        image.setPosition(image.getData('dragStartX'), image.getData('dragStartY'))
+      } else {
+        image.setPosition(snapped.x, snapped.y)
+      }
+      image.setDepth(image.y)
+      this.updateSelectionOutline()
+      this.saveFurnitureLayout()
     })
     this.furniture.set(id, { id, frame, image, defaultPoint: { x, y } })
     return image
@@ -203,6 +230,12 @@ export class OfficeScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '10px', color: '#dff3ed'
     }).setDepth(2000)
     this.editorUi.push(panel, help)
+    FLOOR_TEXTURES.forEach((texture, index) => {
+      const tile = this.add.image(145 + index * 34, 610, texture)
+        .setDisplaySize(28, 28).setDepth(2001).setInteractive({ useHandCursor: true })
+      tile.on('pointerdown', () => this.setFloorTexture(texture))
+      this.editorUi.push(tile)
+    })
     const frames = [0, 1, 2, 5, 6, 10, 12, 15, 16, 17, 18, 19]
     frames.forEach((frame, index) => {
       const x = 285 + index * 38
@@ -235,6 +268,26 @@ export class OfficeScene extends Phaser.Scene {
     this.setEditorUiVisible(false)
   }
 
+  private createFloorLayers(): void {
+    const regions = [
+      { x: 480, y: 424, width: 928, height: 400 },
+      { x: 148, y: 112, width: 264, height: 176 },
+      { x: 480, y: 112, width: 352, height: 176 },
+      { x: 812, y: 112, width: 264, height: 176 },
+      { x: 840, y: 520, width: 208, height: 192 }
+    ]
+    this.floorLayers = regions.map((region) => this.add.tileSprite(
+      region.x, region.y, region.width, region.height, this.selectedFloor
+    ).setDepth(1))
+  }
+
+  private setFloorTexture(texture: typeof FLOOR_TEXTURES[number]): void {
+    if (!this.layoutEditing) return
+    this.selectedFloor = texture
+    this.floorLayers.forEach((layer) => layer.setTexture(texture))
+    localStorage.setItem(OFFICE_FLOOR_SAVE_KEY, texture)
+  }
+
   private setEditorUiVisible(visible: boolean): void {
     this.editorUi.forEach((object) => object.setVisible(visible))
     this.furniture.forEach(({ image }) => image.setAlpha(visible ? 0.88 : 1))
@@ -261,7 +314,8 @@ export class OfficeScene extends Phaser.Scene {
   private addFurnitureFromPalette(frame: number): void {
     if (!this.layoutEditing) return
     const id = `custom-${Date.now()}-${this.nextFurnitureId++}`
-    const image = this.addFurniture(id, frame, 480, 340, 64, 64)
+    const point = this.findFreeFurniturePoint(frame)
+    const image = this.addFurniture(id, frame, point.x, point.y, 64, 64)
     this.layoutSave[id] = { x: image.x, y: image.y, frame, width: 64, height: 64 }
     this.saveFurnitureLayout()
     this.selectFurniture(id)
@@ -282,7 +336,11 @@ export class OfficeScene extends Phaser.Scene {
   private rotateSelectedFurniture(delta: number): void {
     if (!this.layoutEditing || !this.selectedFurniture) return
     const image = this.selectedFurniture.image
-    image.setAngle(Phaser.Math.Wrap(image.angle + delta, 0, 360)).setDepth(image.y)
+    const nextAngle = Phaser.Math.Wrap(image.angle + delta, 0, 360)
+    const snapped = snapFurniturePoint(image, rotatedFootprint(this.selectedFurniture.frame, nextAngle))
+    if (!this.furniturePlacementCollides(this.selectedFurniture.id, this.selectedFurniture.frame, snapped, nextAngle)) {
+      image.setPosition(snapped.x, snapped.y).setAngle(nextAngle).setDepth(snapped.y)
+    }
     this.updateSelectionOutline()
     this.saveFurnitureLayout()
   }
@@ -320,19 +378,29 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private collisionRects(): CollisionRect[] {
-    const furnitureRects = [...this.furniture.values()].map(({ frame, image }) => {
-      const [scaleX, scaleY] = FURNITURE_COLLISION_SCALE[frame] ?? [0.76, 0.56]
-      const quarterTurn = Math.abs(Math.round(image.angle / 90)) % 2 === 1
-      const width = (quarterTurn ? image.displayHeight * scaleY : image.displayWidth * scaleX)
-      const height = (quarterTurn ? image.displayWidth * scaleX : image.displayHeight * scaleY)
-      return {
-        x: image.x - width / 2,
-        y: image.y - height / 2,
-        width,
-        height
+    const furnitureRects = [...this.furniture.values()].map(({ frame, image }) =>
+      furnitureCollision({ x: image.x, y: image.y }, rotatedFootprint(frame, image.angle)))
+    return [...OFFICE_WALL_COLLISIONS, ...furnitureRects]
+  }
+
+  private furniturePlacementCollides(id: string, frame: number, point: WorldPoint, angle: number): boolean {
+    const candidate = furnitureCollision(point, rotatedFootprint(frame, angle))
+    if (OFFICE_WALL_COLLISIONS.some((wall) => intersectsAabb(candidate, wall))) return true
+    return [...this.furniture.values()].some((other) => other.id !== id && intersectsAabb(
+      candidate,
+      furnitureCollision(other.image, rotatedFootprint(other.frame, other.image.angle))
+    ))
+  }
+
+  private findFreeFurniturePoint(frame: number, angle = 0): WorldPoint {
+    const footprint = rotatedFootprint(frame, angle)
+    for (let row = 2; row < 39 - footprint.rows; row += 1) {
+      for (let column = 2; column < 59 - footprint.columns; column += 1) {
+        const point = snapFurniturePoint({ x: column * 16, y: row * 16 }, footprint)
+        if (!this.furniturePlacementCollides('', frame, point, angle)) return point
       }
-    })
-    return [...OFFICE_STRUCTURE_COLLISIONS, ...furnitureRects]
+    }
+    return { x: 480, y: 340 }
   }
 
   private createRoom(x: number, y: number, width: number, height: number, label: string): void {
@@ -401,7 +469,7 @@ export class OfficeScene extends Phaser.Scene {
   private createDesks(): void {
     TEAM_DESKS.forEach((team, teamIndex) => team.forEach((point, slotIndex) => {
       this.addFurniture(`desk-${teamIndex}-${slotIndex}`, 10, point.x, point.y + 12, 92, 58, point.y + 5)
-      this.addFurniture(`chair-${teamIndex}-${slotIndex}`, 12 + teamIndex, point.x, point.y + 38, 38, 42, point.y + 45)
+      this.addFurniture(`chair-${teamIndex}-${slotIndex}`, 12 + teamIndex, point.x, point.y + 54, 38, 42, point.y + 55)
       if (slotIndex === 0) this.add.text(point.x - 36, point.y - 45, ['Claude', 'Codex', 'Antigravity'][teamIndex], {
         fontFamily: 'monospace', fontSize: '10px', color: '#24473e'
       }).setDepth(700)

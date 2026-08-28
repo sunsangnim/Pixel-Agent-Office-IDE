@@ -73,3 +73,8 @@
 - [x] Rotate selected furniture in the layout editor
 - [x] Persist rotation and synchronize rotated collision bounds
 - [x] Clear selection outline when editing ends
+## Phase 43 — Whole-office Floor Tiles
+
+- [x] Add selectable seamless floor assets
+- [x] Apply the selected tile to every interior floor while preserving hardcoded rooms
+- [x] Enforce a 60×40 wall grid and per-asset tile footprints

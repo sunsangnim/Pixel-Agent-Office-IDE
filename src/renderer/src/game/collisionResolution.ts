@@ -15,8 +15,8 @@ export function resolveAxisSeparated(
   current: WorldPoint,
   desired: WorldPoint,
   obstacles: CollisionRect[],
-  halfWidth = 9,
-  halfHeight = 6
+  halfWidth = 7,
+  halfHeight = 5
 ): WorldPoint & { blockedX: boolean; blockedY: boolean } {
   let x = desired.x
   let y = current.y
@@ -47,4 +47,3 @@ export function pushApart(a: ActorBody, b: ActorBody): [WorldPoint, WorldPoint] 
     { x: b.x + nx * push, y: b.y + ny * push }
   ]
 }
-

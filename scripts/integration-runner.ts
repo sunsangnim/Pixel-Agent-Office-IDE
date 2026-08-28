@@ -17,6 +17,10 @@ import { MEETING_SEATS, TEAM_DESKS, routeFor, type OfficeGameActor } from '../sr
 import { OFFICE_COLLISIONS, findOfficePath } from '../src/renderer/src/game/navigation'
 import { intersectsAabb, pushApart, resolveAxisSeparated } from '../src/renderer/src/game/collisionResolution'
 import { parseOfficeLayout } from '../src/renderer/src/game/layoutPersistence'
+import {
+  FURNITURE_FOOTPRINTS, OFFICE_GRID_COLUMNS, OFFICE_GRID_ROWS, OFFICE_WALL_COLLISIONS,
+  furnitureCollision, rotatedFootprint, snapFurniturePoint
+} from '../src/renderer/src/game/officeGrid'
 import { ActorStateMachine, actionForPresence } from '../src/renderer/src/game/actorStateMachine'
 import { OFFICE_OBJECTS, objectById } from '../src/renderer/src/game/officeObjects'
 import { parseOfficeWorldSave, upsertSavedActor } from '../src/renderer/src/game/worldPersistence'
@@ -165,6 +169,16 @@ function verifyLivingOfficeAndRoster(): void {
   assert.ok(Math.abs(Math.hypot(pushedB.x - pushedA.x, pushedB.y - pushedA.y) - 20) < 0.001)
   assert.deepEqual(parseOfficeLayout('{"desk":{"x":10,"y":20},"bad":{"x":"x"}}'), { desk: { x: 10, y: 20 } })
   assert.deepEqual(parseOfficeLayout('{"sofa":{"x":30,"y":40,"rotation":90}}'), { sofa: { x: 30, y: 40, rotation: 90 } })
+  assert.equal(OFFICE_GRID_COLUMNS, 60)
+  assert.equal(OFFICE_GRID_ROWS, 40)
+  assert.deepEqual(FURNITURE_FOOTPRINTS[15], { columns: 1, rows: 2 })
+  assert.deepEqual(rotatedFootprint(15, 90), { columns: 2, rows: 1 })
+  assert.deepEqual(snapFurniturePoint({ x: 103, y: 99 }, FURNITURE_FOOTPRINTS[15]), { x: 104, y: 96 })
+  assert.deepEqual(furnitureCollision({ x: 104, y: 96 }, FURNITURE_FOOTPRINTS[15]), { x: 96, y: 80, width: 16, height: 32 })
+  const throughPantryDoor = findOfficePath({ x: 240, y: 240 }, { x: 240, y: 160 }, OFFICE_WALL_COLLISIONS)
+  assert.ok(throughPantryDoor.every((point) => !OFFICE_WALL_COLLISIONS.some((wall) =>
+    point.x > wall.x && point.x < wall.x + wall.width && point.y > wall.y && point.y < wall.y + wall.height
+  )))
   const stateMachine = new ActorStateMachine('deskIdle')
   stateMachine.startWalking(20, 2)
   assert.equal(stateMachine.current.facing, 'right')
@@ -224,6 +238,21 @@ function verifyLivingOfficeAndRoster(): void {
     for (let y = 0; y < furniture.height; y += 1) {
       assert.equal(furniture.data[(y * furniture.width) * 4 + 3], 0)
       assert.equal(furniture.data[(y * furniture.width + furniture.width - 1) * 4 + 3], 0)
+    }
+  })
+  const floorDirectory = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'floors')
+  const floorAssets = fs.readdirSync(floorDirectory).filter((file) => file.endsWith('.png'))
+  assert.equal(floorAssets.length, 4)
+  floorAssets.forEach((file) => {
+    const floor = PNG.sync.read(fs.readFileSync(path.join(floorDirectory, file)))
+    assert.deepEqual([floor.width, floor.height], [64, 64])
+    for (let index = 0; index < 64; index += 1) {
+      const left = (index * 64) * 4
+      const right = (index * 64 + 63) * 4
+      const top = index * 4
+      const bottom = (63 * 64 + index) * 4
+      assert.deepEqual([...floor.data.subarray(left, left + 4)], [...floor.data.subarray(right, right + 4)])
+      assert.deepEqual([...floor.data.subarray(top, top + 4)], [...floor.data.subarray(bottom, bottom + 4)])
     }
   })
   console.log('PASS living-office checkpoint policy and 20-character roster assets')
