@@ -31,7 +31,6 @@ import wallVerticalAsset from '../assets/pixel-office/architecture/wall-vertical
 import wallSurfaceAsset from '../assets/pixel-office/architecture/wall-surface-v1.png'
 import glassWallHorizontalAsset from '../assets/pixel-office/architecture/glass-wall-horizontal-v1.png'
 import glassWallVerticalAsset from '../assets/pixel-office/architecture/glass-wall-vertical-v1.png'
-import glassDoorLeafAsset from '../assets/pixel-office/architecture/glass-door-leaf-v1.png'
 import {
   MEETING_SEATS,
   OFFICE_WORLD_HEIGHT,
@@ -168,7 +167,6 @@ export class OfficeScene extends Phaser.Scene {
     this.load.image('architecture-wall-surface', wallSurfaceAsset)
     this.load.image('architecture-glass-wall-horizontal', glassWallHorizontalAsset)
     this.load.image('architecture-glass-wall-vertical', glassWallVerticalAsset)
-    this.load.image('architecture-glass-door-leaf', glassDoorLeafAsset)
   }
 
   create(): void {
@@ -504,15 +502,10 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createDoor(id: string, x: number, y: number, width: number, height: number): void {
-    const glass = id !== 'elevator'
     this.add.rectangle(x, y, width + 8, height + 8, 0x173b39).setDepth(30)
     this.add.rectangle(x, y - height / 2 - 2, width + 12, 4, 0x376f68).setDepth(31)
-    const left = glass
-      ? this.add.image(x - width / 4, y, 'architecture-glass-door-leaf').setDisplaySize(width / 2, height).setDepth(32)
-      : this.add.rectangle(x - width / 4, y, width / 2, height, 0x8fa8a1).setDepth(32)
-    const right = glass
-      ? this.add.image(x + width / 4, y, 'architecture-glass-door-leaf').setDisplaySize(width / 2, height).setFlipX(true).setDepth(32)
-      : this.add.rectangle(x + width / 4, y, width / 2, height, 0x839b94).setDepth(32)
+    const left = this.add.rectangle(x - width / 4, y, width / 2, height, 0x8fa8a1).setDepth(32)
+    const right = this.add.rectangle(x + width / 4, y, width / 2, height, 0x839b94).setDepth(32)
     this.doors.set(id, { left, right, isOpen: false })
   }
 
@@ -542,14 +535,12 @@ export class OfficeScene extends Phaser.Scene {
     this.addFurniture('pantry-cabinet', 0, 65, 105, 70, 82, 40)
     this.addFurniture('pantry-fridge', 1, 145, 98, 62, 105, 40)
     this.addFurniture('pantry-counter', 2, 220, 108, 105, 70, 40)
-    this.createDoor('pantry', WAYPOINTS.pantryDoor.x, 200, 34, 46)
   }
 
   private createMeetingRoom(): void {
     this.addFurniture('meeting-table', 6, 480, 128, 256, 96, 80)
     this.addFurniture('meeting-laptop', 7, 480, 132, 48, 32, 150)
     this.addFurniture('meeting-screen', 5, 480, 52, 135, 48, 35)
-    this.createDoor('meeting', WAYPOINTS.meetingDoor.x, 200, 36, 46)
   }
 
   private createEntrance(): void {
