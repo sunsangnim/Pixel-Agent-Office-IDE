@@ -833,12 +833,14 @@ body {
   visibility: visible;
   position: absolute;
   z-index: 6;
-  top: 38px;
+  top: 34px;
   left: 50%;
-  width: 62px;
-  height: 62px;
+  width: 46px;
+  height: 56px;
   transform: translateX(-50%);
   opacity: 0.96;
+  border-color: #4f5e65;
+  box-shadow: 0 3px 0 rgba(45, 55, 57, 0.48);
 }
 
 .office-agent[data-seated='true'] .room-agent-sprite {
@@ -881,10 +883,13 @@ body {
 
 .elevator-indicator {
   position: absolute;
-  top: -16px;
+  top: 3px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 10px;
+  z-index: 2;
+  padding: 1px 3px;
+  background: #283236;
+  font-size: 7px;
   color: #7fe08a;
 }
 
@@ -1159,28 +1164,44 @@ body {
 }
 
 .representative-plant {
-  left: 39px;
-  bottom: 2px;
+  left: 10px;
+  bottom: 8px;
   width: 38px;
   height: 58px;
   background-image: url('../assets/pixel-office/representative-plant-v1.png');
   background-position: center;
   background-size: contain;
 }
-.representative-side-table { left: 73px; bottom: -12px; width: 47px; height: 85px; background-position: 25% center; }
+.representative-side-table {
+  left: 48px;
+  bottom: 6px;
+  width: 47px;
+  height: 54px;
+  background-position: 25% center;
+}
 .representative-floor-lamp {
-  right: 55px;
-  bottom: 2px;
+  top: 40px;
+  right: 67px;
+  bottom: auto;
   width: 24px;
   height: 50px;
   background-image: url('../assets/pixel-office/representative-floor-lamp-v1.png');
   background-position: center;
   background-size: contain;
 }
-.representative-bookcase { top: 13px; right: -3px; width: 42px; height: 76px; background-position: 75% center; clip-path: inset(0 9px 0 0); }
+.representative-bookcase {
+  right: 8px;
+  bottom: 7px;
+  top: auto;
+  width: 42px;
+  height: 76px;
+  background-position: 75% center;
+  clip-path: none;
+}
 .representative-sofa {
-  right: 1px;
-  bottom: 2px;
+  top: 44px;
+  right: 8px;
+  bottom: auto;
   width: 55px;
   height: 38px;
   background-image: url('../assets/pixel-office/representative-sofa-v1.png');
