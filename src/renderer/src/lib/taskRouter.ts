@@ -34,7 +34,7 @@ export function planTask(text: string): DispatchPlan {
     return {
       templateIds: [...BUILT_IN_TEAM_IDS],
       complexity: 'complex',
-      reason: '큰 작업으로 판단해 Claude=코딩, Codex=애니메이션·상호작용, Antigravity=이미지 자산으로 오케스트레이션',
+      reason: '큰 작업으로 판단해 Claude=코딩·문서작업, Codex=이미지 생성, Antigravity=테스트·검증으로 오케스트레이션',
       explicitlyAssigned: false
     }
   }

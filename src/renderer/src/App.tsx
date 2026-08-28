@@ -132,9 +132,9 @@ function App() {
         sendPrompt(workflowPrompt, leaders.map((leader) => leader.instanceId), availableInstances, text)
       } else {
         const specialties: Record<string, string> = {
-          'claude-code': '코딩·아키텍처·통합 구현',
-          'codex-cli': '애니메이션·상호작용·동작 검증',
-          'antigravity-cli': '이미지 생성·픽셀 자산·시각 품질'
+          'claude-code': '코딩·문서작업(SRS·PRD·화면설계서 통합 문서 생성)',
+          'codex-cli': '이미지 생성·단순 노가다',
+          'antigravity-cli': '테스트·검증'
         }
         const assignments = leaders.flatMap((leader) => {
           const templateName = templates.find((template) => template.id === leader.templateId)?.name ?? leader.templateId
