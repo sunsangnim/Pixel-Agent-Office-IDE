@@ -132,7 +132,7 @@ function verifyLivingOfficeAndRoster(): void {
   assert.equal(getCorporateRosterCell(99).index, 19)
 
   const rows = [1, 2, 3, 4].map((row) => {
-    const file = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', `corporate-roster-row-${row}-v1.png`)
+    const file = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'characters', `corporate-roster-row-${row}-v1.png`)
     const png = fs.readFileSync(file)
     assert.equal(png.toString('ascii', 1, 4), 'PNG')
     const width = png.readUInt32BE(16)
@@ -200,7 +200,7 @@ function verifyLivingOfficeAndRoster(): void {
   })
   assert.equal(parseOfficeWorldSave(JSON.stringify(savedWorld)).actors[0].x, 32)
   assert.deepEqual(parseOfficeWorldSave('broken'), { version: 1, actors: [] })
-  const ceoSheet = fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'ceo-animation-sheet-v2.png'))
+  const ceoSheet = fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'characters', 'ceo-animation-sheet-v2.png'))
   assert.equal(ceoSheet.toString('ascii', 1, 4), 'PNG')
   assert.ok(ceoSheet.readUInt32BE(16) / 8 >= 48)
   assert.ok(ceoSheet.readUInt32BE(20) / 6 >= 64)
@@ -211,7 +211,7 @@ function verifyLivingOfficeAndRoster(): void {
     'antigravity-team-animation-atlas-v1.png',
     'roster-row-4-animation-atlas-v1.png'
   ]) {
-    const teamAtlas = fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', atlasName))
+    const teamAtlas = fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'characters', atlasName))
     assert.equal(teamAtlas.toString('ascii', 1, 4), 'PNG')
     assert.ok(teamAtlas.readUInt32BE(16) / 5 >= 128)
     assert.ok(teamAtlas.readUInt32BE(20) / 4 >= 128)

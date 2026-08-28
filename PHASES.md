@@ -83,3 +83,8 @@
 - [x] Match furniture pixels to assigned tile footprints
 - [x] Block invalid placement during drag and always clear edit selection
 - [x] Render hardcoded architecture from the same collision grid
+## Phase 45 — Document & Asset Consolidation
+
+- [x] Consolidate current user requirements into canonical documentation
+- [x] Organize all runtime image assets by characters, furniture, and floors
+- [x] Add an asset catalog with per-furniture tile footprints

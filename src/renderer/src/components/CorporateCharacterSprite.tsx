@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react'
-import row1 from '../assets/pixel-office/corporate-roster-row-1-v1.png'
-import row2 from '../assets/pixel-office/corporate-roster-row-2-v1.png'
-import row3 from '../assets/pixel-office/corporate-roster-row-3-v1.png'
-import row4 from '../assets/pixel-office/corporate-roster-row-4-v1.png'
+import row1 from '../assets/pixel-office/characters/corporate-roster-row-1-v1.png'
+import row2 from '../assets/pixel-office/characters/corporate-roster-row-2-v1.png'
+import row3 from '../assets/pixel-office/characters/corporate-roster-row-3-v1.png'
+import row4 from '../assets/pixel-office/characters/corporate-roster-row-4-v1.png'
 import { getCorporateRosterCell } from '../lib/corporateRoster'
 
 interface CorporateCharacterSpriteProps {
