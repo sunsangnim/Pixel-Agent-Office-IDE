@@ -12,6 +12,10 @@ import { isMeetingEndCommand, isMeetingStartCommand } from '../src/renderer/src/
 import { isWorkingTime } from '../src/renderer/src/hooks/useOfficeClock'
 import { getCorporateRosterCell, CORPORATE_ROSTER_SIZE } from '../src/renderer/src/lib/corporateRoster'
 import { presenceForRuntime, readStoredJson } from '../src/renderer/src/lib/meetingCheckpoint'
+import { MEETING_SEATS, TEAM_DESKS, routeFor, type OfficeGameActor } from '../src/renderer/src/game/officeWorld'
+import { OFFICE_COLLISIONS, findOfficePath } from '../src/renderer/src/game/navigation'
+import { ActorStateMachine, actionForPresence } from '../src/renderer/src/game/actorStateMachine'
+import { OFFICE_OBJECTS, objectById } from '../src/renderer/src/game/officeObjects'
 
 interface RecordedEvent {
   channel: string
@@ -130,6 +134,35 @@ function verifyLivingOfficeAndRoster(): void {
     return { width, height }
   })
   assert.ok(rows.every((row) => row.width > 0 && row.height > 0))
+
+  assert.equal(TEAM_DESKS.length, 3)
+  assert.ok(TEAM_DESKS.every((team) => team.length === 5))
+  assert.equal(new Set(TEAM_DESKS.flat().map((point) => `${point.x}:${point.y}`)).size, 15)
+  assert.equal(new Set(MEETING_SEATS.map((point) => `${point.x}:${point.y}`)).size, 8)
+  const arrivingActor: OfficeGameActor = {
+    profileId: 'test', instanceId: null, displayName: 'test', color: '#fff', rosterIndex: 1,
+    slotIndex: 0, teamIndex: 0, presence: 'arriving'
+  }
+  assert.equal(routeFor(arrivingActor, 0).length, 3)
+  assert.deepEqual(routeFor({ ...arrivingActor, presence: 'meeting' }, 0).at(-1), MEETING_SEATS[0])
+  const navigationPath = findOfficePath({ x: 50, y: 350 }, { x: 700, y: 350 })
+  assert.ok(navigationPath.length >= 1)
+  assert.ok(navigationPath.every((point) => !OFFICE_COLLISIONS.some((rect) =>
+    point.x > rect.x && point.x < rect.x + rect.width && point.y > rect.y && point.y < rect.y + rect.height
+  )))
+  const stateMachine = new ActorStateMachine('deskIdle')
+  stateMachine.startWalking(20, 2)
+  assert.equal(stateMachine.current.facing, 'right')
+  stateMachine.requestPresence('pantry')
+  stateMachine.arrive(0)
+  assert.equal(stateMachine.current.action, 'eating')
+  assert.equal(stateMachine.current.actionLocked, true)
+  assert.equal(stateMachine.requestPresence('working'), false)
+  assert.equal(stateMachine.completeAction(), 'working')
+  assert.equal(actionForPresence('meeting', 0), 'sitting')
+  assert.equal(OFFICE_OBJECTS.filter((object) => object.type === 'desk').length, 15)
+  assert.equal(OFFICE_OBJECTS.filter((object) => object.id.startsWith('meeting-chair-')).length, 8)
+  assert.deepEqual(objectById('representative-sofa')?.snapPoint, { x: 895, y: 458 })
   console.log('PASS living-office checkpoint policy and 20-character roster assets')
 }
 

@@ -1,12 +1,8 @@
 import type { AgentInstance, AgentProfile, AgentStatePayload, AgentTemplate, DeskStatus } from '@shared/types'
-import AgentDesk from './AgentDesk'
-import DeskIcon from './DeskIcon'
-import OfficeZones from './OfficeZones'
-import type { OfficePresence } from '@shared/types'
-import OfficeAgentLayer from './OfficeAgentLayer'
 import { useOfficePresence } from '../hooks/useOfficePresence'
-import RepresentativeOffice from './RepresentativeOffice'
 import { useOfficeClock } from '../hooks/useOfficeClock'
+import type { OfficeWorldSnapshot } from '../game/officeWorld'
+import PhaserOffice from './PhaserOffice'
 
 interface OfficeViewProps {
   instances: AgentInstance[]
@@ -21,100 +17,46 @@ interface OfficeViewProps {
   meetingActive: boolean
 }
 
-function OfficeView({
-  instances,
-  profiles,
-  templates,
-  statuses,
-  runtimeStates,
-  tasks,
-  selectedInstanceId,
-  onSelect,
-  onRemove,
-  meetingActive
-}: OfficeViewProps) {
+function OfficeView(props: OfficeViewProps) {
   const officeClock = useOfficeClock()
   const presenceByProfile = useOfficePresence(
-    profiles,
-    instances,
-    runtimeStates,
-    tasks,
+    props.profiles,
+    props.instances,
+    props.runtimeStates,
+    props.tasks,
     officeClock.isWorkingHours,
     officeClock.isClockInActive,
-    meetingActive
+    props.meetingActive
   )
-  const pantryOccupied = Object.values(presenceByProfile).some((presence) => presence === 'pantry' || presence === 'pantryDoor')
-  const meetingOccupied = Object.values(presenceByProfile).some((presence) => presence === 'meeting' || presence === 'meetingDoor')
-  const teamIds = Array.from(new Set(profiles.map((profile) => profile.templateId)))
-  const teamLabels: Record<string, string> = {
-    'claude-code': 'Team Claude',
-    'codex-cli': 'Team Codex',
-    'antigravity-cli': 'Team Antigravity'
+  const teamIds = Array.from(new Set(props.profiles.map((profile) => profile.templateId)))
+  const snapshot: OfficeWorldSnapshot = {
+    now: officeClock.now.getTime(),
+    meetingActive: props.meetingActive,
+    elevatorOpen: officeClock.isClockInActive,
+    actors: props.profiles.map((profile, rosterIndex) => {
+      const instance = props.instances.find((candidate) => candidate.profileId === profile.profileId)
+      const template = props.templates.find((candidate) => candidate.id === profile.templateId)
+      return {
+        profileId: profile.profileId,
+        instanceId: instance?.instanceId ?? null,
+        displayName: profile.displayName,
+        color: template?.color ?? '#66736d',
+        rosterIndex: rosterIndex + 1,
+        slotIndex: profile.slotIndex,
+        teamIndex: Math.max(0, teamIds.indexOf(profile.templateId)),
+        presence: presenceByProfile[profile.profileId] ?? 'offDuty'
+      }
+    })
   }
 
-  const renderDesk = (profile: AgentProfile) => {
-    const template = templates.find((candidate) => candidate.id === profile.templateId)
-    const instance = instances.find((candidate) => candidate.profileId === profile.profileId)
-    const roleLabel = profile.rank === 'teamLead' ? '팀장' : `하위 세션 ${profile.slotIndex}`
-    if (!instance) {
-      return (
-        <div className="desk desk-vacant" data-presence="offDuty" key={profile.profileId}>
-          <DeskIcon color={template?.color ?? '#66736d'} status="idle" />
-          <div className="desk-label">{profile.displayName}</div>
-          <div className="desk-role">{roleLabel} · 미출근</div>
-        </div>
-      )
-    }
-    return (
-      <AgentDesk
-        key={instance.instanceId}
-        instance={instance}
-        template={template}
-        status={statuses[instance.ptyId] ?? 'idle'}
-        selected={instance.instanceId === selectedInstanceId}
-        onSelect={() => onSelect(instance.instanceId)}
-        onRemove={() => onRemove(instance.instanceId)}
-        roleLabel={roleLabel}
-        presence={presenceByProfile[profile.profileId] ?? 'deskIdle'}
-      />
-    )
+  const selectActor = (profileId: string): void => {
+    const instance = props.instances.find((candidate) => candidate.profileId === profileId)
+    if (instance) props.onSelect(instance.instanceId)
   }
 
   return (
-    <div className="office-room has-agent-layer pixel-background-enabled">
-      <OfficeZones
-        now={officeClock.now}
-        elevatorOpen={officeClock.isClockInActive}
-        pantryOpen={pantryOccupied}
-        meetingOpen={meetingActive || meetingOccupied}
-      />
-      <OfficeAgentLayer
-        profiles={profiles}
-        instances={instances}
-        templates={templates}
-        presenceByProfile={presenceByProfile}
-      />
-
-      <div className="office-desk-floor">
-        <span className="office-deco office-deco-tl">🌿</span>
-        <span className="office-deco office-deco-tr">🖨️</span>
-        <span className="office-deco office-deco-bl">🚰</span>
-        <span className="office-deco office-deco-br">🪴</span>
-
-        <div className="office-team-grid">
-          {teamIds.map((teamId) => {
-            const teamProfiles = profiles.filter((profile) => profile.templateId === teamId)
-            return (
-              <section className="office-team-column" data-team={teamId} key={teamId}>
-                <h3 className="office-team-heading">{teamLabels[teamId] ?? teamId}</h3>
-                <div className="office-team-lead">{teamProfiles[0] && renderDesk(teamProfiles[0])}</div>
-                <div className="office-team-children">{teamProfiles.slice(1).map(renderDesk)}</div>
-              </section>
-            )
-          })}
-        </div>
-        <RepresentativeOffice />
-      </div>
+    <div className="office-room phaser-office-room">
+      <PhaserOffice snapshot={snapshot} onActorSelect={selectActor} />
     </div>
   )
 }
