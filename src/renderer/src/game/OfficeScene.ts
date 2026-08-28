@@ -101,6 +101,10 @@ const directionalFurnitureAssets = import.meta.glob('../assets/pixel-office/furn
 }) as Record<string, string>
 const FLOOR_TEXTURES = ['floor-mint', 'floor-oak', 'floor-stone', 'floor-carpet', 'floor-office-carpet'] as const
 const OFFICE_FLOOR_SAVE_KEY = 'pixel-office-floor-v1'
+const ACTOR_SCALE = 2
+const ACTOR_COLLISION_RADIUS = 11 * ACTOR_SCALE
+const ACTOR_COLLISION_HALF_WIDTH = 7 * ACTOR_SCALE
+const ACTOR_COLLISION_HALF_HEIGHT = 5 * ACTOR_SCALE
 
 export class OfficeScene extends Phaser.Scene {
   private actors = new Map<string, ActorView>()
@@ -641,9 +645,9 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createRepresentativeActor(): void {
-    const sprite = this.add.sprite(835, 491, 'ceo-animation-sheet', 'ceo-idle-0').setDisplaySize(52, 60).setDepth(490)
+    const sprite = this.add.sprite(835, 491, 'ceo-animation-sheet', 'ceo-idle-0').setDisplaySize(104, 120).setDepth(490)
     sprite.play('ceo-idle')
-    this.add.text(835, 458, '김태호 대표', {
+    this.add.text(835, 428, '김태호 대표', {
       fontFamily: 'monospace', fontSize: '8px', color: '#17362e', backgroundColor: '#e7f3ef'
     }).setOrigin(0.5, 0).setPadding(2, 1).setDepth(700)
   }
@@ -703,19 +707,19 @@ export class OfficeScene extends Phaser.Scene {
       -27,
       animationAtlas ?? `roster-row-${row}`,
       animationAtlas ? `actor-${actor.rosterIndex}-idle` : frame
-    ).setDisplaySize(animationAtlas ? 90 : 50, animationAtlas ? 90 : 68)
-      .setY(animationAtlas ? -35 : -27)
+    ).setDisplaySize(animationAtlas ? 180 : 100, animationAtlas ? 180 : 136)
+      .setY(animationAtlas ? -70 : -54)
     if (animationAtlas) sprite.play(`actor-${actor.rosterIndex}-idle`)
     sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
       this.actorSelectHandler?.(actor.profileId)
     })
-    const label = this.add.text(0, 16, actor.displayName, {
+    const label = this.add.text(0, 28, actor.displayName, {
       fontFamily: 'monospace', fontSize: '8px', color: '#18352e', backgroundColor: '#e7f3ef'
     }).setOrigin(0.5, 0).setPadding(2, 1)
-    const bubble = this.add.text(18, -68, '', {
+    const bubble = this.add.text(36, -136, '', {
       fontFamily: 'monospace', fontSize: '8px', color: '#26332f', backgroundColor: '#fff7df'
     }).setPadding(3, 2).setVisible(false)
-    const prop = this.add.rectangle(12, -20, 7, 9, 0x6eb6d9)
+    const prop = this.add.rectangle(24, -40, 14, 18, 0x6eb6d9)
       .setStrokeStyle(2, 0x294a5a).setVisible(false)
     const saved = this.worldSave.actors.find((candidate) => candidate.profileId === actor.profileId)
     const initial = saved ?? { x: WAYPOINTS.elevatorInside.x, y: WAYPOINTS.elevatorInside.y }
@@ -780,7 +784,10 @@ export class OfficeScene extends Phaser.Scene {
       const movementCollisions = collisions.filter((rect) => !(
         target.x >= rect.x && target.x <= rect.x + rect.width && target.y >= rect.y && target.y <= rect.y + rect.height
       ))
-      const resolved = resolveAxisSeparated({ x: view.container.x, y: view.container.y }, desired, movementCollisions)
+      const resolved = resolveAxisSeparated(
+        { x: view.container.x, y: view.container.y }, desired, movementCollisions,
+        ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT
+      )
       view.container.setPosition(resolved.x, resolved.y).setDepth(resolved.y)
       view.stateMachine.startWalking(dx, dy)
       view.sprite.setFlipX(dx < 0)
@@ -804,11 +811,17 @@ export class OfficeScene extends Phaser.Scene {
         const [idA, a] = entries[i]
         const [idB, b] = entries[j]
         const [nextA, nextB] = pushApart(
-          { id: idA, x: a.container.x, y: a.container.y, radius: 11 },
-          { id: idB, x: b.container.x, y: b.container.y, radius: 11 }
+          { id: idA, x: a.container.x, y: a.container.y, radius: ACTOR_COLLISION_RADIUS },
+          { id: idB, x: b.container.x, y: b.container.y, radius: ACTOR_COLLISION_RADIUS }
         )
-        const safeA = resolveAxisSeparated({ x: a.container.x, y: a.container.y }, nextA, collisions)
-        const safeB = resolveAxisSeparated({ x: b.container.x, y: b.container.y }, nextB, collisions)
+        const safeA = resolveAxisSeparated(
+          { x: a.container.x, y: a.container.y }, nextA, collisions,
+          ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT
+        )
+        const safeB = resolveAxisSeparated(
+          { x: b.container.x, y: b.container.y }, nextB, collisions,
+          ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT
+        )
         a.container.setPosition(safeA.x, safeA.y).setDepth(safeA.y)
         b.container.setPosition(safeB.x, safeB.y).setDepth(safeB.y)
       }
@@ -827,13 +840,13 @@ export class OfficeScene extends Phaser.Scene {
     view.prop.setVisible(false)
     const animatedActor = Boolean(this.animationAtlasFor(actor.rosterIndex))
     view.sprite.setDisplaySize(
-      animatedActor ? 90 : 50,
-      action === 'working' ? (animatedActor ? 76 : 58) : (animatedActor ? 90 : 68)
+      animatedActor ? 180 : 100,
+      action === 'working' ? (animatedActor ? 152 : 116) : (animatedActor ? 180 : 136)
     )
     view.sprite.setY(
-      action === 'working' ? (animatedActor ? -20 : -15)
-        : action === 'sitting' ? (animatedActor ? -30 : -20)
-          : (animatedActor ? -35 : -27)
+      action === 'working' ? (animatedActor ? -40 : -30)
+        : action === 'sitting' ? (animatedActor ? -60 : -40)
+          : (animatedActor ? -70 : -54)
     )
     if (action === 'sitting') {
       const seatIndex = actorIndex % MEETING_SEATS.length
@@ -846,13 +859,13 @@ export class OfficeScene extends Phaser.Scene {
       const drinking = action === 'drinking'
       view.prop.setFillStyle(drinking ? 0x6eb6d9 : 0xd99a45)
         .setStrokeStyle(2, drinking ? 0x294a5a : 0x70431f)
-        .setSize(drinking ? 7 : 9, drinking ? 10 : 7)
-        .setPosition(12, -20)
+        .setSize(drinking ? 14 : 18, drinking ? 20 : 14)
+        .setPosition(24, -40)
         .setVisible(true)
       view.actionTween = this.tweens.add({
         targets: view.prop,
-        x: 7,
-        y: -43,
+        x: 14,
+        y: -86,
         duration: 260,
         hold: 140,
         yoyo: true,
@@ -868,7 +881,7 @@ export class OfficeScene extends Phaser.Scene {
     }
     view.actionTween = this.tweens.add({
       targets: view.sprite,
-      y: actor.presence === 'working' ? -29 : -25,
+      y: actor.presence === 'working' ? -58 : -50,
       duration: actor.presence === 'error' ? 150 : 420,
       yoyo: true,
       repeat: -1,
