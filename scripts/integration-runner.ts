@@ -15,6 +15,8 @@ import { getCorporateRosterCell, CORPORATE_ROSTER_SIZE } from '../src/renderer/s
 import { presenceForRuntime, readStoredJson } from '../src/renderer/src/lib/meetingCheckpoint'
 import { MEETING_SEATS, TEAM_DESKS, routeFor, type OfficeGameActor } from '../src/renderer/src/game/officeWorld'
 import { OFFICE_COLLISIONS, findOfficePath } from '../src/renderer/src/game/navigation'
+import { intersectsAabb, pushApart, resolveAxisSeparated } from '../src/renderer/src/game/collisionResolution'
+import { parseOfficeLayout } from '../src/renderer/src/game/layoutPersistence'
 import { ActorStateMachine, actionForPresence } from '../src/renderer/src/game/actorStateMachine'
 import { OFFICE_OBJECTS, objectById } from '../src/renderer/src/game/officeObjects'
 import { parseOfficeWorldSave, upsertSavedActor } from '../src/renderer/src/game/worldPersistence'
@@ -154,6 +156,14 @@ function verifyLivingOfficeAndRoster(): void {
   assert.ok(navigationPath.every((point) => !OFFICE_COLLISIONS.some((rect) =>
     point.x > rect.x && point.x < rect.x + rect.width && point.y > rect.y && point.y < rect.y + rect.height
   )))
+  assert.equal(intersectsAabb({ x: 0, y: 0, width: 20, height: 20 }, { x: 10, y: 10, width: 5, height: 5 }), true)
+  assert.equal(intersectsAabb({ x: 0, y: 0, width: 5, height: 5 }, { x: 10, y: 10, width: 5, height: 5 }), false)
+  const slide = resolveAxisSeparated({ x: 0, y: 0 }, { x: 10, y: 10 }, [{ x: 8, y: -20, width: 10, height: 40 }], 2, 2)
+  assert.equal(slide.x, 0)
+  assert.equal(slide.y, 10)
+  const [pushedA, pushedB] = pushApart({ id: 'a', x: 0, y: 0, radius: 10 }, { id: 'b', x: 5, y: 0, radius: 10 })
+  assert.ok(Math.abs(Math.hypot(pushedB.x - pushedA.x, pushedB.y - pushedA.y) - 20) < 0.001)
+  assert.deepEqual(parseOfficeLayout('{"desk":{"x":10,"y":20},"bad":{"x":"x"}}'), { desk: { x: 10, y: 20 } })
   const stateMachine = new ActorStateMachine('deskIdle')
   stateMachine.startWalking(20, 2)
   assert.equal(stateMachine.current.facing, 'right')
@@ -200,14 +210,21 @@ function verifyLivingOfficeAndRoster(): void {
   }
   const architecture = PNG.sync.read(fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'office-architecture-background-v1.png')))
   assert.ok(Math.abs(architecture.width / architecture.height - 1.5) < 0.01)
-  const furniture = PNG.sync.read(fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'office-furniture-atlas-v1.png')))
-  assert.ok(furniture.width / 5 >= 128)
-  assert.ok(furniture.height / 4 >= 128)
-  let furnitureTransparent = 0
-  for (let index = 3; index < furniture.data.length; index += 4) {
-    if (furniture.data[index] === 0) furnitureTransparent += 1
-  }
-  assert.ok(furnitureTransparent / (furniture.width * furniture.height) > 0.4)
+  const furnitureDirectory = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'furniture')
+  const furnitureAssets = fs.readdirSync(furnitureDirectory).filter((file) => file.endsWith('.png'))
+  assert.equal(furnitureAssets.length, 12)
+  furnitureAssets.forEach((file) => {
+    const furniture = PNG.sync.read(fs.readFileSync(path.join(furnitureDirectory, file)))
+    assert.ok(furniture.width >= 128 && furniture.height >= 128)
+    for (let x = 0; x < furniture.width; x += 1) {
+      assert.equal(furniture.data[x * 4 + 3], 0)
+      assert.equal(furniture.data[((furniture.height - 1) * furniture.width + x) * 4 + 3], 0)
+    }
+    for (let y = 0; y < furniture.height; y += 1) {
+      assert.equal(furniture.data[(y * furniture.width) * 4 + 3], 0)
+      assert.equal(furniture.data[(y * furniture.width + furniture.width - 1) * 4 + 3], 0)
+    }
+  })
   console.log('PASS living-office checkpoint policy and 20-character roster assets')
 }
 

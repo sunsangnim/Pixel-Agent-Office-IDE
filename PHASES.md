@@ -62,3 +62,9 @@
 - [x] Phase 38 — 20인 회사원 캐릭터 세트: 대표·에이전트·확장 인원 고유 픽셀 스프라이트
 - [x] Phase 39 — Phaser 생활형 오피스: 타일맵·상태 머신·경로 이동·문·가구 상호작용
 - [x] Phase 40 — Phaser 픽셀 아트 고도화: 건축 타일·독립 가구·레이어·실화면 품질 검증
+## Phase 41 — Collision Resolution & Layout Editor
+
+- [x] Runtime AABB/axis-slide collision and actor push-out
+- [x] In-game draggable furniture editor with persistence
+- [x] Independent transparent furniture assets with per-asset bounds
+- [x] Dynamic navigation collision synchronization and verification

@@ -110,6 +110,29 @@ body {
   line-height: 1;
 }
 
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-layout-btn {
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid #3a6759;
+  border-radius: 7px;
+  background: #213d35;
+  color: #dff3ed;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.chat-layout-btn.is-active {
+  border-color: #e4bf56;
+  background: #5a4b25;
+  color: #fff5c9;
+}
+
 .chat-folder-row {
   display: flex;
   align-items: center;
@@ -398,7 +421,7 @@ body {
   display: block;
   width: 100% !important;
   height: 100% !important;
-  object-fit: contain;
+  object-fit: fill;
   image-rendering: pixelated;
 }
 

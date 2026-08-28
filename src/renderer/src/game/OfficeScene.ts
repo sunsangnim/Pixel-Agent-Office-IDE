@@ -9,7 +9,18 @@ import antigravityTeamAnimationAtlas from '../assets/pixel-office/antigravity-te
 import rosterRow4AnimationAtlas from '../assets/pixel-office/roster-row-4-animation-atlas-v1.png'
 import claudeTeamAnimationAtlas from '../assets/pixel-office/claude-team-animation-atlas-v1.png'
 import officeArchitectureBackground from '../assets/pixel-office/office-architecture-background-v1.png'
-import officeFurnitureAtlas from '../assets/pixel-office/office-furniture-atlas-v1.png'
+import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-v1.png'
+import refrigeratorAsset from '../assets/pixel-office/furniture/refrigerator-v1.png'
+import pantryCabinetAsset from '../assets/pixel-office/furniture/pantry-cabinet-v1.png'
+import presentationScreenAsset from '../assets/pixel-office/furniture/presentation-screen-v1.png'
+import conferenceTableAsset from '../assets/pixel-office/furniture/conference-table-v1.png'
+import workstationDeskAsset from '../assets/pixel-office/furniture/workstation-desk-v1.png'
+import officeChairAsset from '../assets/pixel-office/furniture/office-chair-v1.png'
+import officePlantAsset from '../assets/pixel-office/furniture/office-plant-v1.png'
+import sideTableAsset from '../assets/pixel-office/furniture/side-table-v1.png'
+import officeSofaAsset from '../assets/pixel-office/furniture/office-sofa-v1.png'
+import floorLampAsset from '../assets/pixel-office/furniture/floor-lamp-v1.png'
+import bookcaseAsset from '../assets/pixel-office/furniture/bookcase-v1.png'
 import {
   MEETING_SEATS,
   OFFICE_WORLD_HEIGHT,
@@ -21,7 +32,9 @@ import {
   type OfficeWorldSnapshot,
   type WorldPoint
 } from './officeWorld'
-import { findOfficePath } from './navigation'
+import { OFFICE_STRUCTURE_COLLISIONS, findOfficePath } from './navigation'
+import { pushApart, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
+import { OFFICE_LAYOUT_SAVE_KEY, parseOfficeLayout, type OfficeLayoutSave } from './layoutPersistence'
 import { ActorStateMachine } from './actorStateMachine'
 import { OFFICE_WORLD_SAVE_KEY, parseOfficeWorldSave, upsertSavedActor, type OfficeWorldSave } from './worldPersistence'
 
@@ -33,6 +46,16 @@ interface ActorView {
   actionTween?: Phaser.Tweens.Tween
   prop: Phaser.GameObjects.Rectangle
   stateMachine: ActorStateMachine
+  route: WorldPoint[]
+  routeIndex: number
+  actor: OfficeGameActor
+}
+
+interface FurnitureView {
+  id: string
+  frame: number
+  image: Phaser.GameObjects.Image
+  defaultPoint: WorldPoint
 }
 
 interface DoorView {
@@ -44,6 +67,19 @@ interface DoorView {
 export const OFFICE_SCENE_KEY = 'office-scene'
 export const OFFICE_ACTOR_SELECT_EVENT = 'office:actor-select'
 
+const FURNITURE_TEXTURES: Record<number, string> = {
+  0: 'furniture-coffee-machine', 1: 'furniture-refrigerator', 2: 'furniture-pantry-cabinet',
+  5: 'furniture-presentation-screen', 6: 'furniture-conference-table', 10: 'furniture-workstation-desk',
+  12: 'furniture-office-chair', 13: 'furniture-office-chair', 14: 'furniture-office-chair',
+  15: 'furniture-office-plant', 16: 'furniture-side-table', 17: 'furniture-office-sofa',
+  18: 'furniture-floor-lamp', 19: 'furniture-bookcase'
+}
+const FURNITURE_COLLISION_SCALE: Record<number, [number, number]> = {
+  0: [0.65, 0.55], 1: [0.55, 0.76], 2: [0.82, 0.55], 5: [0.86, 0.3],
+  6: [0.88, 0.64], 10: [0.86, 0.55], 12: [0.5, 0.5], 13: [0.5, 0.5], 14: [0.5, 0.5],
+  15: [0.45, 0.45], 16: [0.62, 0.5], 17: [0.82, 0.62], 18: [0.34, 0.34], 19: [0.65, 0.76]
+}
+
 export class OfficeScene extends Phaser.Scene {
   private actors = new Map<string, ActorView>()
   private snapshot: OfficeWorldSnapshot | null = null
@@ -51,6 +87,13 @@ export class OfficeScene extends Phaser.Scene {
   private doors = new Map<string, DoorView>()
   private worldSave: OfficeWorldSave = { version: 1, actors: [] }
   private actorSelectHandler: ((profileId: string) => void) | null = null
+  private furniture = new Map<string, FurnitureView>()
+  private layoutSave: OfficeLayoutSave = {}
+  private layoutEditing = false
+  private selectedFurniture: FurnitureView | null = null
+  private selectionOutline?: Phaser.GameObjects.Rectangle
+  private editorUi: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text | Phaser.GameObjects.Image> = []
+  private nextFurnitureId = 1
 
   constructor() {
     super(OFFICE_SCENE_KEY)
@@ -58,6 +101,12 @@ export class OfficeScene extends Phaser.Scene {
 
   setActorSelectHandler(handler: ((profileId: string) => void) | null): void {
     this.actorSelectHandler = handler
+  }
+
+  setLayoutEditing(editing: boolean): void {
+    this.layoutEditing = editing
+    this.setEditorUiVisible(editing)
+    if (!editing) this.selectFurniture(null)
   }
 
   preload(): void {
@@ -68,19 +117,33 @@ export class OfficeScene extends Phaser.Scene {
     this.load.image('roster-row-4-animation-atlas', rosterRow4AnimationAtlas)
     this.load.image('claude-team-animation-atlas', claudeTeamAnimationAtlas)
     this.load.image('office-architecture-background', officeArchitectureBackground)
-    this.load.image('office-furniture-atlas', officeFurnitureAtlas)
+    const furnitureAssets: Array<[string, string]> = [
+      ['furniture-coffee-machine', coffeeMachineAsset], ['furniture-refrigerator', refrigeratorAsset],
+      ['furniture-pantry-cabinet', pantryCabinetAsset], ['furniture-presentation-screen', presentationScreenAsset],
+      ['furniture-conference-table', conferenceTableAsset], ['furniture-workstation-desk', workstationDeskAsset],
+      ['furniture-office-chair', officeChairAsset], ['furniture-office-plant', officePlantAsset],
+      ['furniture-side-table', sideTableAsset], ['furniture-office-sofa', officeSofaAsset],
+      ['furniture-floor-lamp', floorLampAsset], ['furniture-bookcase', bookcaseAsset]
+    ]
+    furnitureAssets.forEach(([key, url]) => this.load.image(key, url))
   }
 
   create(): void {
     this.worldSave = parseOfficeWorldSave(localStorage.getItem(OFFICE_WORLD_SAVE_KEY))
+    this.layoutSave = parseOfficeLayout(localStorage.getItem(OFFICE_LAYOUT_SAVE_KEY))
     this.cameras.main.setBackgroundColor('#17221f')
-    this.createFurnitureFrames()
     this.createWorld()
+    this.createLayoutEditor()
     this.createRosterFrames()
     this.createTeamAnimations()
     this.createCeoAnimations()
     this.createRepresentativeActor()
     if (this.pendingSnapshot) this.applySnapshot(this.pendingSnapshot)
+  }
+
+  update(_time: number, delta: number): void {
+    this.updateActorMovement(Math.min(delta, 50) / 1000)
+    this.resolveActorOverlaps()
   }
 
   updateSnapshot(snapshot: OfficeWorldSnapshot): void {
@@ -106,24 +169,146 @@ export class OfficeScene extends Phaser.Scene {
     this.createEntrance()
     this.createRepresentativeRoom()
     this.createDesks()
+    this.restoreCustomFurniture()
   }
 
-  private createFurnitureFrames(): void {
-    const texture = this.textures.get('office-furniture-atlas')
-    const source = texture.getSourceImage() as HTMLImageElement
-    const frameWidth = Math.floor(source.width / 5)
-    const frameHeight = Math.floor(source.height / 4)
-    for (let row = 0; row < 4; row += 1) {
-      for (let column = 0; column < 5; column += 1) {
-        texture.add(`furniture-${row * 5 + column}`, 0, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
-      }
+  private addFurniture(id: string, frame: number, x: number, y: number, width: number, height: number, depth = y): Phaser.GameObjects.Image {
+    const saved = this.layoutSave[id]
+    const image = this.add.image(saved?.x ?? x, saved?.y ?? y, FURNITURE_TEXTURES[frame] ?? 'furniture-workstation-desk')
+      .setDisplaySize(width, height)
+      .setDepth(saved?.y ?? depth)
+      .setInteractive({ useHandCursor: true, draggable: true })
+    image.setData({ furnitureId: id, furnitureFrame: frame })
+    this.input.setDraggable(image)
+    image.on('pointerdown', () => this.selectFurniture(id))
+    image.on('drag', (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+      if (!this.layoutEditing) return
+      image.setPosition(
+        Phaser.Math.Clamp(dragX, image.displayWidth / 2, OFFICE_WORLD_WIDTH - image.displayWidth / 2),
+        Phaser.Math.Clamp(dragY, image.displayHeight / 2, OFFICE_WORLD_HEIGHT - image.displayHeight / 2)
+      ).setDepth(image.y)
+      this.updateSelectionOutline()
+    })
+    image.on('dragend', () => {
+      if (this.layoutEditing) this.saveFurnitureLayout()
+    })
+    this.furniture.set(id, { id, frame, image, defaultPoint: { x, y } })
+    return image
+  }
+
+  private createLayoutEditor(): void {
+    const panel = this.add.rectangle(480, 606, 720, 56, 0x12251f, 0.94).setDepth(1900)
+    const help = this.add.text(132, 582, '에셋 추가  |  가구를 마우스로 드래그', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#dff3ed'
+    }).setDepth(2000)
+    this.editorUi.push(panel, help)
+    const frames = [0, 1, 2, 5, 6, 10, 12, 15, 16, 17, 18, 19]
+    frames.forEach((frame, index) => {
+      const x = 300 + index * 42
+      const icon = this.add.image(x, 610, FURNITURE_TEXTURES[frame])
+        .setDisplaySize(34, 34).setDepth(2001).setInteractive({ useHandCursor: true })
+      icon.on('pointerdown', () => this.addFurnitureFromPalette(frame))
+      this.editorUi.push(icon)
+    })
+    const remove = this.add.text(820, 582, '선택 삭제', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#ffffff', backgroundColor: '#803c36'
+    }).setPadding(6, 4).setDepth(2001).setInteractive({ useHandCursor: true })
+    remove.on('pointerdown', () => this.deleteSelectedFurniture())
+    const reset = this.add.text(900, 582, '초기화', {
+      fontFamily: 'monospace', fontSize: '10px', color: '#ffffff', backgroundColor: '#5a5034'
+    }).setPadding(6, 4).setDepth(2001).setInteractive({ useHandCursor: true })
+    reset.on('pointerdown', () => this.resetFurnitureLayout())
+    this.editorUi.push(remove, reset)
+    this.input.keyboard?.on('keydown-DELETE', () => this.deleteSelectedFurniture())
+    this.setEditorUiVisible(false)
+  }
+
+  private setEditorUiVisible(visible: boolean): void {
+    this.editorUi.forEach((object) => object.setVisible(visible))
+    this.furniture.forEach(({ image }) => image.setAlpha(visible ? 0.88 : 1))
+  }
+
+  private selectFurniture(id: string | null): void {
+    if (!this.layoutEditing) return
+    this.selectedFurniture = id ? this.furniture.get(id) ?? null : null
+    this.selectionOutline?.destroy()
+    this.selectionOutline = undefined
+    if (!this.selectedFurniture) return
+    const image = this.selectedFurniture.image
+    this.selectionOutline = this.add.rectangle(image.x, image.y, image.displayWidth + 6, image.displayHeight + 6)
+      .setStrokeStyle(3, 0xffdd55).setDepth(1990)
+  }
+
+  private updateSelectionOutline(): void {
+    if (this.selectedFurniture && this.selectionOutline) {
+      const image = this.selectedFurniture.image
+      this.selectionOutline.setPosition(image.x, image.y).setSize(image.displayWidth + 6, image.displayHeight + 6)
     }
   }
 
-  private addFurniture(frame: number, x: number, y: number, width: number, height: number, depth = y): Phaser.GameObjects.Image {
-    return this.add.image(x, y, 'office-furniture-atlas', `furniture-${frame}`)
-      .setDisplaySize(width, height)
-      .setDepth(depth)
+  private addFurnitureFromPalette(frame: number): void {
+    if (!this.layoutEditing) return
+    const id = `custom-${Date.now()}-${this.nextFurnitureId++}`
+    const image = this.addFurniture(id, frame, 480, 340, 64, 64)
+    this.layoutSave[id] = { x: image.x, y: image.y, frame, width: 64, height: 64 }
+    this.saveFurnitureLayout()
+    this.selectFurniture(id)
+  }
+
+  private deleteSelectedFurniture(): void {
+    if (!this.layoutEditing || !this.selectedFurniture) return
+    const { id, image } = this.selectedFurniture
+    image.destroy()
+    this.furniture.delete(id)
+    delete this.layoutSave[id]
+    this.selectedFurniture = null
+    this.selectionOutline?.destroy()
+    this.selectionOutline = undefined
+    localStorage.setItem(OFFICE_LAYOUT_SAVE_KEY, JSON.stringify(this.layoutSave))
+  }
+
+  private saveFurnitureLayout(): void {
+    this.furniture.forEach(({ id, frame, image }) => {
+      this.layoutSave[id] = {
+        x: Math.round(image.x), y: Math.round(image.y),
+        ...(id.startsWith('custom-') ? { frame, width: image.displayWidth, height: image.displayHeight } : {})
+      }
+    })
+    localStorage.setItem(OFFICE_LAYOUT_SAVE_KEY, JSON.stringify(this.layoutSave))
+  }
+
+  private restoreCustomFurniture(): void {
+    Object.entries(this.layoutSave).forEach(([id, saved]) => {
+      if (!id.startsWith('custom-') || saved.frame === undefined) return
+      this.addFurniture(id, saved.frame, saved.x, saved.y, saved.width ?? 64, saved.height ?? 64)
+    })
+  }
+
+  private resetFurnitureLayout(): void {
+    this.layoutSave = {}
+    localStorage.removeItem(OFFICE_LAYOUT_SAVE_KEY)
+    for (const [id, furniture] of this.furniture) {
+      if (id.startsWith('custom-')) {
+        furniture.image.destroy()
+        this.furniture.delete(id)
+      } else {
+        furniture.image.setPosition(furniture.defaultPoint.x, furniture.defaultPoint.y).setDepth(furniture.defaultPoint.y)
+      }
+    }
+    this.selectFurniture(null)
+  }
+
+  private collisionRects(): CollisionRect[] {
+    const furnitureRects = [...this.furniture.values()].map(({ frame, image }) => {
+      const [scaleX, scaleY] = FURNITURE_COLLISION_SCALE[frame] ?? [0.76, 0.56]
+      return {
+        x: image.x - image.displayWidth * scaleX / 2,
+        y: image.y - image.displayHeight * scaleY / 2,
+        width: image.displayWidth * scaleX,
+        height: image.displayHeight * scaleY
+      }
+    })
+    return [...OFFICE_STRUCTURE_COLLISIONS, ...furnitureRects]
   }
 
   private createRoom(x: number, y: number, width: number, height: number, label: string): void {
@@ -162,37 +347,37 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createPantry(): void {
-    this.addFurniture(0, 65, 105, 70, 82, 40)
-    this.addFurniture(1, 145, 98, 62, 105, 40)
-    this.addFurniture(2, 220, 108, 105, 70, 40)
+    this.addFurniture('pantry-cabinet', 0, 65, 105, 70, 82, 40)
+    this.addFurniture('pantry-fridge', 1, 145, 98, 62, 105, 40)
+    this.addFurniture('pantry-counter', 2, 220, 108, 105, 70, 40)
     this.createDoor('pantry', WAYPOINTS.pantryDoor.x, 200, 34, 46)
   }
 
   private createMeetingRoom(): void {
-    this.addFurniture(6, 480, 128, 270, 118, 80)
-    this.addFurniture(5, 480, 52, 135, 48, 35)
+    this.addFurniture('meeting-table', 6, 480, 128, 270, 118, 80)
+    this.addFurniture('meeting-screen', 5, 480, 52, 135, 48, 35)
     this.createDoor('meeting', WAYPOINTS.meetingDoor.x, 200, 36, 46)
   }
 
   private createEntrance(): void {
     this.createDoor('elevator', WAYPOINTS.elevatorInside.x, 94, 84, 112)
-    this.addFurniture(15, 735, 125, 45, 70, 40)
-    this.addFurniture(15, 905, 125, 45, 70, 40)
+    this.addFurniture('entrance-plant-left', 15, 735, 125, 45, 70, 40)
+    this.addFurniture('entrance-plant-right', 15, 905, 125, 45, 70, 40)
   }
 
   private createRepresentativeRoom(): void {
-    this.addFurniture(15, 760, 580, 48, 70, 580)
-    this.addFurniture(16, 805, 592, 48, 42, 592)
-    this.addFurniture(17, 895, 455, 82, 48, 455)
-    this.addFurniture(18, 842, 455, 32, 62, 455)
-    this.addFurniture(19, 912, 568, 48, 86, 568)
-    this.addFurniture(10, 835, 515, 100, 58, 515)
+    this.addFurniture('representative-plant', 15, 760, 580, 48, 70, 580)
+    this.addFurniture('representative-side-table', 16, 805, 592, 48, 42, 592)
+    this.addFurniture('representative-sofa', 17, 895, 455, 82, 48, 455)
+    this.addFurniture('representative-lamp', 18, 842, 455, 32, 62, 455)
+    this.addFurniture('representative-bookcase', 19, 912, 568, 48, 86, 568)
+    this.addFurniture('representative-desk', 10, 835, 515, 100, 58, 515)
   }
 
   private createDesks(): void {
     TEAM_DESKS.forEach((team, teamIndex) => team.forEach((point, slotIndex) => {
-      this.addFurniture(10, point.x, point.y + 12, 92, 58, point.y + 5)
-      this.addFurniture(12 + teamIndex, point.x, point.y + 38, 38, 42, point.y + 45)
+      this.addFurniture(`desk-${teamIndex}-${slotIndex}`, 10, point.x, point.y + 12, 92, 58, point.y + 5)
+      this.addFurniture(`chair-${teamIndex}-${slotIndex}`, 12 + teamIndex, point.x, point.y + 38, 38, 42, point.y + 45)
       if (slotIndex === 0) this.add.text(point.x - 36, point.y - 45, ['Claude', 'Codex', 'Antigravity'][teamIndex], {
         fontFamily: 'monospace', fontSize: '10px', color: '#24473e'
       }).setDepth(700)
@@ -348,7 +533,10 @@ export class OfficeScene extends Phaser.Scene {
     const saved = this.worldSave.actors.find((candidate) => candidate.profileId === actor.profileId)
     const initial = saved ?? { x: WAYPOINTS.elevatorInside.x, y: WAYPOINTS.elevatorInside.y }
     const container = this.add.container(initial.x, initial.y, [sprite, label, bubble, prop]).setDepth(initial.y)
-    const view = { container, sprite, bubble, prop, routeKey: '', stateMachine: new ActorStateMachine(actor.presence) }
+    const view: ActorView = {
+      container, sprite, bubble, prop, routeKey: '', stateMachine: new ActorStateMachine(actor.presence),
+      route: [], routeIndex: 0, actor
+    }
     this.actors.set(actor.profileId, view)
     return view
   }
@@ -359,7 +547,7 @@ export class OfficeScene extends Phaser.Scene {
     const route: WorldPoint[] = []
     let cursor = { x: view.container.x, y: view.container.y }
     for (const waypoint of waypoints) {
-      const segment = findOfficePath(cursor, waypoint)
+      const segment = findOfficePath(cursor, waypoint, this.collisionRects())
       route.push(...segment)
       cursor = waypoint
     }
@@ -374,40 +562,70 @@ export class OfficeScene extends Phaser.Scene {
     view.container.setScale(1, actor.presence === 'working' || actor.presence === 'meeting' ? 0.92 : 1)
     if (view.routeKey === routeKey) return
     view.routeKey = routeKey
-    this.tweens.killTweensOf(view.container)
     view.actionTween?.stop()
     view.prop.setVisible(false)
     if (route.length === 0) return
-    this.moveRoute(view, route, 0, actor)
+    view.actor = actor
+    view.route = route
+    view.routeIndex = 0
   }
 
-  private moveRoute(view: ActorView, route: WorldPoint[], index: number, actor: OfficeGameActor): void {
-    const point = route[index]
-    if (!point) {
-      this.startActionAnimation(view, actor)
-      return
-    }
-    const distance = Phaser.Math.Distance.Between(view.container.x, view.container.y, point.x, point.y)
-    const duration = Math.max(180, distance * 3.1)
-    view.stateMachine.startWalking(point.x - view.container.x, point.y - view.container.y)
-    view.sprite.setFlipX(point.x < view.container.x)
-    if (this.animationAtlasFor(actor.rosterIndex)) {
-      const vertical = Math.abs(point.y - view.container.y) > Math.abs(point.x - view.container.x)
-      const animation = vertical && point.y < view.container.y ? 'walk-up' : 'walk-down'
-      view.sprite.play(`actor-${actor.rosterIndex}-${animation}`, true)
-    }
-    this.tweens.add({
-      targets: view.container,
-      x: point.x,
-      y: point.y,
-      duration,
-      ease: 'Linear',
-      onUpdate: () => view.container.setDepth(view.container.y),
-      onComplete: () => {
-        this.persistActor(actor, view)
-        this.moveRoute(view, route, index + 1, actor)
+  private updateActorMovement(deltaSeconds: number): void {
+    if (this.layoutEditing) return
+    const collisions = this.collisionRects()
+    for (const view of this.actors.values()) {
+      const target = view.route[view.routeIndex]
+      if (!target) continue
+      const dx = target.x - view.container.x
+      const dy = target.y - view.container.y
+      const distance = Math.hypot(dx, dy)
+      if (distance < 2) {
+        view.routeIndex += 1
+        this.persistActor(view.actor, view)
+        if (view.routeIndex >= view.route.length) {
+          view.route = []
+          this.startActionAnimation(view, view.actor)
+        }
+        continue
       }
-    })
+      const amount = Math.min(distance, 320 * deltaSeconds)
+      const desired = { x: view.container.x + dx / distance * amount, y: view.container.y + dy / distance * amount }
+      const movementCollisions = collisions.filter((rect) => !(
+        target.x >= rect.x && target.x <= rect.x + rect.width && target.y >= rect.y && target.y <= rect.y + rect.height
+      ))
+      const resolved = resolveAxisSeparated({ x: view.container.x, y: view.container.y }, desired, movementCollisions)
+      view.container.setPosition(resolved.x, resolved.y).setDepth(resolved.y)
+      view.stateMachine.startWalking(dx, dy)
+      view.sprite.setFlipX(dx < 0)
+      if (this.animationAtlasFor(view.actor.rosterIndex)) {
+        const animation = Math.abs(dy) > Math.abs(dx) && dy < 0 ? 'walk-up' : 'walk-down'
+        view.sprite.play(`actor-${view.actor.rosterIndex}-${animation}`, true)
+      }
+      if (resolved.blockedX && resolved.blockedY) {
+        const remaining = findOfficePath({ x: view.container.x, y: view.container.y }, target, movementCollisions)
+        view.route.splice(view.routeIndex, 1, ...remaining)
+      }
+    }
+  }
+
+  private resolveActorOverlaps(): void {
+    if (this.layoutEditing) return
+    const entries = [...this.actors.entries()]
+    const collisions = this.collisionRects()
+    for (let pass = 0; pass < 2; pass += 1) {
+      for (let i = 0; i < entries.length; i += 1) for (let j = i + 1; j < entries.length; j += 1) {
+        const [idA, a] = entries[i]
+        const [idB, b] = entries[j]
+        const [nextA, nextB] = pushApart(
+          { id: idA, x: a.container.x, y: a.container.y, radius: 11 },
+          { id: idB, x: b.container.x, y: b.container.y, radius: 11 }
+        )
+        const safeA = resolveAxisSeparated({ x: a.container.x, y: a.container.y }, nextA, collisions)
+        const safeB = resolveAxisSeparated({ x: b.container.x, y: b.container.y }, nextB, collisions)
+        a.container.setPosition(safeA.x, safeA.y).setDepth(safeA.y)
+        b.container.setPosition(safeB.x, safeB.y).setDepth(safeB.y)
+      }
+    }
   }
 
   private startActionAnimation(view: ActorView, actor: OfficeGameActor): void {

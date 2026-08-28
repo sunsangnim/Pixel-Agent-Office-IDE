@@ -5,7 +5,7 @@ const COLS = OFFICE_WORLD_WIDTH / NAV_TILE_SIZE
 const ROWS = OFFICE_WORLD_HEIGHT / NAV_TILE_SIZE
 
 interface TilePoint { col: number; row: number }
-interface CollisionRect { x: number; y: number; width: number; height: number }
+import type { CollisionRect } from './collisionResolution'
 
 const DESK_COLLISIONS: CollisionRect[] = TEAM_DESKS.flat().map((point) => ({
   x: point.x - 48, y: point.y - 18, width: 96, height: 45
@@ -22,6 +22,18 @@ export const OFFICE_COLLISIONS: CollisionRect[] = [
   { x: 815, y: 490, width: 104, height: 58 },
   { x: 738, y: 540, width: 75, height: 86 },
   { x: 882, y: 520, width: 65, height: 108 }
+]
+
+export const OFFICE_STRUCTURE_COLLISIONS: CollisionRect[] = [
+  { x: 0, y: 0, width: OFFICE_WORLD_WIDTH, height: 12 },
+  { x: 0, y: OFFICE_WORLD_HEIGHT - 12, width: OFFICE_WORLD_WIDTH, height: 12 },
+  { x: 0, y: 0, width: 12, height: OFFICE_WORLD_HEIGHT },
+  { x: OFFICE_WORLD_WIDTH - 12, y: 0, width: 12, height: OFFICE_WORLD_HEIGHT },
+  { x: 8, y: 205, width: 245, height: 10 }, { x: 287, y: 8, width: 10, height: 207 },
+  { x: 296, y: 205, width: 160, height: 10 }, { x: 494, y: 205, width: 172, height: 10 },
+  { x: 666, y: 8, width: 10, height: 207 }, { x: 674, y: 205, width: 278, height: 10 },
+  { x: 725, y: 405, width: 10, height: 42 }, { x: 725, y: 485, width: 10, height: 147 },
+  { x: 725, y: 405, width: 227, height: 10 }
 ]
 
 function toTile(point: WorldPoint): TilePoint {
@@ -43,34 +55,34 @@ function tileKey(tile: TilePoint): string {
   return `${tile.col}:${tile.row}`
 }
 
-function isBlocked(tile: TilePoint, exceptions: Set<string>): boolean {
+function isBlocked(tile: TilePoint, exceptions: Set<string>, collisions: CollisionRect[] = OFFICE_COLLISIONS): boolean {
   if (exceptions.has(tileKey(tile))) return false
   const point = toWorld(tile)
-  return OFFICE_COLLISIONS.some((rect) =>
+  return collisions.some((rect) =>
     point.x >= rect.x && point.x <= rect.x + rect.width &&
     point.y >= rect.y && point.y <= rect.y + rect.height
   )
 }
 
-function nearestWalkable(tile: TilePoint, exceptions: Set<string>): TilePoint {
-  if (!isBlocked(tile, exceptions)) return tile
+function nearestWalkable(tile: TilePoint, exceptions: Set<string>, collisions: CollisionRect[]): TilePoint {
+  if (!isBlocked(tile, exceptions, collisions)) return tile
   for (let radius = 1; radius <= 4; radius += 1) {
     for (let dx = -radius; dx <= radius; dx += 1) {
       for (let dy = -radius; dy <= radius; dy += 1) {
         const candidate = { col: tile.col + dx, row: tile.row + dy }
-        if (candidate.col > 0 && candidate.row > 0 && candidate.col < COLS - 1 && candidate.row < ROWS - 1 && !isBlocked(candidate, exceptions)) return candidate
+        if (candidate.col > 0 && candidate.row > 0 && candidate.col < COLS - 1 && candidate.row < ROWS - 1 && !isBlocked(candidate, exceptions, collisions)) return candidate
       }
     }
   }
   return tile
 }
 
-export function findOfficePath(from: WorldPoint, to: WorldPoint): WorldPoint[] {
+export function findOfficePath(from: WorldPoint, to: WorldPoint, collisions: CollisionRect[] = OFFICE_COLLISIONS): WorldPoint[] {
   const rawStart = toTile(from)
   const rawGoal = toTile(to)
   const exceptions = new Set([tileKey(rawStart), tileKey(rawGoal)])
-  const start = nearestWalkable(rawStart, exceptions)
-  const goal = nearestWalkable(rawGoal, exceptions)
+  const start = nearestWalkable(rawStart, exceptions, collisions)
+  const goal = nearestWalkable(rawGoal, exceptions, collisions)
   const open: TilePoint[] = [start]
   const cameFrom = new Map<string, TilePoint>()
   const gScore = new Map<string, number>([[tileKey(start), 0]])
@@ -86,7 +98,7 @@ export function findOfficePath(from: WorldPoint, to: WorldPoint): WorldPoint[] {
 
     for (const neighbor of neighbors(current)) {
       const key = tileKey(neighbor)
-      if (closed.has(key) || isBlocked(neighbor, exceptions)) continue
+      if (closed.has(key) || isBlocked(neighbor, exceptions, collisions)) continue
       const tentative = (gScore.get(currentKey) ?? Infinity) + 1
       if (tentative >= (gScore.get(key) ?? Infinity)) continue
       cameFrom.set(key, current)

@@ -24,6 +24,7 @@ function ChatPanel({
 }: ChatPanelProps) {
   const [text, setText] = useState('')
   const [selectedMentions, setSelectedMentions] = useState<string[]>([])
+  const [layoutEditing, setLayoutEditing] = useState(false)
   const threadRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -84,13 +85,26 @@ function ChatPanel({
             <span className="chat-user-title">대표</span>
           </div>
         </div>
-        <button
-          className="chat-settings-btn"
-          onClick={() => window.api.system.openSettings()}
-          title="설정"
-        >
-          ⚙
-        </button>
+        <div className="chat-header-actions">
+          <button
+            className={`chat-layout-btn${layoutEditing ? ' is-active' : ''}`}
+            onClick={() => {
+              const editing = !layoutEditing
+              setLayoutEditing(editing)
+              window.dispatchEvent(new CustomEvent('office:layout-edit', { detail: { editing } }))
+            }}
+            title="가구 추가·이동·삭제"
+          >
+            {layoutEditing ? '편집 완료' : '인테리어 편집'}
+          </button>
+          <button
+            className="chat-settings-btn"
+            onClick={() => window.api.system.openSettings()}
+            title="설정"
+          >
+            ⚙
+          </button>
+        </div>
       </div>
 
       <div className="chat-thread" ref={threadRef}>

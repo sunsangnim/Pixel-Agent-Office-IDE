@@ -33,8 +33,13 @@ function PhaserOffice({ snapshot, onActorSelect }: PhaserOfficeProps) {
       scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
       scene
     })
+    const handleLayoutEditing = (event: Event): void => {
+      scene.setLayoutEditing(Boolean((event as CustomEvent<{ editing: boolean }>).detail?.editing))
+    }
+    window.addEventListener('office:layout-edit', handleLayoutEditing)
     gameRef.current = game
     return () => {
+      window.removeEventListener('office:layout-edit', handleLayoutEditing)
       scene.setActorSelectHandler(null)
       game.destroy(true)
       gameRef.current = null
