@@ -18,10 +18,13 @@ const MEETING_SEATS = [
 
 function activityLabel(presence: OfficePresence): string | undefined {
   if (presence === 'pantry') return '간식·음료'
+  if (presence === 'pantryDoor') return '탕비실 이동 중'
   if (presence === 'meeting') return '회의 중'
+  if (presence === 'meetingDoor') return '회의실 이동 중'
   if (presence === 'requestingHelp') return '승인 필요!'
   if (presence === 'error') return '오류 발생'
   if (presence === 'working') return '작업 중'
+  if (presence === 'arriving') return '출근 중'
   return undefined
 }
 
@@ -31,6 +34,9 @@ function position(
   teamIndex: number,
   presence: OfficePresence
 ): { x: number; y: number } {
+  if (presence === 'arriving') return { x: 84, y: 25 }
+  if (presence === 'pantryDoor') return { x: 28, y: 35 }
+  if (presence === 'meetingDoor') return { x: 52, y: 35 }
   if (presence === 'pantry') return { x: 9 + (profileIndex % 3) * 6, y: 18 }
   if (presence === 'meeting') return MEETING_SEATS[profileIndex % MEETING_SEATS.length]
   const teamX = TEAM_X[teamIndex] ?? 48

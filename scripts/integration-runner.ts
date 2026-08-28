@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert'
 import path from 'node:path'
+import fs from 'node:fs'
 import type { WebContents } from 'electron'
 import { getCliAdapter, adapterIdForTemplate } from '../src/main/cliAdapters'
 import { ptyManager } from '../src/main/ptyManager'
@@ -9,6 +10,8 @@ import type { AgentRuntimeState, AgentStatePayload, CliAdapterId } from '../src/
 import { planTask } from '../src/renderer/src/lib/taskRouter'
 import { isMeetingEndCommand, isMeetingStartCommand } from '../src/renderer/src/lib/meetingCommands'
 import { isWorkingTime } from '../src/renderer/src/hooks/useOfficeClock'
+import { getCorporateRosterCell, CORPORATE_ROSTER_SIZE } from '../src/renderer/src/lib/corporateRoster'
+import { presenceForRuntime, readStoredJson } from '../src/renderer/src/lib/meetingCheckpoint'
 
 interface RecordedEvent {
   channel: string
@@ -103,6 +106,33 @@ function verifyAdapters(): void {
   console.log('PASS CLI adapter signals and prompt serialization')
 }
 
+function verifyLivingOfficeAndRoster(): void {
+  assert.equal(presenceForRuntime('working'), 'working')
+  assert.equal(presenceForRuntime('waiting'), 'requestingHelp')
+  assert.equal(presenceForRuntime('error'), 'error')
+  assert.equal(presenceForRuntime('exited'), 'offDuty')
+  assert.deepEqual(readStoredJson('{"ok":true}', {}), { ok: true })
+  assert.deepEqual(readStoredJson('broken', []), [])
+
+  assert.equal(CORPORATE_ROSTER_SIZE, 20)
+  assert.deepEqual(getCorporateRosterCell(0), { index: 0, row: 0, column: 0, position: '0%' })
+  assert.deepEqual(getCorporateRosterCell(19), { index: 19, row: 3, column: 4, position: '100%' })
+  assert.equal(getCorporateRosterCell(99).index, 19)
+
+  const rows = [1, 2, 3, 4].map((row) => {
+    const file = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', `corporate-roster-row-${row}-v1.png`)
+    const png = fs.readFileSync(file)
+    assert.equal(png.toString('ascii', 1, 4), 'PNG')
+    const width = png.readUInt32BE(16)
+    const height = png.readUInt32BE(20)
+    const colorType = png[25]
+    assert.ok(colorType === 4 || colorType === 6 || png.includes(Buffer.from('tRNS')))
+    return { width, height }
+  })
+  assert.ok(rows.every((row) => row.width > 0 && row.height > 0))
+  console.log('PASS living-office checkpoint policy and 20-character roster assets')
+}
+
 function spawnFixture(sender: WebContents, adapterId: CliAdapterId): string {
   return ptyManager.spawn(
     {
@@ -124,6 +154,7 @@ async function main(): Promise<void> {
 
   verifyRoutingAndProfiles()
   verifyAdapters()
+  verifyLivingOfficeAndRoster()
 
   const ptyId = spawnFixture(sender, 'generic')
 

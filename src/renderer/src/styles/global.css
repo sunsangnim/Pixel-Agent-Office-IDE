@@ -662,6 +662,7 @@ body {
   background: linear-gradient(118deg, transparent 20%, rgba(255, 255, 255, 0.28) 21% 26%, transparent 27%), rgba(158, 205, 196, 0.18);
   box-shadow: inset 3px 0 rgba(255, 255, 255, 0.24), inset -2px 0 #73958d, 2px 0 #45675f, 0 3px #294b44;
   pointer-events: none;
+  transition: transform 0.42s steps(6, end), opacity 0.42s steps(4, end);
 }
 
 .office-glass-door i {
@@ -682,10 +683,11 @@ body {
   border-top-color: #f0faf7;
 }
 
-.office-glass-door-open {
+.office-glass-door-open,
+.office-glass-door.office-door-opening,
+.office-glass-door.office-door-open {
   transform: translateX(72%);
   opacity: 0.42;
-  transition: transform 0.42s steps(6, end), opacity 0.42s steps(4, end);
 }
 
 .meeting-access-door {
@@ -698,7 +700,9 @@ body {
   transform: translateX(-50%);
 }
 
-.meeting-access-door.office-glass-door-open {
+.meeting-access-door.office-glass-door-open,
+.meeting-access-door.office-door-opening,
+.meeting-access-door.office-door-open {
   transform: translateX(24%);
 }
 
@@ -852,10 +856,13 @@ body {
   transition: transform 0.48s steps(6, end);
 }
 
-.office-door-open .elevator-door-leaf:first-child { transform: translateX(-100%); }
-.office-door-open .elevator-door-leaf:last-child { transform: translateX(100%); }
+.office-door-open .elevator-door-leaf:first-child,
+.office-door-opening .elevator-door-leaf:first-child { transform: translateX(-100%); }
+.office-door-open .elevator-door-leaf:last-child,
+.office-door-opening .elevator-door-leaf:last-child { transform: translateX(100%); }
 
-.office-door-open {
+.office-door-open,
+.office-door-opening {
   box-shadow: inset 0 0 0 3px #111923, 0 0 0 2px rgba(126, 224, 196, 0.36);
 }
 
@@ -1919,6 +1926,42 @@ body {
   border-radius: 999px;
   padding: 1px 8px;
 }
+
+.settings-roster {
+  padding: 16px;
+  border: 1px solid #2f2f42;
+  border-radius: 12px;
+  background: #20202c;
+}
+
+.settings-roster-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.settings-roster-heading h2 { margin: 0; font-size: 14px; }
+
+.settings-roster-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-roster-grid figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 4px;
+  border-radius: 8px;
+  background: #171720;
+}
+
+.settings-roster-grid .corporate-character-sprite { width: 42px; height: 68px; }
+.settings-roster-grid figcaption { color: #a9a9bc; font-size: 10px; }
 
 .settings-card-actions {
   display: flex;

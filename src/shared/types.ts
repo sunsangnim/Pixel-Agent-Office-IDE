@@ -79,12 +79,17 @@ export type DeskStatus = 'idle' | 'running' | 'error'
 export type AgentRank = 'teamLead' | 'subAgent'
 export type OfficePresence =
   | 'offDuty'
+  | 'arriving'
   | 'deskIdle'
+  | 'pantryDoor'
   | 'pantry'
+  | 'meetingDoor'
   | 'meeting'
   | 'working'
   | 'requestingHelp'
   | 'error'
+
+export type OfficeDoorState = 'closed' | 'opening' | 'open' | 'closing'
 
 export interface OrchestrationPolicy {
   maxChildrenPerLead: number

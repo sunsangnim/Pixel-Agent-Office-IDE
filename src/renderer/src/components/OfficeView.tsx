@@ -40,10 +40,11 @@ function OfficeView({
     runtimeStates,
     tasks,
     officeClock.isWorkingHours,
+    officeClock.isClockInActive,
     meetingActive
   )
-  const pantryOccupied = Object.values(presenceByProfile).some((presence) => presence === 'pantry')
-  const meetingOccupied = Object.values(presenceByProfile).some((presence) => presence === 'meeting')
+  const pantryOccupied = Object.values(presenceByProfile).some((presence) => presence === 'pantry' || presence === 'pantryDoor')
+  const meetingOccupied = Object.values(presenceByProfile).some((presence) => presence === 'meeting' || presence === 'meetingDoor')
   const teamIds = Array.from(new Set(profiles.map((profile) => profile.templateId)))
   const teamLabels: Record<string, string> = {
     'claude-code': 'Team Claude',

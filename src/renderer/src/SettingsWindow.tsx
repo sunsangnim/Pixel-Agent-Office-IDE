@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { AgentTemplate } from '@shared/types'
 import TerminalModal from './components/TerminalModal'
+import CorporateCharacterSprite from './components/CorporateCharacterSprite'
+import { CORPORATE_ROSTER_SIZE } from './lib/corporateRoster'
 
 interface FormState {
   name: string
@@ -232,6 +234,21 @@ function SettingsWindow() {
           )}
         </div>
       </form>
+
+      <section className="settings-roster" aria-label="20인 회사원 캐릭터 전체 보기">
+        <div className="settings-roster-heading">
+          <h2>회사원 캐릭터</h2>
+          <span className="settings-count-badge">20명</span>
+        </div>
+        <div className="settings-roster-grid">
+          {Array.from({ length: CORPORATE_ROSTER_SIZE }, (_, index) => (
+            <figure key={index} data-roster-index={index}>
+              <CorporateCharacterSprite rosterIndex={index} />
+              <figcaption>{index === 0 ? '대표' : index <= 15 ? `직원 ${index}` : `확장 ${index - 15}`}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
 
       {loginSession && (
         <TerminalModal ptyId={loginSession.ptyId} title={loginSession.title} onClose={closeLogin} />

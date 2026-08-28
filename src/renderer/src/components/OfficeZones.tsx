@@ -1,3 +1,5 @@
+import { useDoorState } from '../hooks/useDoorState'
+
 interface OfficeZonesProps {
   now: Date
   elevatorOpen: boolean
@@ -6,6 +8,9 @@ interface OfficeZonesProps {
 }
 
 function OfficeZones({ now, elevatorOpen, pantryOpen, meetingOpen }: OfficeZonesProps) {
+  const elevatorState = useDoorState(elevatorOpen)
+  const pantryState = useDoorState(pantryOpen)
+  const meetingState = useDoorState(meetingOpen)
   const digitalTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
   return (
     <div className="office-zones">
@@ -19,7 +24,7 @@ function OfficeZones({ now, elevatorOpen, pantryOpen, meetingOpen }: OfficeZones
         <div className="pantry-glass-wall" aria-label="탕비실 전면 유리벽과 통합 출입문">
           <span className="pantry-glass-panel" />
           <span className="pantry-glass-panel" />
-          <span className={`office-glass-door pantry-glass-door${pantryOpen ? ' office-glass-door-open' : ''}`}><i /></span>
+          <span className={`office-glass-door pantry-glass-door office-door-${pantryState}`} data-door-state={pantryState}><i /></span>
         </div>
       </div>
       <div className="zone zone-meeting">
@@ -37,11 +42,11 @@ function OfficeZones({ now, elevatorOpen, pantryOpen, meetingOpen }: OfficeZones
             <span className="chair" /><span className="chair" /><span className="chair" />
           </div>
         </div>
-        <span className={`office-glass-door meeting-access-door${meetingOpen ? ' office-glass-door-open' : ''}`} aria-label="회의실 출입문"><i /></span>
+        <span className={`office-glass-door meeting-access-door office-door-${meetingState}`} data-door-state={meetingState} aria-label="회의실 출입문"><i /></span>
       </div>
       <div className="zone zone-entrance">
         <span className="zone-label">출입구</span>
-        <div className={`elevator-door office-door-interactive${elevatorOpen ? ' office-door-open' : ''}`}>
+        <div className={`elevator-door office-door-interactive office-door-${elevatorState}`} data-door-state={elevatorState}>
           <span className="elevator-door-leaf" /><span className="elevator-door-leaf" />
           <span className="elevator-indicator">▲</span>
         </div>

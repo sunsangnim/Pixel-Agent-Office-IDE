@@ -8,8 +8,14 @@ import { usePtyStatuses } from './hooks/usePtyStatuses'
 import { useAgentChat } from './hooks/useAgentChat'
 import { planTask } from './lib/taskRouter'
 import { isMeetingEndCommand, isMeetingStartCommand } from './lib/meetingCommands'
-
-const MEETING_CHECKPOINT_KEY = 'pixel-office:meeting-checkpoint'
+import {
+  MEETING_CHECKPOINT_KEY,
+  MEETING_QUEUE_KEY,
+  presenceForRuntime,
+  readStoredJson,
+  type HeldMeetingPrompt,
+  type MeetingCheckpoint
+} from './lib/meetingCheckpoint'
 
 function App() {
   const [workFolder, setWorkFolder] = useState<string | null>(null)
@@ -20,6 +26,9 @@ function App() {
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [meetingActive, setMeetingActive] = useState(() => Boolean(localStorage.getItem(MEETING_CHECKPOINT_KEY)))
+  const [heldPrompts, setHeldPrompts] = useState<HeldMeetingPrompt[]>(() =>
+    readStoredJson(localStorage.getItem(MEETING_QUEUE_KEY), [])
+  )
   const { deskStatuses: statuses, runtimeStates } = usePtyStatuses()
   const { messages, lastTaskByInstance, sendPrompt, sendAssignments, addSystemMessage } = useAgentChat(instances, templates)
 
@@ -59,28 +68,7 @@ function App() {
     })
   }
 
-  const sendPromptToSelected = async (text: string): Promise<void> => {
-    if (isMeetingStartCommand(text)) {
-      const checkpoint = {
-        startedAt: new Date().toISOString(),
-        sessions: instances.map((instance) => ({
-          instanceId: instance.instanceId,
-          ptyId: instance.ptyId,
-          runtimeState: runtimeStates[instance.ptyId]?.state ?? 'idle',
-          task: lastTaskByInstance[instance.instanceId] ?? ''
-        }))
-      }
-      localStorage.setItem(MEETING_CHECKPOINT_KEY, JSON.stringify(checkpoint))
-      setMeetingActive(true)
-      addSystemMessage(`전체 회의 시작: ${checkpoint.sessions.length}개 CLI 세션을 종료하지 않고 작업 체크포인트를 저장했습니다.`)
-      return
-    }
-    if (isMeetingEndCommand(text)) {
-      setMeetingActive(false)
-      localStorage.removeItem(MEETING_CHECKPOINT_KEY)
-      addSystemMessage('전체 회의 종료: 보존한 세션과 이전 업무 상태로 복귀합니다.')
-      return
-    }
+  const executePrompt = async (text: string, targetIds = Array.from(selectedTargetIds)): Promise<void> => {
     if (!workFolder) {
       setError('작업을 시작하려면 작업 폴더를 먼저 지정해주세요.')
       return
@@ -98,8 +86,8 @@ function App() {
     const workflowPrompt = `[필수 작업 운영정책]\n프로젝트 폴더: ${workFolder}\n비공개 작업 문서 폴더: ${taskWorkspace.rootPath}\n1. 코드는 프로젝트 폴더에서 작업하고, SRS·PRD·Phase·결과 문서는 비공개 작업 문서 폴더에만 저장하세요.\n2. 구현 전에 ${taskWorkspace.specPath}의 SRS·PRD·화면설계를 먼저 구체화하세요.\n3. ${taskWorkspace.phasesPath}에 작업을 Phase로 나누고 한 번에 한 Phase만 수행하세요.\n4. API 키·토큰·로그인 정보·세션·PTY 버퍼·로컬 절대경로·사용자 작업 문서는 Git에 추가하지 마세요.\n5. 각 Phase 완료 시 테스트와 빌드를 실행하고 공개 가능한 코드·자산만 커밋하세요. 원격 푸시는 저장소 공개 범위와 사용자 승인을 확인한 경우에만 수행하세요.\n6. 전체 작업 완료 시 ${taskWorkspace.readmePath}에 최종 결과물, 실행법, 검증 결과, 변경 이력을 완성하세요.\n7. 직접 지정된 팀장은 하위 세션 사용 여부와 작업 방법을 자율적으로 결정하세요.\n\n[사용자 요청]\n${text}`
     addSystemMessage(`작업 폴더와 기획 문서 생성 완료: ${taskWorkspace.taskId}`)
 
-    if (selectedTargetIds.size > 0) {
-      sendPrompt(workflowPrompt, Array.from(selectedTargetIds), instances, text)
+    if (targetIds.length > 0) {
+      sendPrompt(workflowPrompt, targetIds, instances, text)
       return
     }
 
@@ -175,6 +163,53 @@ function App() {
       setInstances(availableInstances)
       setError(e instanceof Error ? `${plan.reason}: ${e.message}` : String(e))
     }
+  }
+
+  const sendPromptToSelected = async (text: string): Promise<void> => {
+    if (isMeetingStartCommand(text)) {
+      if (meetingActive) {
+        addSystemMessage('이미 전체 회의가 진행 중입니다.')
+        return
+      }
+      const sessions = await Promise.all(instances.map(async (instance) => {
+        const runtimeState = runtimeStates[instance.ptyId]?.state ?? 'idle'
+        const buffer = await window.api.pty.getBuffer(instance.ptyId).catch(() => '')
+        return {
+          instanceId: instance.instanceId,
+          ptyId: instance.ptyId,
+          runtimeState,
+          previousPresence: presenceForRuntime(runtimeState),
+          task: lastTaskByInstance[instance.instanceId] ?? '',
+          bufferLength: buffer.length
+        }
+      }))
+      const checkpoint: MeetingCheckpoint = { startedAt: new Date().toISOString(), sessions }
+      localStorage.setItem(MEETING_CHECKPOINT_KEY, JSON.stringify(checkpoint))
+      setMeetingActive(true)
+      addSystemMessage(`전체 회의 시작: ${sessions.length}개 CLI 세션과 PTY 버퍼 위치를 보존했습니다.`)
+      return
+    }
+
+    if (isMeetingEndCommand(text)) {
+      const queued = [...heldPrompts]
+      setMeetingActive(false)
+      setHeldPrompts([])
+      localStorage.removeItem(MEETING_CHECKPOINT_KEY)
+      localStorage.removeItem(MEETING_QUEUE_KEY)
+      addSystemMessage(`전체 회의 종료: 이전 상태로 복귀하고 보류 지시 ${queued.length}건을 순서대로 재개합니다.`)
+      for (const prompt of queued) await executePrompt(prompt.text, prompt.targetIds)
+      return
+    }
+
+    if (meetingActive) {
+      const next = [...heldPrompts, { text, targetIds: Array.from(selectedTargetIds) }]
+      setHeldPrompts(next)
+      localStorage.setItem(MEETING_QUEUE_KEY, JSON.stringify(next))
+      addSystemMessage(`회의 중 지시 보류: 회의 종료 후 전송합니다. (대기 ${next.length}건)`)
+      return
+    }
+
+    await executePrompt(text)
   }
 
   return (
