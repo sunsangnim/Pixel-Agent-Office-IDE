@@ -28,18 +28,18 @@ pixel-office/
 
 | 파일 | 용도 | 점유 칸 |
 | --- | --- | --- |
-| `coffee-machine-v2.png` | 정면형 탕비실 커피 머신 | 2×3 |
-| `refrigerator-v2.png` | 정면형 탕비실 냉장고 | 2×4 |
-| `pantry-cabinet-v1.png` | 탕비실 수납장 | 4×2 |
-| `presentation-screen-v1.png` | 회의실 화면 | 5×1 |
-| `conference-table-v1.png` | 회의 테이블과 좌석 세트 | 12×6 |
-| `workstation-desk-v1.png` | 팀/대표 업무 책상 | 6×3 |
-| `office-chair-v2.png` | 정면형 사무용 의자 | 2×2 |
-| `office-plant-v1.png` | 실내 화분 | 1×2 |
-| `side-table-v2.png` | 정면형 대표실 사이드 테이블 | 2×1 |
-| `office-sofa-v1.png` | 대표실 소파 | 4×2 |
-| `floor-lamp-v1.png` | 대표실 램프 | 1×1 |
-| `bookcase-v2.png` | 정면형 대표실 책장 | 2×4 |
+| `coffee-machine-v2.png` | 정면형 탕비실 커피 머신 | 4×6 |
+| `refrigerator-v2.png` | 정면형 탕비실 냉장고 | 4×8 |
+| `pantry-cabinet-v1.png` | 탕비실 수납장 | 8×4 |
+| `presentation-screen-v1.png` | 회의실 화면 | 10×2 |
+| `conference-table-v1.png` | 회의 테이블과 좌석 세트 | 24×12 |
+| `workstation-desk-v1.png` | 팀/대표 업무 책상 | 12×6 |
+| `office-chair-v2.png` | 정면형 사무용 의자 | 4×4 |
+| `office-plant-v1.png` | 실내 화분 | 2×4 |
+| `side-table-v2.png` | 정면형 대표실 사이드 테이블 | 4×2 |
+| `office-sofa-v1.png` | 대표실 소파 | 8×4 |
+| `floor-lamp-v1.png` | 대표실 램프 | 2×2 |
+| `bookcase-v2.png` | 정면형 대표실 책장 | 4×8 |
 
 ## Floors
 

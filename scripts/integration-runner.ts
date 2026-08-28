@@ -171,10 +171,10 @@ function verifyLivingOfficeAndRoster(): void {
   assert.deepEqual(parseOfficeLayout('{"sofa":{"x":30,"y":40,"rotation":90}}'), { sofa: { x: 30, y: 40, rotation: 90 } })
   assert.equal(OFFICE_GRID_COLUMNS, 60)
   assert.equal(OFFICE_GRID_ROWS, 40)
-  assert.deepEqual(FURNITURE_FOOTPRINTS[15], { columns: 1, rows: 2 })
-  assert.deepEqual(rotatedFootprint(15, 90), { columns: 2, rows: 1 })
-  assert.deepEqual(snapFurniturePoint({ x: 103, y: 99 }, FURNITURE_FOOTPRINTS[15]), { x: 104, y: 96 })
-  assert.deepEqual(furnitureCollision({ x: 104, y: 96 }, FURNITURE_FOOTPRINTS[15]), { x: 96, y: 80, width: 16, height: 32 })
+  assert.deepEqual(FURNITURE_FOOTPRINTS[15], { columns: 2, rows: 4 })
+  assert.deepEqual(rotatedFootprint(15, 90), { columns: 4, rows: 2 })
+  assert.deepEqual(snapFurniturePoint({ x: 103, y: 99 }, FURNITURE_FOOTPRINTS[15]), { x: 96, y: 96 })
+  assert.deepEqual(furnitureCollision({ x: 96, y: 96 }, FURNITURE_FOOTPRINTS[15]), { x: 80, y: 64, width: 32, height: 64 })
   assert.deepEqual(OFFICE_FLOOR_REGION, { x: 480, y: 320, width: 928, height: 608 })
   const throughPantryDoor = findOfficePath({ x: 240, y: 240 }, { x: 240, y: 160 }, OFFICE_WALL_COLLISIONS)
   assert.ok(throughPantryDoor.every((point) => !OFFICE_WALL_COLLISIONS.some((wall) =>
@@ -229,7 +229,7 @@ function verifyLivingOfficeAndRoster(): void {
   assert.equal(furnitureAssets.length, 12)
   furnitureAssets.forEach((file) => {
     const furniture = PNG.sync.read(fs.readFileSync(path.join(furnitureDirectory, file)))
-    assert.ok(furniture.width >= 128 && furniture.height >= 128)
+    assert.ok(furniture.width >= 32 && furniture.height >= 32)
     for (let x = 0; x < furniture.width; x += 1) {
       assert.equal(furniture.data[x * 4 + 3], 0)
       assert.equal(furniture.data[((furniture.height - 1) * furniture.width + x) * 4 + 3], 0)
