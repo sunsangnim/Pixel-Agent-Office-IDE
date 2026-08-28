@@ -13,12 +13,12 @@ Phaser 기반 생활형 오피스 전면 재구축 작업 폴더다.
 - 엘리베이터·탕비실·회의실 양쪽 문짝 애니메이션
 - React의 실제 CLI presence를 Phaser actor snapshot으로 전달
 - 대표 캐릭터용 8×6 방향·행동 프레임 시트와 Phaser Animation Manager 재생 파이프라인
-- 첫 5인 팀용 5×4 Idle·Walk·Back Walk·Work 아틀라스와 상태 기반 재생
+- 19인 전체 5×4 Idle·Walk·Back Walk·Work 아틀라스와 상태 기반 재생
 - 월드 위치·presence 저장 및 복구
 
 ## 남은 작업
 
-- 나머지 14인 방향별 Idle·Walk·Work·Eat·Drink·Sit 프레임 제작 및 재생
+- Eat·Drink·Sit 전용 프레임 추가 및 상호작용 타이밍 정교화
 - 20인 전체 애니메이션 매핑
 - 전체 캐릭터 애니메이션 창 모드 시각 검증과 기존 CSS 게임 렌더러 제거
 

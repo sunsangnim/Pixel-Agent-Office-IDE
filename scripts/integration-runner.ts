@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert'
 import path from 'node:path'
 import fs from 'node:fs'
+import { PNG } from 'pngjs'
 import type { WebContents } from 'electron'
 import { getCliAdapter, adapterIdForTemplate } from '../src/main/cliAdapters'
 import { ptyManager } from '../src/main/ptyManager'
@@ -174,11 +175,25 @@ function verifyLivingOfficeAndRoster(): void {
   assert.ok(ceoSheet.readUInt32BE(16) / 8 >= 48)
   assert.ok(ceoSheet.readUInt32BE(20) / 6 >= 64)
   assert.ok(ceoSheet[25] === 4 || ceoSheet[25] === 6 || ceoSheet.includes(Buffer.from('tRNS')))
-  const teamAtlas = fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'codex-team-animation-atlas-v1.png'))
-  assert.equal(teamAtlas.toString('ascii', 1, 4), 'PNG')
-  assert.ok(teamAtlas.readUInt32BE(16) / 5 >= 128)
-  assert.ok(teamAtlas.readUInt32BE(20) / 4 >= 128)
-  assert.ok(teamAtlas[25] === 4 || teamAtlas[25] === 6 || teamAtlas.includes(Buffer.from('tRNS')))
+  for (const atlasName of [
+    'claude-team-animation-atlas-v1.png',
+    'codex-team-animation-atlas-v1.png',
+    'antigravity-team-animation-atlas-v1.png',
+    'roster-row-4-animation-atlas-v1.png'
+  ]) {
+    const teamAtlas = fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', atlasName))
+    assert.equal(teamAtlas.toString('ascii', 1, 4), 'PNG')
+    assert.ok(teamAtlas.readUInt32BE(16) / 5 >= 128)
+    assert.ok(teamAtlas.readUInt32BE(20) / 4 >= 128)
+    assert.ok(teamAtlas[25] === 4 || teamAtlas[25] === 6 || teamAtlas.includes(Buffer.from('tRNS')))
+    const decoded = PNG.sync.read(teamAtlas)
+    assert.equal(decoded.data[3], 0)
+    let transparentPixels = 0
+    for (let index = 3; index < decoded.data.length; index += 4) {
+      if (decoded.data[index] === 0) transparentPixels += 1
+    }
+    assert.ok(transparentPixels / (decoded.width * decoded.height) > 0.45)
+  }
   console.log('PASS living-office checkpoint policy and 20-character roster assets')
 }
 

@@ -5,6 +5,9 @@ import row3 from '../assets/pixel-office/corporate-roster-row-3-v1.png'
 import row4 from '../assets/pixel-office/corporate-roster-row-4-v1.png'
 import ceoAnimationSheet from '../assets/pixel-office/ceo-animation-sheet-v2.png'
 import codexTeamAnimationAtlas from '../assets/pixel-office/codex-team-animation-atlas-v1.png'
+import antigravityTeamAnimationAtlas from '../assets/pixel-office/antigravity-team-animation-atlas-v1.png'
+import rosterRow4AnimationAtlas from '../assets/pixel-office/roster-row-4-animation-atlas-v1.png'
+import claudeTeamAnimationAtlas from '../assets/pixel-office/claude-team-animation-atlas-v1.png'
 import {
   MEETING_SEATS,
   OFFICE_WORLD_HEIGHT,
@@ -58,6 +61,9 @@ export class OfficeScene extends Phaser.Scene {
     ;[row1, row2, row3, row4].forEach((url, index) => this.load.image(`roster-row-${index}`, url))
     this.load.image('ceo-animation-sheet', ceoAnimationSheet)
     this.load.image('codex-team-animation-atlas', codexTeamAnimationAtlas)
+    this.load.image('antigravity-team-animation-atlas', antigravityTeamAnimationAtlas)
+    this.load.image('roster-row-4-animation-atlas', rosterRow4AnimationAtlas)
+    this.load.image('claude-team-animation-atlas', claudeTeamAnimationAtlas)
   }
 
   create(): void {
@@ -191,27 +197,34 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createTeamAnimations(): void {
-    const texture = this.textures.get('codex-team-animation-atlas')
-    const source = texture.getSourceImage() as HTMLImageElement
-    const frameWidth = Math.floor(source.width / 5)
-    const frameHeight = Math.floor(source.height / 4)
     const states = ['idle', 'walk-down', 'walk-up', 'work'] as const
-    for (let column = 0; column < 5; column += 1) {
-      const rosterIndex = column + 5
+    const atlases = [
+      { key: 'claude-team-animation-atlas', start: 0 },
+      { key: 'codex-team-animation-atlas', start: 5 },
+      { key: 'antigravity-team-animation-atlas', start: 10 },
+      { key: 'roster-row-4-animation-atlas', start: 15 }
+    ]
+    atlases.forEach(({ key, start }) => {
+      const texture = this.textures.get(key)
+      const source = texture.getSourceImage() as HTMLImageElement
+      const frameWidth = Math.floor(source.width / 5)
+      const frameHeight = Math.floor(source.height / 4)
+      for (let column = 0; column < 5; column += 1) {
+        const rosterIndex = column + start
       states.forEach((state, row) => {
         texture.add(`actor-${rosterIndex}-${state}`, 0, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
       })
       this.anims.create({
         key: `actor-${rosterIndex}-idle`,
-        frames: [{ key: 'codex-team-animation-atlas', frame: `actor-${rosterIndex}-idle` }],
+        frames: [{ key, frame: `actor-${rosterIndex}-idle` }],
         frameRate: 2,
         repeat: -1
       })
       this.anims.create({
         key: `actor-${rosterIndex}-walk-down`,
         frames: [
-          { key: 'codex-team-animation-atlas', frame: `actor-${rosterIndex}-idle` },
-          { key: 'codex-team-animation-atlas', frame: `actor-${rosterIndex}-walk-down` }
+          { key, frame: `actor-${rosterIndex}-idle` },
+          { key, frame: `actor-${rosterIndex}-walk-down` }
         ],
         frameRate: 6,
         repeat: -1,
@@ -219,17 +232,26 @@ export class OfficeScene extends Phaser.Scene {
       })
       this.anims.create({
         key: `actor-${rosterIndex}-walk-up`,
-        frames: [{ key: 'codex-team-animation-atlas', frame: `actor-${rosterIndex}-walk-up` }],
+        frames: [{ key, frame: `actor-${rosterIndex}-walk-up` }],
         frameRate: 6,
         repeat: -1
       })
       this.anims.create({
         key: `actor-${rosterIndex}-work`,
-        frames: [{ key: 'codex-team-animation-atlas', frame: `actor-${rosterIndex}-work` }],
+        frames: [{ key, frame: `actor-${rosterIndex}-work` }],
         frameRate: 3,
         repeat: -1
       })
-    }
+      }
+    })
+  }
+
+  private animationAtlasFor(rosterIndex: number): string | null {
+    if (rosterIndex >= 1 && rosterIndex <= 4) return 'claude-team-animation-atlas'
+    if (rosterIndex >= 5 && rosterIndex <= 9) return 'codex-team-animation-atlas'
+    if (rosterIndex >= 10 && rosterIndex <= 14) return 'antigravity-team-animation-atlas'
+    if (rosterIndex >= 15 && rosterIndex <= 19) return 'roster-row-4-animation-atlas'
+    return null
   }
 
   private createRepresentativeActor(): void {
@@ -289,14 +311,14 @@ export class OfficeScene extends Phaser.Scene {
   private createActor(actor: OfficeGameActor): ActorView {
     const row = Math.floor(actor.rosterIndex / 5)
     const frame = String(actor.rosterIndex)
-    const hasAnimationAtlas = actor.rosterIndex >= 5 && actor.rosterIndex <= 9
+    const animationAtlas = this.animationAtlasFor(actor.rosterIndex)
     const sprite = this.add.sprite(
       0,
       -27,
-      hasAnimationAtlas ? 'codex-team-animation-atlas' : `roster-row-${row}`,
-      hasAnimationAtlas ? `actor-${actor.rosterIndex}-idle` : frame
+      animationAtlas ?? `roster-row-${row}`,
+      animationAtlas ? `actor-${actor.rosterIndex}-idle` : frame
     ).setDisplaySize(50, 68)
-    if (hasAnimationAtlas) sprite.play(`actor-${actor.rosterIndex}-idle`)
+    if (animationAtlas) sprite.play(`actor-${actor.rosterIndex}-idle`)
     sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
       this.actorSelectHandler?.(actor.profileId)
     })
@@ -351,7 +373,7 @@ export class OfficeScene extends Phaser.Scene {
     const duration = Math.max(180, distance * 3.1)
     view.stateMachine.startWalking(point.x - view.container.x, point.y - view.container.y)
     view.sprite.setFlipX(point.x < view.container.x)
-    if (actor.rosterIndex >= 5 && actor.rosterIndex <= 9) {
+    if (this.animationAtlasFor(actor.rosterIndex)) {
       const vertical = Math.abs(point.y - view.container.y) > Math.abs(point.x - view.container.x)
       const animation = vertical && point.y < view.container.y ? 'walk-up' : 'walk-down'
       view.sprite.play(`actor-${actor.rosterIndex}-${animation}`, true)
@@ -373,7 +395,7 @@ export class OfficeScene extends Phaser.Scene {
   private startActionAnimation(view: ActorView, actor: OfficeGameActor): void {
     const actorIndex = this.snapshot?.actors.findIndex((candidate) => candidate.profileId === actor.profileId) ?? 0
     view.stateMachine.arrive(actorIndex)
-    if (actor.rosterIndex >= 5 && actor.rosterIndex <= 9) {
+    if (this.animationAtlasFor(actor.rosterIndex)) {
       view.sprite.play(`actor-${actor.rosterIndex}-${actor.presence === 'working' ? 'work' : 'idle'}`, true)
     }
     if (!['working', 'pantry', 'meeting', 'requestingHelp', 'error'].includes(actor.presence)) return
