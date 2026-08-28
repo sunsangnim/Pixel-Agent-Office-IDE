@@ -7,7 +7,9 @@ const sourceDirectory = path.join(root, 'src', 'renderer', 'src', 'assets', 'pix
 const outputDirectory = path.join(root, 'src', 'renderer', 'src', 'assets', 'pixel-office', 'furniture', 'directional')
 const assets = [
   'coffee-machine', 'refrigerator', 'pantry-cabinet', 'presentation-screen',
-  'long-table', 'laptop', 'workstation-desk', 'office-chair', 'office-plant',
+  // Long-table directions are generated independently because splitting a
+  // shared sheet clipped its long silhouette across quadrant boundaries.
+  'laptop', 'workstation-desk', 'office-chair', 'office-plant',
   'side-table', 'office-sofa', 'floor-lamp', 'bookcase'
 ]
 const directions = ['front', 'right', 'back', 'left']
