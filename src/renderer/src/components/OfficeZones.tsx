@@ -8,7 +8,7 @@ interface OfficeZonesProps {
 }
 
 function OfficeZones({ now, elevatorOpen, pantryOpen, meetingOpen }: OfficeZonesProps) {
-  const elevatorState = useDoorState(elevatorOpen)
+  void elevatorOpen
   const pantryState = useDoorState(pantryOpen)
   const meetingState = useDoorState(meetingOpen)
   const digitalTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
@@ -46,9 +46,6 @@ function OfficeZones({ now, elevatorOpen, pantryOpen, meetingOpen }: OfficeZones
       </div>
       <div className="zone zone-entrance">
         <span className="zone-label">출입구</span>
-        <div className={`elevator-door office-door-interactive office-door-${elevatorState}`} data-door-state={elevatorState}>
-          <span className="elevator-door-leaf" /><span className="elevator-door-leaf" />
-        </div>
       </div>
     </div>
   )
