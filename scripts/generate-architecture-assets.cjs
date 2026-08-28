@@ -97,6 +97,22 @@ function verticalGlassWall() {
   return target
 }
 
+function glassDoorLeaf() {
+  const target = image(32, 64)
+  rect(target, 0, 0, 32, 64, palette.tealDark)
+  rect(target, 3, 3, 26, 57, palette.teal)
+  rect(target, 5, 5, 22, 53, [123, 201, 197, 185])
+  line(target, 6, 6, 20, [220, 247, 236, 225])
+  for (let step = 0; step < 18; step += 1) {
+    if (step % 3 !== 1) pixel(target, 7 + step, 12 + step, [220, 247, 236, 210])
+  }
+  rect(target, 22, 31, 3, 8, palette.walnutLight)
+  rect(target, 23, 32, 2, 6, palette.ivoryLight)
+  rect(target, 3, 59, 26, 3, palette.ivoryShadow)
+  rect(target, 0, 62, 32, 2, palette.tealDark)
+  return target
+}
+
 function windowPanel(width = 64, height = 64) {
   const target = image(width, height)
   rect(target, 0, 0, width, height, palette.tealDark)
@@ -145,6 +161,7 @@ const outputs = {
   'wall-surface-v1.png': wallSurface(),
   'glass-wall-horizontal-v1.png': horizontalGlassWall(),
   'glass-wall-vertical-v1.png': verticalGlassWall(),
+  'glass-door-leaf-v1.png': glassDoorLeaf(),
   'window-wide-v1.png': panoramicWindow(64, 64),
   'window-narrow-v1.png': windowPanel(42, 92)
 }
