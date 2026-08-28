@@ -94,3 +94,8 @@
 # Phase 48 — Directional furniture editing
 
 - [x] Use four-view assets for right-click rotation and red collision warnings
+# Phase 49 — Office interaction fixes
+
+- [x] Fix pathfinding zigzag, live desk/chair-following seating, team-lead
+      always-present scheduling, elevator door and top wall alignment, and
+      desk/chair/laptop editor collision-and-depth bugs

@@ -9,8 +9,25 @@ import type {
 const REST_DELAY_MS = 1200
 const DOOR_ROUTE_MS = 520
 
+// Stable (not random) so a given team lead doesn't flicker between desk and
+// pantry every render - just spreads different leads across desk/pantry/
+// meeting so the office doesn't look like everyone glues to their chair.
+function hashString(value: string): number {
+  let hash = 0
+  for (let index = 0; index < value.length; index += 1) hash = (hash * 31 + value.charCodeAt(index)) | 0
+  return Math.abs(hash)
+}
+
+function idleActivity(profileId: string): OfficePresence {
+  const bucket = hashString(profileId) % 4
+  if (bucket === 0) return 'pantry'
+  if (bucket === 1) return 'meeting'
+  return 'deskIdle'
+}
+
 function restPresence(profile: AgentProfile): OfficePresence {
-  if (profile.rank === 'teamLead' || profile.slotIndex >= 3) return 'deskIdle'
+  if (profile.rank === 'teamLead') return idleActivity(profile.profileId)
+  if (profile.slotIndex >= 3) return 'deskIdle'
   return profile.slotIndex === 1 ? 'pantry' : 'meeting'
 }
 
@@ -48,7 +65,7 @@ export function useOfficePresence(
         restTimers.current.delete(profile.profileId)
         restedProfiles.current.delete(profile.profileId)
         immediate[profile.profileId] = profile.rank === 'teamLead' && isWorkingHours
-          ? meetingActive && meetingAttendeeIds.has(profile.profileId) ? 'meeting' : isClockInActive ? 'arriving' : 'deskIdle'
+          ? meetingActive && meetingAttendeeIds.has(profile.profileId) ? 'meeting' : isClockInActive ? 'arriving' : restPresence(profile)
           : 'offDuty'
         continue
       }
@@ -63,7 +80,11 @@ export function useOfficePresence(
       } else if (runtimeState === 'working' || runtimeState === 'starting') {
         immediate[profile.profileId] = 'working'
       } else if (runtimeState === 'exited') {
-        immediate[profile.profileId] = 'offDuty'
+        // Team leads stay clocked in through working hours even after their
+        // CLI process exits - only send them home once the day is over.
+        immediate[profile.profileId] = profile.rank === 'teamLead' && isWorkingHours
+          ? restPresence(profile)
+          : 'offDuty'
       } else if (runtimeState === 'completed') {
         immediate[profile.profileId] = presenceByProfile[profile.profileId] ?? 'deskIdle'
         if (!previousTimer && !restedProfiles.current.has(profile.profileId)) {
@@ -71,8 +92,10 @@ export function useOfficePresence(
             restTimers.current.delete(profile.profileId)
             restedProfiles.current.add(profile.profileId)
             const destination = restPresence(profile)
-            if (destination === 'pantry') {
-              setPresenceByProfile((prev) => ({ ...prev, [profile.profileId]: 'pantryDoor' }))
+            const doorPresence: Partial<Record<OfficePresence, OfficePresence>> = { pantry: 'pantryDoor', meeting: 'meetingDoor' }
+            const door = doorPresence[destination]
+            if (door) {
+              setPresenceByProfile((prev) => ({ ...prev, [profile.profileId]: door }))
               const routeTimer = setTimeout(() => {
                 routeTimers.current.delete(profile.profileId)
                 routeDestinations.current.delete(profile.profileId)

@@ -115,6 +115,16 @@ function furnitureDisplaySize(frame: number, columns: number, rows: number): { w
   return { width: columns * 16 * scale, height: rows * 16 * scale }
 }
 
+// A desk/chair pair is meant to sit close together (the chair tucks under
+// the desk), so they should never push each other away as a "collision".
+function pairedFurnitureId(id: string): string | null {
+  const deskMatch = /^desk-(\d+-\d+)$/.exec(id)
+  if (deskMatch) return `chair-${deskMatch[1]}`
+  const chairMatch = /^chair-(\d+-\d+)$/.exec(id)
+  if (chairMatch) return `desk-${chairMatch[1]}`
+  return null
+}
+
 export class OfficeScene extends Phaser.Scene {
   private actors = new Map<string, ActorView>()
   private snapshot: OfficeWorldSnapshot | null = null
@@ -237,15 +247,19 @@ export class OfficeScene extends Phaser.Scene {
     const requested = snapFurniturePoint({ x: saved?.x ?? x, y: saved?.y ?? y }, rotatedFootprint(frame, angle))
     const fallback = snapFurniturePoint({ x, y }, rotatedFootprint(frame, angle))
     const initial = this.furniturePlacementCollides(id, frame, requested, angle)
-      ? (this.furniturePlacementCollides(id, frame, fallback, angle) ? this.findFreeFurniturePoint(frame, angle) : fallback)
+      ? (this.furniturePlacementCollides(id, frame, fallback, angle) ? this.findFreeFurniturePoint(frame, angle, { x, y }) : fallback)
       : requested
     const initialFootprint = rotatedFootprint(frame, angle)
     const initialDisplaySize = furnitureDisplaySize(frame, initialFootprint.columns, initialFootprint.rows)
+    // Callers pass a custom depth (e.g. laptop above table, chair behind
+    // desk) as an offset from their own y. Preserve that offset even if
+    // collision avoidance relocates the piece, instead of discarding it.
+    const depthOffset = depth - y
     const image = this.add.image(initial.x, initial.y, this.directionalFurnitureTexture(frame, angle))
       .setDisplaySize(initialDisplaySize.width, initialDisplaySize.height)
-      .setDepth(initial.y ?? depth)
+      .setDepth(initial.y + depthOffset)
       .setInteractive({ useHandCursor: true, draggable: true })
-    image.setData({ furnitureId: id, furnitureFrame: frame, furnitureRotation: angle })
+    image.setData({ furnitureId: id, furnitureFrame: frame, furnitureRotation: angle, depthOffset })
     this.input.setDraggable(image)
     image.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.selectFurniture(id)
@@ -260,14 +274,14 @@ export class OfficeScene extends Phaser.Scene {
         x: Phaser.Math.Clamp(dragX, footprint.columns * 8, OFFICE_WORLD_WIDTH - footprint.columns * 8),
         y: Phaser.Math.Clamp(dragY, footprint.rows * 8, OFFICE_WORLD_HEIGHT - footprint.rows * 8)
       }, footprint)
-      image.setPosition(snapped.x, snapped.y).setDepth(snapped.y)
+      image.setPosition(snapped.x, snapped.y).setDepth(snapped.y + depthOffset)
       this.updateSelectionOutline()
     })
     image.on('dragend', () => {
       if (!this.layoutEditing) return
       const snapped = snapFurniturePoint({ x: image.x, y: image.y }, rotatedFootprint(frame, this.furnitureRotation(image)))
       image.setPosition(snapped.x, snapped.y)
-      image.setDepth(image.y)
+      image.setDepth(image.y + depthOffset)
       this.updateSelectionOutline()
       this.saveFurnitureLayout()
     })
@@ -320,10 +334,11 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createHardcodedArchitecture(): void {
-    // The north-facing room backs are part of the opaque exterior shell.
-    this.add.tileSprite(144, 58, 256, 64, 'architecture-wall-surface').setDepth(12)
-    this.add.tileSprite(480, 58, 352, 64, 'architecture-wall-surface').setDepth(12)
-    this.add.tileSprite(808, 58, 272, 64, 'architecture-wall-surface').setDepth(12)
+    // The north-facing room backs are part of the opaque exterior shell. One
+    // continuous strip spans the full interior width so there is no seam at
+    // the 탕비실/회의실/출입구 boundaries (previously three separate tiles
+    // left visible gaps where the vertical dividers meet the top wall).
+    this.add.tileSprite(480, 58, OFFICE_WORLD_WIDTH, 64, 'architecture-wall-surface').setDepth(12)
     OFFICE_WALL_COLLISIONS.forEach((wall) => {
       const horizontal = wall.width >= wall.height
       const perimeter = wall.x === 0 || wall.y === 0 ||
@@ -407,7 +422,7 @@ export class OfficeScene extends Phaser.Scene {
       .setPosition(snapped.x, snapped.y)
       .setTexture(this.directionalFurnitureTexture(this.selectedFurniture.frame, nextAngle))
       .setDisplaySize(displaySize.width, displaySize.height)
-      .setDepth(snapped.y)
+      .setDepth(snapped.y + this.furnitureDepthOffset(image))
       .setData('furnitureRotation', nextAngle)
     this.updateSelectionOutline()
     this.saveFurnitureLayout()
@@ -446,7 +461,7 @@ export class OfficeScene extends Phaser.Scene {
           .setTexture(this.directionalFurnitureTexture(furniture.frame, 0))
           .setDisplaySize(displaySize.width, displaySize.height)
           .setData('furnitureRotation', 0)
-          .setDepth(furniture.defaultPoint.y)
+          .setDepth(furniture.defaultPoint.y + this.furnitureDepthOffset(furniture.image))
       }
     }
     this.selectFurniture(null)
@@ -464,21 +479,41 @@ export class OfficeScene extends Phaser.Scene {
     const candidate = furnitureCollision(point, rotatedFootprint(frame, angle))
     if (OFFICE_WALL_COLLISIONS.some((wall) => intersectsAabb(candidate, wall))) return true
     if (STACKABLE_FURNITURE_FRAMES.has(frame)) return false
-    return [...this.furniture.values()].some((other) => other.id !== id && !STACKABLE_FURNITURE_FRAMES.has(other.frame) && intersectsAabb(
+    const partnerId = pairedFurnitureId(id)
+    return [...this.furniture.values()].some((other) => other.id !== id && other.id !== partnerId && !STACKABLE_FURNITURE_FRAMES.has(other.frame) && intersectsAabb(
       candidate,
       furnitureCollision(other.image, rotatedFootprint(other.frame, this.furnitureRotation(other.image)))
     ))
   }
 
-  private findFreeFurniturePoint(frame: number, angle = 0): WorldPoint {
+  // Searches outward in expanding rings from `near` (falling back to the
+  // office center) so a forced relocation lands as close as possible to
+  // where the piece was meant to be, instead of teleporting to the first
+  // free cell found by a top-left raster scan of the whole map.
+  private findFreeFurniturePoint(frame: number, angle = 0, near?: WorldPoint): WorldPoint {
     const footprint = rotatedFootprint(frame, angle)
-    for (let row = 2; row < 39 - footprint.rows; row += 1) {
-      for (let column = 2; column < 59 - footprint.columns; column += 1) {
-        const point = snapFurniturePoint({ x: column * 16, y: row * 16 }, footprint)
-        if (!this.furniturePlacementCollides('', frame, point, angle)) return point
+    const origin = snapFurniturePoint(near ?? { x: 480, y: 340 }, footprint)
+    const stepX = footprint.columns * 16
+    const stepY = footprint.rows * 16
+    const minX = footprint.columns * 8
+    const maxX = OFFICE_WORLD_WIDTH - footprint.columns * 8
+    const minY = footprint.rows * 8
+    const maxY = OFFICE_WORLD_HEIGHT - footprint.rows * 8
+    for (let radius = 0; radius <= 40; radius += 1) {
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        for (let dy = -radius; dy <= radius; dy += 1) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue
+          const point = { x: origin.x + dx * stepX, y: origin.y + dy * stepY }
+          if (point.x < minX || point.x > maxX || point.y < minY || point.y > maxY) continue
+          if (!this.furniturePlacementCollides('', frame, point, angle)) return point
+        }
       }
     }
-    return { x: 480, y: 340 }
+    return origin
+  }
+
+  private furnitureDepthOffset(image: Phaser.GameObjects.Image): number {
+    return Number(image.getData('depthOffset') ?? 0)
   }
 
   private sanitizeFurniturePlacements(): void {
@@ -489,9 +524,9 @@ export class OfficeScene extends Phaser.Scene {
       if (!this.furniturePlacementCollides(id, frame, image, rotation)) continue
       const fallback = snapFurniturePoint(defaultPoint, rotatedFootprint(frame, rotation))
       const point = this.furniturePlacementCollides(id, frame, fallback, rotation)
-        ? this.findFreeFurniturePoint(frame, rotation)
+        ? this.findFreeFurniturePoint(frame, rotation, defaultPoint)
         : fallback
-      image.setPosition(point.x, point.y).setDepth(point.y)
+      image.setPosition(point.x, point.y).setDepth(point.y + this.furnitureDepthOffset(image))
     }
     this.saveFurnitureLayout()
   }
@@ -563,7 +598,10 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createEntrance(): void {
-    this.createDoor('elevator', WAYPOINTS.elevatorInside.x, 94, 84, 112)
+    // Recessed into the decorative wall band (y 26-90) instead of the old
+    // 94-150 box, which hung well below the wall and floated in the open
+    // room like a freestanding crate rather than a door in the wall.
+    this.createDoor('elevator', WAYPOINTS.elevatorInside.x, 58, 84, 64)
     this.addFurniture('entrance-plant-left', 15, 735, 125, 45, 70, 40)
     this.addFurniture('entrance-plant-right', 15, 905, 125, 45, 70, 40)
   }
@@ -747,9 +785,18 @@ export class OfficeScene extends Phaser.Scene {
     return view
   }
 
+  // The live chair position (which the interior editor can move) instead of
+  // the static TEAM_DESKS default, so characters keep finding their seat
+  // after a desk is dragged elsewhere.
+  private deskSeatPoint(actor: OfficeGameActor): WorldPoint {
+    const chair = this.furniture.get(`chair-${actor.teamIndex}-${actor.slotIndex}`)
+    if (chair) return { x: chair.image.x, y: chair.image.y }
+    return TEAM_DESKS[actor.teamIndex]?.[actor.slotIndex] ?? { x: 480, y: 360 }
+  }
+
   private updateActor(view: ActorView, actor: OfficeGameActor, actorIndex: number): void {
     if (!view.stateMachine.requestPresence(actor.presence)) return
-    const waypoints = routeFor(actor, actorIndex)
+    const waypoints = routeFor(actor, actorIndex, (candidate) => this.deskSeatPoint(candidate))
     const route: WorldPoint[] = []
     let cursor = { x: view.container.x, y: view.container.y }
     for (const waypoint of waypoints) {
@@ -863,6 +910,13 @@ export class OfficeScene extends Phaser.Scene {
         : action === 'sitting' ? (animatedActor ? -60 : -40)
           : (animatedActor ? -70 : -54)
     )
+    if (actor.presence === 'working' || actor.presence === 'deskIdle') {
+      // Sit exactly at the chair snap point and render just behind the desk
+      // front edge, per requirement: independent chair snap + independent
+      // desk in front, never a character frame with a desk baked in.
+      const desk = this.furniture.get(`desk-${actor.teamIndex}-${actor.slotIndex}`)
+      if (desk) view.container.setDepth(desk.image.depth - 1)
+    }
     if (action === 'sitting') {
       const seatIndex = actorIndex % MEETING_SEATS.length
       view.container.setDepth(view.container.y + (seatIndex < 4 ? -4 : 8))

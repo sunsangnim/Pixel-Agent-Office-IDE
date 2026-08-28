@@ -43,8 +43,10 @@ export const MEETING_SEATS: WorldPoint[] = [
 ]
 
 export const WAYPOINTS = {
-  elevatorInside: { x: 820, y: 115 },
-  elevatorExit: { x: 820, y: 225 },
+  // Recessed into the top wall band (see OfficeScene.createEntrance) instead
+  // of floating mid-room, so arriving reads as "step out of the elevator".
+  elevatorInside: { x: 820, y: 80 },
+  elevatorExit: { x: 820, y: 130 },
   pantryDoor: { x: 270, y: 220 },
   pantryTarget: { x: 130, y: 125 },
   meetingDoor: { x: 475, y: 220 },
@@ -55,7 +57,11 @@ export function deskPoint(actor: Pick<OfficeGameActor, 'teamIndex' | 'slotIndex'
   return TEAM_DESKS[actor.teamIndex]?.[actor.slotIndex] ?? { x: 480, y: 360 }
 }
 
-export function targetPoint(actor: OfficeGameActor, actorIndex: number): WorldPoint | null {
+export function targetPoint(
+  actor: OfficeGameActor,
+  actorIndex: number,
+  resolveDesk: (actor: OfficeGameActor) => WorldPoint = deskPoint
+): WorldPoint | null {
   if (actor.presence === 'offDuty') return null
   if (actor.presence === 'arriving') return WAYPOINTS.elevatorInside
   if (actor.presence === 'pantryDoor') return WAYPOINTS.pantryDoor
@@ -65,13 +71,20 @@ export function targetPoint(actor: OfficeGameActor, actorIndex: number): WorldPo
   }
   if (actor.presence === 'meetingDoor') return WAYPOINTS.meetingDoor
   if (actor.presence === 'meeting') return MEETING_SEATS[actorIndex % MEETING_SEATS.length]
-  return deskPoint(actor)
+  return resolveDesk(actor)
 }
 
-export function routeFor(actor: OfficeGameActor, actorIndex: number): WorldPoint[] {
-  const target = targetPoint(actor, actorIndex)
+// resolveDesk lets the caller (OfficeScene) supply the *live* chair position
+// so a character walks to and sits at wherever the interior editor currently
+// has that seat, instead of the static default TEAM_DESKS layout.
+export function routeFor(
+  actor: OfficeGameActor,
+  actorIndex: number,
+  resolveDesk: (actor: OfficeGameActor) => WorldPoint = deskPoint
+): WorldPoint[] {
+  const target = targetPoint(actor, actorIndex, resolveDesk)
   if (!target) return []
-  if (actor.presence === 'arriving') return [WAYPOINTS.elevatorInside, WAYPOINTS.elevatorExit, deskPoint(actor)]
+  if (actor.presence === 'arriving') return [WAYPOINTS.elevatorInside, WAYPOINTS.elevatorExit, resolveDesk(actor)]
   if (actor.presence === 'pantry') return [WAYPOINTS.pantryDoor, target]
   if (actor.presence === 'meeting') return [WAYPOINTS.meetingDoor, target]
   return [target]
