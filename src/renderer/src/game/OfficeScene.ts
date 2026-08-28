@@ -139,6 +139,7 @@ export class OfficeScene extends Phaser.Scene {
   private selectionOutline?: Phaser.GameObjects.Rectangle
   private editorUi: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text | Phaser.GameObjects.Image> = []
   private nextFurnitureId = 1
+  private frontmostFurnitureId: string | null = null
   private floorLayers: Phaser.GameObjects.TileSprite[] = []
   private selectedFloor = DEFAULT_FLOOR_TEXTURE
 
@@ -258,14 +259,31 @@ export class OfficeScene extends Phaser.Scene {
     const image = this.add.image(initial.x, initial.y, this.directionalFurnitureTexture(frame, angle))
       .setDisplaySize(initialDisplaySize.width, initialDisplaySize.height)
       .setDepth(initial.y + depthOffset)
-      .setInteractive({ useHandCursor: true, draggable: true })
+      // Pixel-perfect hit testing: without it, overlapping pieces (e.g. a
+      // desk and its chair) hit-test as solid rectangles, so whichever one
+      // currently renders on top steals clicks even over the other's fully
+      // visible, opaque pixels - you'd select the chair while aiming at the
+      // desk's monitor. This makes clicks land on whatever is actually drawn
+      // at that pixel.
+      .setInteractive({ useHandCursor: true, draggable: true, pixelPerfect: true })
     image.setData({ furnitureId: id, furnitureFrame: frame, furnitureRotation: angle, depthOffset })
     this.input.setDraggable(image)
     image.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.layoutEditing && pointer.rightButtonDown()) {
+        // Right-click only rotates a piece that is already selected; it must
+        // not also select whatever was right-clicked in the same click.
+        if (this.selectedFurniture?.id === id) this.rotateSelectedFurniture(90)
+        return
+      }
       this.selectFurniture(id)
-      if (this.layoutEditing && pointer.rightButtonDown()) this.rotateSelectedFurniture(90)
     })
-    image.on('dragstart', () => image.setData({ dragStartX: image.x, dragStartY: image.y }))
+    image.on('dragstart', () => {
+      image.setData({ dragStartX: image.x, dragStartY: image.y })
+      // Bring the piece being moved to the front immediately, before it's
+      // even dropped, so it's never hidden behind whatever it's dragged over.
+      this.bringFurnitureToFront(id)
+      image.setDepth(image.y + depthOffset + this.furnitureDepthBonus(id))
+    })
     image.on('drag', (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
       if (!this.layoutEditing) return
       const rotation = this.furnitureRotation(image)
@@ -274,14 +292,14 @@ export class OfficeScene extends Phaser.Scene {
         x: Phaser.Math.Clamp(dragX, footprint.columns * 8, OFFICE_WORLD_WIDTH - footprint.columns * 8),
         y: Phaser.Math.Clamp(dragY, footprint.rows * 8, OFFICE_WORLD_HEIGHT - footprint.rows * 8)
       }, footprint)
-      image.setPosition(snapped.x, snapped.y).setDepth(snapped.y + depthOffset)
+      image.setPosition(snapped.x, snapped.y).setDepth(snapped.y + depthOffset + this.furnitureDepthBonus(id))
       this.updateSelectionOutline()
     })
     image.on('dragend', () => {
       if (!this.layoutEditing) return
       const snapped = snapFurniturePoint({ x: image.x, y: image.y }, rotatedFootprint(frame, this.furnitureRotation(image)))
       image.setPosition(snapped.x, snapped.y)
-      image.setDepth(image.y + depthOffset)
+      image.setDepth(image.y + depthOffset + this.furnitureDepthBonus(id))
       this.updateSelectionOutline()
       this.saveFurnitureLayout()
     })
@@ -369,8 +387,14 @@ export class OfficeScene extends Phaser.Scene {
     this.selectedFurniture = id ? this.furniture.get(id) ?? null : null
     this.selectionOutline?.destroy()
     this.selectionOutline = undefined
+    // Deselecting (id null - including when the editor closes) must NOT
+    // revert the front bonus: whichever piece was last worked on stays on
+    // top after you leave the editor, not just while it's actively selected.
+    if (!id) return
+    this.bringFurnitureToFront(id)
     if (!this.selectedFurniture) return
-    const image = this.selectedFurniture.image
+    const { image } = this.selectedFurniture
+    image.setDepth(image.y + this.furnitureDepthOffset(image) + this.furnitureDepthBonus(id))
     this.selectionOutline = this.add.rectangle(image.x, image.y, image.displayWidth + 6, image.displayHeight + 6)
       .setDepth(1990)
     this.updateSelectionOutline()
@@ -394,6 +418,8 @@ export class OfficeScene extends Phaser.Scene {
     const id = `custom-${Date.now()}-${this.nextFurnitureId++}`
     const point = this.findFreeFurniturePoint(frame)
     const image = this.addFurniture(id, frame, point.x, point.y, 64, 64)
+    this.bringFurnitureToFront(id)
+    image.setDepth(image.y + this.furnitureDepthOffset(image) + this.furnitureDepthBonus(id))
     this.layoutSave[id] = { x: image.x, y: image.y, frame, width: 64, height: 64 }
     this.saveFurnitureLayout()
     this.selectFurniture(id)
@@ -405,6 +431,7 @@ export class OfficeScene extends Phaser.Scene {
     image.destroy()
     this.furniture.delete(id)
     delete this.layoutSave[id]
+    if (this.frontmostFurnitureId === id) this.frontmostFurnitureId = null
     this.selectedFurniture = null
     this.selectionOutline?.destroy()
     this.selectionOutline = undefined
@@ -413,7 +440,8 @@ export class OfficeScene extends Phaser.Scene {
 
   private rotateSelectedFurniture(delta: number): void {
     if (!this.layoutEditing || !this.selectedFurniture) return
-    const image = this.selectedFurniture.image
+    const { id, image } = this.selectedFurniture
+    this.bringFurnitureToFront(id)
     const nextAngle = Phaser.Math.Wrap(this.furnitureRotation(image) + delta, 0, 360)
     const footprint = rotatedFootprint(this.selectedFurniture.frame, nextAngle)
     const displaySize = furnitureDisplaySize(this.selectedFurniture.frame, footprint.columns, footprint.rows)
@@ -422,7 +450,7 @@ export class OfficeScene extends Phaser.Scene {
       .setPosition(snapped.x, snapped.y)
       .setTexture(this.directionalFurnitureTexture(this.selectedFurniture.frame, nextAngle))
       .setDisplaySize(displaySize.width, displaySize.height)
-      .setDepth(snapped.y + this.furnitureDepthOffset(image))
+      .setDepth(snapped.y + this.furnitureDepthOffset(image) + this.furnitureDepthBonus(id))
       .setData('furnitureRotation', nextAngle)
     this.updateSelectionOutline()
     this.saveFurnitureLayout()
@@ -448,6 +476,7 @@ export class OfficeScene extends Phaser.Scene {
 
   private resetFurnitureLayout(): void {
     this.layoutSave = {}
+    this.frontmostFurnitureId = null
     localStorage.removeItem(OFFICE_LAYOUT_SAVE_KEY)
     for (const [id, furniture] of this.furniture) {
       if (id.startsWith('custom-')) {
@@ -516,6 +545,22 @@ export class OfficeScene extends Phaser.Scene {
     return Number(image.getData('depthOffset') ?? 0)
   }
 
+  // Whichever piece was most recently selected/dragged/rotated/added renders
+  // above every other piece, even a chair with a large "always behind the
+  // desk" depthOffset or a laptop with an "always above the table" one -
+  // editing needs WYSIWYG visibility over those baked defaults. Only one
+  // piece can hold the bonus at a time (selecting a different piece, or
+  // deselecting, hands it back), and it isn't persisted: a fresh scene load
+  // starts with nothing frontmost, so gameplay depth tuning always reasserts
+  // itself on the next restart.
+  private bringFurnitureToFront(id: string): void {
+    this.frontmostFurnitureId = id
+  }
+
+  private furnitureDepthBonus(id: string): number {
+    return id === this.frontmostFurnitureId ? 10000 : 0
+  }
+
   private sanitizeFurniturePlacements(): void {
     if (this.furniture.size === 0) return
     for (const furniture of this.furniture.values()) {
@@ -526,7 +571,7 @@ export class OfficeScene extends Phaser.Scene {
       const point = this.furniturePlacementCollides(id, frame, fallback, rotation)
         ? this.findFreeFurniturePoint(frame, rotation, defaultPoint)
         : fallback
-      image.setPosition(point.x, point.y).setDepth(point.y + this.furnitureDepthOffset(image))
+      image.setPosition(point.x, point.y).setDepth(point.y + this.furnitureDepthOffset(image) + this.furnitureDepthBonus(id))
     }
     this.saveFurnitureLayout()
   }
@@ -619,9 +664,13 @@ export class OfficeScene extends Phaser.Scene {
   private createDesks(): void {
     TEAM_DESKS.forEach((team, teamIndex) => team.forEach((point, slotIndex) => {
       this.addFurniture(`desk-${teamIndex}-${slotIndex}`, 10, point.x, point.y + 12, 92, 58, point.y + 5)
-      // Chair, actor and desk remain independent. The chair is behind the
-      // seated actor while the desk front edge renders in front of both.
-      this.addFurniture(`chair-${teamIndex}-${slotIndex}`, 12 + teamIndex, point.x, point.y + 54, 38, 42, point.y - 1)
+      // The chair itself uses its own plain y-based depth, so an empty seat
+      // stays fully visible in front of the desk (matching the reference
+      // look). It's only pushed behind the desk while someone is actually
+      // seated there - see syncDeskChairDepths, applied from applySnapshot -
+      // so the desk front edge convincingly occludes the seated actor
+      // without also swallowing the chair when nobody's sitting in it.
+      this.addFurniture(`chair-${teamIndex}-${slotIndex}`, 12 + teamIndex, point.x, point.y + 54, 38, 42)
       if (slotIndex === 0) this.add.text(point.x - 36, point.y - 45, ['Claude', 'Codex', 'Antigravity'][teamIndex], {
         fontFamily: 'monospace', fontSize: '10px', color: '#24473e'
       }).setDepth(700)
@@ -748,6 +797,35 @@ export class OfficeScene extends Phaser.Scene {
       if (actor.presence === 'offDuty') return
       const view = this.actors.get(actor.profileId) ?? this.createActor(actor)
       this.updateActor(view, actor, index)
+    })
+    this.syncDeskChairDepths(snapshot)
+  }
+
+  // A chair's own depth stays in front of the desk (visible, natural) except
+  // while someone is actually seated there, where it drops behind both the
+  // desk and the seated actor (see startActionAnimation) so the desk front
+  // edge convincingly occludes the character without also hiding an empty
+  // chair the rest of the time.
+  private syncDeskChairDepths(snapshot: OfficeWorldSnapshot): void {
+    const occupiedSeats = new Set(
+      snapshot.actors
+        .filter((actor) => actor.presence === 'working' || actor.presence === 'deskIdle')
+        .map((actor) => `${actor.teamIndex}-${actor.slotIndex}`)
+    )
+    this.furniture.forEach((chair, id) => {
+      const match = /^chair-(\d+-\d+)$/.exec(id)
+      if (!match) return
+      const desk = this.furniture.get(`desk-${match[1]}`)
+      if (!desk) return
+      // An actually-seated character always wins the desk-occludes-chair
+      // look, even over a stale "last edited" flag from an earlier, unrelated
+      // editor session - only an *empty* seat defers to that front bonus.
+      if (occupiedSeats.has(match[1])) {
+        chair.image.setDepth(desk.image.depth - 2)
+        return
+      }
+      if (id === this.frontmostFurnitureId) return
+      chair.image.setDepth(chair.image.y + this.furnitureDepthOffset(chair.image))
     })
   }
 

@@ -5,7 +5,9 @@ shared causes: pathfinding treated a destination's own furniture footprint
 as unreachable, character seating referenced a static desk layout instead of
 the live (editable) one, a `depth` override parameter was silently discarded,
 and two decorative elements (elevator door, top wall band) didn't line up
-with the wall they were supposed to sit in.
+with the wall they were supposed to sit in. A follow-up round then covered
+the interior editor's own interaction quality (rotation, selection, and
+front/back ordering while editing).
 
 ## Fixes
 
@@ -18,8 +20,10 @@ with the wall they were supposed to sit in.
    supplies one backed by the actual chair furniture position instead of the
    static `TEAM_DESKS` table.
 3. **Sit in the chair while working** — the desk-seeking target is now the
-   chair's exact snap point (see #2), and the seated character's depth is
-   pinned to just behind the desk's depth so the desk front edge occludes it.
+   chair's exact snap point (see #2). Seating depth is occupancy-aware (see
+   #9): an empty chair renders in front of the desk like normal furniture,
+   and only drops behind the desk (with the actor pinned between them) once
+   someone is actually seated.
 4. **Team leads not reliably present in working hours** — idle team leads
    (no instance, or instance exited) now resolve through the existing
    rest-rotation instead of a hardcoded `deskIdle`/`offDuty`, and can land on
@@ -40,11 +44,30 @@ with the wall they were supposed to sit in.
 7. **Top wall looked broken** — the three separate `architecture-wall-surface`
    strips left gaps at the 탕비실/회의실/출입구 boundaries; replaced with one
    continuous strip spanning the full interior width.
+8. **Right-click rotation applied to whatever was right-clicked** — it now
+   only rotates a piece that is already the current selection; right-clicking
+   an unselected piece does nothing (must be left-clicked first).
+9. **Editor front/back ordering** — the interior editor now tracks a single
+   "frontmost" furniture id, set whenever a piece is selected, dragged,
+   rotated, or added from the palette, and left alone when you deselect or
+   leave edit mode (it used to snap back to the baked default depth the
+   moment you clicked away or hit "편집 완료", which made whatever you'd just
+   arranged disappear behind other pieces again). An actually-occupied chair
+   still always renders behind its desk regardless of that flag, so the
+   seated-character illusion can't be broken by a stale editor selection.
+   Furniture hit-testing is also now pixel-perfect (`pixelPerfect: true`),
+   because two overlapping pieces previously hit-tested as solid rectangles
+   - clicking a fully opaque, clearly-visible part of the desk could
+   silently select the chair instead, since the chair (whichever was on top
+   at the time) claimed the entire overlapping rectangle even over its own
+   transparent pixels.
 
 ## Verification
 
 - `npm run typecheck` — pass
 - `npm run build` — pass
 - `npm run test:integration` — 5/5 pass
-- Ran the actual Electron app (`npm run dev`) and confirmed the scene loads
-  and hot-reloads without runtime errors through all edits.
+- Ran the actual Electron app repeatedly through this phase (`npm run dev`,
+  restarted after every change) and iterated directly against user-reported
+  screenshots until desk/chair selection, rotation, and front/back ordering
+  all matched expectations in and after the interior editor.

@@ -16,3 +16,13 @@
       rotate, and reset so the laptop stays clickable above the table
 - [x] Replace the three-piece top wall band with one continuous strip
 - [x] `npm run typecheck`, `npm run build`, `npm run test:integration` pass
+- [x] Right-click rotation only applies to the already-selected piece
+- [x] Furniture hit-testing is pixel-perfect so overlapping pieces select
+      the one actually visible under the pointer, not whichever renders on
+      top of the shared rectangle
+- [x] A single "frontmost" furniture id persists past deselect and past
+      leaving edit mode, so the last piece you worked on doesn't snap back
+      behind another piece the moment you click away or finish editing
+- [x] An occupied chair always renders behind its desk regardless of that
+      frontmost flag, so a stale editor selection can't break the
+      seated-character illusion
