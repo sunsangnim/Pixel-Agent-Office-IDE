@@ -833,14 +833,15 @@ body {
   visibility: visible;
   position: absolute;
   z-index: 6;
-  top: 34px;
+  top: 32px;
   left: 50%;
-  width: 46px;
-  height: 56px;
+  width: 72px;
+  height: 90px;
   transform: translateX(-50%);
   opacity: 0.96;
-  border-color: #4f5e65;
-  box-shadow: 0 3px 0 rgba(45, 55, 57, 0.48);
+  border: 3px solid #626d72;
+  background: #343c40;
+  box-shadow: inset 0 0 0 2px #242b2e, 0 3px 0 rgba(45, 55, 57, 0.48);
 }
 
 .office-agent[data-seated='true'] .room-agent-sprite {
@@ -870,7 +871,7 @@ body {
 
 .elevator-door-leaf {
   left: 0;
-  background: linear-gradient(90deg, #7d8894, #98a2ac);
+  background: linear-gradient(90deg, #747e83, #929b9f 72%, #697277);
   border-right: 1px solid #3a3f45;
 }
 
@@ -1195,7 +1196,7 @@ body {
   top: auto;
   width: 42px;
   height: 76px;
-  background-position: 75% center;
+  background-position: 71% center;
   clip-path: none;
 }
 .representative-sofa {
