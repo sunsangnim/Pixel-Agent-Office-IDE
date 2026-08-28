@@ -14,8 +14,14 @@ const sample = (x, y) => {
 const palette = []
 for (let x = 0; x < width; x += Math.max(1, Math.floor(width / 64))) palette.push(sample(x, 0), sample(x, height - 1))
 for (let y = 0; y < height; y += Math.max(1, Math.floor(height / 64))) palette.push(sample(0, y), sample(width - 1, y))
-const isBackground = (i) => palette.some(([r, g, b]) =>
-  Math.abs(data[i] - r) <= 5 && Math.abs(data[i + 1] - g) <= 5 && Math.abs(data[i + 2] - b) <= 5)
+const isBackground = (i) => {
+  const red = data[i]
+  const green = data[i + 1]
+  const blue = data[i + 2]
+  const neutralBright = Math.max(red, green, blue) - Math.min(red, green, blue) <= 10 && red + green + blue >= 600
+  return neutralBright || palette.some(([r, g, b]) =>
+    Math.abs(red - r) <= 8 && Math.abs(green - g) <= 8 && Math.abs(blue - b) <= 8)
+}
 
 const seen = new Uint8Array(width * height)
 const queue = []
