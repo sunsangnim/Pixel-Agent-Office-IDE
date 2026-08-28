@@ -48,7 +48,6 @@ function OfficeZones({ now, elevatorOpen, pantryOpen, meetingOpen }: OfficeZones
         <span className="zone-label">출입구</span>
         <div className={`elevator-door office-door-interactive office-door-${elevatorState}`} data-door-state={elevatorState}>
           <span className="elevator-door-leaf" /><span className="elevator-door-leaf" />
-          <span className="elevator-indicator">▲</span>
         </div>
       </div>
     </div>
