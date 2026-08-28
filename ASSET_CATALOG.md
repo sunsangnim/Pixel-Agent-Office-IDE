@@ -50,6 +50,8 @@ pixel-office/
 - `floors/blue-stone-v1.png` — 블루 스톤
 - `floors/teal-carpet-v1.png` — 청록 카펫
 - `floors/office-carpet-tile-v1.png` — 쿨그레이 오피스 카펫 타일
+- `floors/plain-gray-floor-v1.png` — 무늬 없는 회색 바닥, 1px 진회색 타일 윤곽선
+- `floors/plain-gray-floor-v2.png` — 무늬 없는 고급 회색 패널 바닥, 방향성 베벨과 정돈된 타일 윤곽선
 
 바닥 파일은 모두 64×64px이며 상하·좌우 경계 픽셀이 일치해야 한다.
 

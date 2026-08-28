@@ -18,8 +18,8 @@ export const OFFICE_WALL_COLLISIONS: CollisionRect[] = [
   tiles(18, 1, 1, 13), tiles(41, 1, 1, 13), tiles(18, 13, 9, 1), tiles(32, 13, 10, 1),
   // Entrance/elevator: keep the side divider only; the lower corridor wall is fully open.
   tiles(42, 1, 1, 13),
-  // Representative room: closed left side and a 4-tile opening in the top wall.
-  tiles(45, 25, 5, 1), tiles(54, 25, 5, 1), tiles(45, 25, 1, 14)
+  // Representative room: one tile wider, with a closed left side and a 4-tile opening in the top wall.
+  tiles(44, 25, 6, 1), tiles(54, 25, 5, 1), tiles(44, 25, 1, 14)
 ]
 
 export const OFFICE_FLOOR_REGION = { x: 480, y: 320, width: 928, height: 608 }

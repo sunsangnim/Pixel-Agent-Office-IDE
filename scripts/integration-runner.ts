@@ -183,7 +183,8 @@ function verifyLivingOfficeAndRoster(): void {
   const architectureBlocks = (x: number, y: number): boolean => OFFICE_WALL_COLLISIONS.some((wall) =>
     x >= wall.x && x < wall.x + wall.width && y >= wall.y && y < wall.y + wall.height)
   assert.equal(architectureBlocks(816, 208), false, 'elevator lower corridor must stay fully open')
-  assert.equal(architectureBlocks(720, 464), true, 'representative room left opening must be closed')
+  assert.equal(architectureBlocks(704, 464), true, 'representative room left opening must be closed')
+  assert.equal(architectureBlocks(720, 464), false, 'representative room must include its widened interior')
   assert.equal(architectureBlocks(832, 400), false, 'representative room top opening must stay open')
   const stateMachine = new ActorStateMachine('deskIdle')
   stateMachine.startWalking(20, 2)
@@ -260,7 +261,7 @@ function verifyLivingOfficeAndRoster(): void {
   })
   const floorDirectory = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'floors')
   const floorAssets = fs.readdirSync(floorDirectory).filter((file) => file.endsWith('.png'))
-  assert.equal(floorAssets.length, 5)
+  assert.equal(floorAssets.length, 7)
   floorAssets.forEach((file) => {
     const floor = PNG.sync.read(fs.readFileSync(path.join(floorDirectory, file)))
     assert.deepEqual([floor.width, floor.height], [64, 64])

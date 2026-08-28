@@ -26,6 +26,7 @@ import oakFloorAsset from '../assets/pixel-office/floors/oak-parquet-v1.png'
 import stoneFloorAsset from '../assets/pixel-office/floors/blue-stone-v1.png'
 import carpetFloorAsset from '../assets/pixel-office/floors/teal-carpet-v1.png'
 import officeCarpetFloorAsset from '../assets/pixel-office/floors/office-carpet-tile-v1.png'
+import plainGrayFloorAsset from '../assets/pixel-office/floors/plain-gray-floor-v2.png'
 import wallHorizontalAsset from '../assets/pixel-office/architecture/wall-horizontal-v1.png'
 import wallVerticalAsset from '../assets/pixel-office/architecture/wall-vertical-v1.png'
 import wallSurfaceAsset from '../assets/pixel-office/architecture/wall-surface-v1.png'
@@ -95,16 +96,24 @@ const FURNITURE_ASSET_NAMES: Record<number, string> = {
 }
 const FURNITURE_DIRECTIONS = ['front', 'right', 'back', 'left'] as const
 const STACKABLE_FURNITURE_FRAMES = new Set([7])
+const DESK_FURNITURE_FRAME = 10
+const DESK_ASSET_SCALE = 0.75
 type FurnitureDirection = typeof FURNITURE_DIRECTIONS[number]
 const directionalFurnitureAssets = import.meta.glob('../assets/pixel-office/furniture/directional/*.png', {
   eager: true, query: '?url', import: 'default'
 }) as Record<string, string>
-const FLOOR_TEXTURES = ['floor-mint', 'floor-oak', 'floor-stone', 'floor-carpet', 'floor-office-carpet'] as const
-const OFFICE_FLOOR_SAVE_KEY = 'pixel-office-floor-v1'
+const FLOOR_TEXTURES = ['floor-mint', 'floor-oak', 'floor-stone', 'floor-carpet', 'floor-office-carpet', 'floor-plain-gray'] as const
+const DEFAULT_FLOOR_TEXTURE: typeof FLOOR_TEXTURES[number] = 'floor-plain-gray'
+const OFFICE_FLOOR_SAVE_KEY = 'pixel-office-floor-v4'
 const ACTOR_SCALE = 2
 const ACTOR_COLLISION_RADIUS = 11 * ACTOR_SCALE
 const ACTOR_COLLISION_HALF_WIDTH = 7 * ACTOR_SCALE
 const ACTOR_COLLISION_HALF_HEIGHT = 5 * ACTOR_SCALE
+
+function furnitureDisplaySize(frame: number, columns: number, rows: number): { width: number; height: number } {
+  const scale = frame === DESK_FURNITURE_FRAME ? DESK_ASSET_SCALE : 1
+  return { width: columns * 16 * scale, height: rows * 16 * scale }
+}
 
 export class OfficeScene extends Phaser.Scene {
   private actors = new Map<string, ActorView>()
@@ -121,7 +130,7 @@ export class OfficeScene extends Phaser.Scene {
   private editorUi: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text | Phaser.GameObjects.Image> = []
   private nextFurnitureId = 1
   private floorLayers: Phaser.GameObjects.TileSprite[] = []
-  private selectedFloor = 'floor-mint'
+  private selectedFloor = DEFAULT_FLOOR_TEXTURE
 
   constructor() {
     super(OFFICE_SCENE_KEY)
@@ -166,6 +175,7 @@ export class OfficeScene extends Phaser.Scene {
     this.load.image('floor-stone', stoneFloorAsset)
     this.load.image('floor-carpet', carpetFloorAsset)
     this.load.image('floor-office-carpet', officeCarpetFloorAsset)
+    this.load.image('floor-plain-gray', plainGrayFloorAsset)
     this.load.image('architecture-wall-horizontal', wallHorizontalAsset)
     this.load.image('architecture-wall-vertical', wallVerticalAsset)
     this.load.image('architecture-wall-surface', wallSurfaceAsset)
@@ -177,7 +187,9 @@ export class OfficeScene extends Phaser.Scene {
     this.worldSave = parseOfficeWorldSave(localStorage.getItem(OFFICE_WORLD_SAVE_KEY))
     this.layoutSave = parseOfficeLayout(localStorage.getItem(OFFICE_LAYOUT_SAVE_KEY))
     const savedFloor = localStorage.getItem(OFFICE_FLOOR_SAVE_KEY)
-    this.selectedFloor = FLOOR_TEXTURES.includes(savedFloor as typeof FLOOR_TEXTURES[number]) ? savedFloor! : 'floor-mint'
+    this.selectedFloor = FLOOR_TEXTURES.includes(savedFloor as typeof FLOOR_TEXTURES[number])
+      ? savedFloor as typeof FLOOR_TEXTURES[number]
+      : DEFAULT_FLOOR_TEXTURE
     this.cameras.main.setBackgroundColor('#17221f')
     this.createWorld()
     this.createLayoutEditor()
@@ -209,7 +221,7 @@ export class OfficeScene extends Phaser.Scene {
     this.createRoom(8, 8, 280, 205, '탕비실')
     this.createRoom(296, 8, 370, 205, '회의실')
     this.createRoom(674, 8, 278, 205, '출입구')
-    this.createRoom(725, 405, 227, 227, '대표실')
+    this.createRoom(709, 405, 243, 227, '대표실')
 
     this.createPantry()
     this.createMeetingRoom()
@@ -228,8 +240,9 @@ export class OfficeScene extends Phaser.Scene {
       ? (this.furniturePlacementCollides(id, frame, fallback, angle) ? this.findFreeFurniturePoint(frame, angle) : fallback)
       : requested
     const initialFootprint = rotatedFootprint(frame, angle)
+    const initialDisplaySize = furnitureDisplaySize(frame, initialFootprint.columns, initialFootprint.rows)
     const image = this.add.image(initial.x, initial.y, this.directionalFurnitureTexture(frame, angle))
-      .setDisplaySize(initialFootprint.columns * 16, initialFootprint.rows * 16)
+      .setDisplaySize(initialDisplaySize.width, initialDisplaySize.height)
       .setDepth(initial.y ?? depth)
       .setInteractive({ useHandCursor: true, draggable: true })
     image.setData({ furnitureId: id, furnitureFrame: frame, furnitureRotation: angle })
@@ -277,7 +290,7 @@ export class OfficeScene extends Phaser.Scene {
     })
     const frames = [0, 1, 2, 5, 6, 7, 10, 12, 15, 16, 17, 18, 19]
     frames.forEach((frame, index) => {
-      const x = 285 + index * 38
+      const x = 350 + index * 38
       const icon = this.add.image(x, 610, FURNITURE_TEXTURES[frame])
         .setDisplaySize(34, 34).setDepth(2001).setInteractive({ useHandCursor: true })
       icon.on('pointerdown', () => this.addFurnitureFromPalette(frame))
@@ -301,7 +314,7 @@ export class OfficeScene extends Phaser.Scene {
     const region = OFFICE_FLOOR_REGION
     this.floorLayers = [
       this.add.tileSprite(region.x, region.y, region.width, region.height, this.selectedFloor)
-        .setTileScale(2)
+        .setTileScale(0.75)
         .setDepth(1)
     ]
   }
@@ -388,11 +401,12 @@ export class OfficeScene extends Phaser.Scene {
     const image = this.selectedFurniture.image
     const nextAngle = Phaser.Math.Wrap(this.furnitureRotation(image) + delta, 0, 360)
     const footprint = rotatedFootprint(this.selectedFurniture.frame, nextAngle)
+    const displaySize = furnitureDisplaySize(this.selectedFurniture.frame, footprint.columns, footprint.rows)
     const snapped = snapFurniturePoint(image, footprint)
     image
       .setPosition(snapped.x, snapped.y)
       .setTexture(this.directionalFurnitureTexture(this.selectedFurniture.frame, nextAngle))
-      .setDisplaySize(footprint.columns * 16, footprint.rows * 16)
+      .setDisplaySize(displaySize.width, displaySize.height)
       .setDepth(snapped.y)
       .setData('furnitureRotation', nextAngle)
     this.updateSelectionOutline()
@@ -426,10 +440,11 @@ export class OfficeScene extends Phaser.Scene {
         this.furniture.delete(id)
       } else {
         const footprint = rotatedFootprint(furniture.frame, 0)
+        const displaySize = furnitureDisplaySize(furniture.frame, footprint.columns, footprint.rows)
         furniture.image
           .setPosition(furniture.defaultPoint.x, furniture.defaultPoint.y)
           .setTexture(this.directionalFurnitureTexture(furniture.frame, 0))
-          .setDisplaySize(footprint.columns * 16, footprint.rows * 16)
+          .setDisplaySize(displaySize.width, displaySize.height)
           .setData('furnitureRotation', 0)
           .setDepth(furniture.defaultPoint.y)
       }
