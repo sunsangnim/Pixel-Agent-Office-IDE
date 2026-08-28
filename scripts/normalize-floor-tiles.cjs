@@ -5,6 +5,10 @@ const { PNG } = require('pngjs')
 const directory = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'floors')
 for (const name of fs.readdirSync(directory).filter((file) => file.endsWith('.png'))) {
   const source = PNG.sync.read(fs.readFileSync(path.join(directory, name)))
+  if (source.width === 64 && source.height === 64) {
+    console.log(`${name}: already normalized`)
+    continue
+  }
   const output = new PNG({ width: 64, height: 64 })
   const cropSize = Math.floor(Math.min(source.width, source.height) * 0.55)
   const startX = Math.floor((source.width - cropSize) / 2)

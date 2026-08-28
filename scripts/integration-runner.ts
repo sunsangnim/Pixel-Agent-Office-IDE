@@ -241,7 +241,7 @@ function verifyLivingOfficeAndRoster(): void {
   })
   const floorDirectory = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'floors')
   const floorAssets = fs.readdirSync(floorDirectory).filter((file) => file.endsWith('.png'))
-  assert.equal(floorAssets.length, 4)
+  assert.equal(floorAssets.length, 5)
   floorAssets.forEach((file) => {
     const floor = PNG.sync.read(fs.readFileSync(path.join(floorDirectory, file)))
     assert.deepEqual([floor.width, floor.height], [64, 64])

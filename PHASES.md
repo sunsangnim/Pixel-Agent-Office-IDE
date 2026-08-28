@@ -88,3 +88,6 @@
 - [x] Consolidate current user requirements into canonical documentation
 - [x] Organize all runtime image assets by characters, furniture, and floors
 - [x] Add an asset catalog with per-furniture tile footprints
+# Phase 46 — Front-facing assets and composed work interaction
+
+- [x] Replace diagonal furniture, compose work interactions, and add the professional office floor

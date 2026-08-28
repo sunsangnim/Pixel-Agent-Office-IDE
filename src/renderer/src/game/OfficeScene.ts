@@ -8,22 +8,23 @@ import codexTeamAnimationAtlas from '../assets/pixel-office/characters/codex-tea
 import antigravityTeamAnimationAtlas from '../assets/pixel-office/characters/antigravity-team-animation-atlas-v1.png'
 import rosterRow4AnimationAtlas from '../assets/pixel-office/characters/roster-row-4-animation-atlas-v1.png'
 import claudeTeamAnimationAtlas from '../assets/pixel-office/characters/claude-team-animation-atlas-v1.png'
-import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-v1.png'
-import refrigeratorAsset from '../assets/pixel-office/furniture/refrigerator-v1.png'
+import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-v2.png'
+import refrigeratorAsset from '../assets/pixel-office/furniture/refrigerator-v2.png'
 import pantryCabinetAsset from '../assets/pixel-office/furniture/pantry-cabinet-v1.png'
 import presentationScreenAsset from '../assets/pixel-office/furniture/presentation-screen-v1.png'
 import conferenceTableAsset from '../assets/pixel-office/furniture/conference-table-v1.png'
 import workstationDeskAsset from '../assets/pixel-office/furniture/workstation-desk-v1.png'
-import officeChairAsset from '../assets/pixel-office/furniture/office-chair-v1.png'
+import officeChairAsset from '../assets/pixel-office/furniture/office-chair-v2.png'
 import officePlantAsset from '../assets/pixel-office/furniture/office-plant-v1.png'
-import sideTableAsset from '../assets/pixel-office/furniture/side-table-v1.png'
+import sideTableAsset from '../assets/pixel-office/furniture/side-table-v2.png'
 import officeSofaAsset from '../assets/pixel-office/furniture/office-sofa-v1.png'
 import floorLampAsset from '../assets/pixel-office/furniture/floor-lamp-v1.png'
-import bookcaseAsset from '../assets/pixel-office/furniture/bookcase-v1.png'
+import bookcaseAsset from '../assets/pixel-office/furniture/bookcase-v2.png'
 import mintFloorAsset from '../assets/pixel-office/floors/mint-tile-v1.png'
 import oakFloorAsset from '../assets/pixel-office/floors/oak-parquet-v1.png'
 import stoneFloorAsset from '../assets/pixel-office/floors/blue-stone-v1.png'
 import carpetFloorAsset from '../assets/pixel-office/floors/teal-carpet-v1.png'
+import officeCarpetFloorAsset from '../assets/pixel-office/floors/office-carpet-tile-v1.png'
 import {
   MEETING_SEATS,
   OFFICE_WORLD_HEIGHT,
@@ -80,7 +81,7 @@ const FURNITURE_TEXTURES: Record<number, string> = {
   15: 'furniture-office-plant', 16: 'furniture-side-table', 17: 'furniture-office-sofa',
   18: 'furniture-floor-lamp', 19: 'furniture-bookcase'
 }
-const FLOOR_TEXTURES = ['floor-mint', 'floor-oak', 'floor-stone', 'floor-carpet'] as const
+const FLOOR_TEXTURES = ['floor-mint', 'floor-oak', 'floor-stone', 'floor-carpet', 'floor-office-carpet'] as const
 const OFFICE_FLOOR_SAVE_KEY = 'pixel-office-floor-v1'
 
 export class OfficeScene extends Phaser.Scene {
@@ -137,6 +138,7 @@ export class OfficeScene extends Phaser.Scene {
     this.load.image('floor-oak', oakFloorAsset)
     this.load.image('floor-stone', stoneFloorAsset)
     this.load.image('floor-carpet', carpetFloorAsset)
+    this.load.image('floor-office-carpet', officeCarpetFloorAsset)
   }
 
   create(): void {
@@ -493,12 +495,15 @@ export class OfficeScene extends Phaser.Scene {
     this.addFurniture('representative-lamp', 18, 842, 455, 32, 62, 455)
     this.addFurniture('representative-bookcase', 19, 912, 568, 48, 86, 568)
     this.addFurniture('representative-desk', 10, 835, 515, 100, 58, 515)
+    this.addFurniture('representative-chair', 12, 835, 495, 38, 42, 477)
   }
 
   private createDesks(): void {
     TEAM_DESKS.forEach((team, teamIndex) => team.forEach((point, slotIndex) => {
       this.addFurniture(`desk-${teamIndex}-${slotIndex}`, 10, point.x, point.y + 12, 92, 58, point.y + 5)
-      this.addFurniture(`chair-${teamIndex}-${slotIndex}`, 12 + teamIndex, point.x, point.y + 54, 38, 42, point.y + 55)
+      // Chair, actor and desk remain independent. The chair is behind the
+      // seated actor while the desk front edge renders in front of both.
+      this.addFurniture(`chair-${teamIndex}-${slotIndex}`, 12 + teamIndex, point.x, point.y + 54, 38, 42, point.y - 1)
       if (slotIndex === 0) this.add.text(point.x - 36, point.y - 45, ['Claude', 'Codex', 'Antigravity'][teamIndex], {
         fontFamily: 'monospace', fontSize: '10px', color: '#24473e'
       }).setDepth(700)
@@ -575,9 +580,9 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createRepresentativeActor(): void {
-    const sprite = this.add.sprite(835, 478, 'ceo-animation-sheet', 'ceo-work-0').setDisplaySize(94, 78).setDepth(490)
-    sprite.play('ceo-work')
-    this.add.text(835, 505, '김태호 대표', {
+    const sprite = this.add.sprite(835, 491, 'ceo-animation-sheet', 'ceo-idle-0').setDisplaySize(52, 60).setDepth(490)
+    sprite.play('ceo-idle')
+    this.add.text(835, 458, '김태호 대표', {
       fontFamily: 'monospace', fontSize: '8px', color: '#17362e', backgroundColor: '#e7f3ef'
     }).setOrigin(0.5, 0).setPadding(2, 1).setDepth(700)
   }
@@ -754,12 +759,21 @@ export class OfficeScene extends Phaser.Scene {
     view.stateMachine.arrive(actorIndex)
     const action = view.stateMachine.current.action
     if (this.animationAtlasFor(actor.rosterIndex)) {
-      view.sprite.play(`actor-${actor.rosterIndex}-${action === 'working' ? 'work' : 'idle'}`, true)
+      // Furniture is always composed at runtime. The atlas work row contains a
+      // baked desk, so a desk-facing character frame is used at the chair snap.
+      view.sprite.play(`actor-${actor.rosterIndex}-${action === 'working' ? 'walk-up' : 'idle'}`, true)
     }
     view.prop.setVisible(false)
     const animatedActor = Boolean(this.animationAtlasFor(actor.rosterIndex))
-    view.sprite.setDisplaySize(animatedActor ? (action === 'working' ? 106 : 90) : (action === 'working' ? 76 : 50), animatedActor ? 90 : 68)
-    view.sprite.setY(action === 'sitting' ? (animatedActor ? -30 : -20) : (animatedActor ? -35 : -27))
+    view.sprite.setDisplaySize(
+      animatedActor ? 90 : 50,
+      action === 'working' ? (animatedActor ? 76 : 58) : (animatedActor ? 90 : 68)
+    )
+    view.sprite.setY(
+      action === 'working' ? (animatedActor ? -20 : -15)
+        : action === 'sitting' ? (animatedActor ? -30 : -20)
+          : (animatedActor ? -35 : -27)
+    )
     if (action === 'sitting') {
       const seatIndex = actorIndex % MEETING_SEATS.length
       view.container.setDepth(view.container.y + (seatIndex < 4 ? -4 : 8))
