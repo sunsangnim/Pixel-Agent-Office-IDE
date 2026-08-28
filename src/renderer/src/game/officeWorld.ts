@@ -60,8 +60,8 @@ export function targetPoint(actor: OfficeGameActor, actorIndex: number): WorldPo
   if (actor.presence === 'arriving') return WAYPOINTS.elevatorInside
   if (actor.presence === 'pantryDoor') return WAYPOINTS.pantryDoor
   if (actor.presence === 'pantry') return {
-    x: WAYPOINTS.pantryTarget.x + (actorIndex % 3) * 42,
-    y: WAYPOINTS.pantryTarget.y + (actorIndex % 2) * 32
+    x: actorIndex % 2 === 0 ? 220 : 65,
+    y: actorIndex % 2 === 0 ? 155 : 150
   }
   if (actor.presence === 'meetingDoor') return WAYPOINTS.meetingDoor
   if (actor.presence === 'meeting') return MEETING_SEATS[actorIndex % MEETING_SEATS.length]

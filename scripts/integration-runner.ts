@@ -147,6 +147,8 @@ function verifyLivingOfficeAndRoster(): void {
   }
   assert.equal(routeFor(arrivingActor, 0).length, 3)
   assert.deepEqual(routeFor({ ...arrivingActor, presence: 'meeting' }, 0).at(-1), MEETING_SEATS[0])
+  assert.deepEqual(routeFor({ ...arrivingActor, presence: 'pantry' }, 0).at(-1), { x: 220, y: 155 })
+  assert.deepEqual(routeFor({ ...arrivingActor, presence: 'pantry' }, 1).at(-1), { x: 65, y: 150 })
   const navigationPath = findOfficePath({ x: 50, y: 350 }, { x: 700, y: 350 })
   assert.ok(navigationPath.length >= 1)
   assert.ok(navigationPath.every((point) => !OFFICE_COLLISIONS.some((rect) =>
@@ -162,6 +164,8 @@ function verifyLivingOfficeAndRoster(): void {
   assert.equal(stateMachine.requestPresence('working'), false)
   assert.equal(stateMachine.completeAction(), 'working')
   assert.equal(actionForPresence('meeting', 0), 'sitting')
+  assert.equal(actionForPresence('pantry', 0), 'eating')
+  assert.equal(actionForPresence('pantry', 1), 'drinking')
   assert.equal(OFFICE_OBJECTS.filter((object) => object.type === 'desk').length, 15)
   assert.equal(OFFICE_OBJECTS.filter((object) => object.id.startsWith('meeting-chair-')).length, 8)
   assert.deepEqual(objectById('representative-sofa')?.snapPoint, { x: 895, y: 458 })

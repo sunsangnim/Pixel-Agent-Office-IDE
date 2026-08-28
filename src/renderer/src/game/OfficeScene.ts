@@ -29,6 +29,7 @@ interface ActorView {
   bubble: Phaser.GameObjects.Text
   routeKey: string
   actionTween?: Phaser.Tweens.Tween
+  prop: Phaser.GameObjects.Rectangle
   stateMachine: ActorStateMachine
 }
 
@@ -317,7 +318,8 @@ export class OfficeScene extends Phaser.Scene {
       -27,
       animationAtlas ?? `roster-row-${row}`,
       animationAtlas ? `actor-${actor.rosterIndex}-idle` : frame
-    ).setDisplaySize(50, 68)
+    ).setDisplaySize(animationAtlas ? 90 : 50, animationAtlas ? 90 : 68)
+      .setY(animationAtlas ? -35 : -27)
     if (animationAtlas) sprite.play(`actor-${actor.rosterIndex}-idle`)
     sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
       this.actorSelectHandler?.(actor.profileId)
@@ -328,10 +330,12 @@ export class OfficeScene extends Phaser.Scene {
     const bubble = this.add.text(18, -68, '', {
       fontFamily: 'monospace', fontSize: '8px', color: '#26332f', backgroundColor: '#fff7df'
     }).setPadding(3, 2).setVisible(false)
+    const prop = this.add.rectangle(12, -20, 7, 9, 0x6eb6d9)
+      .setStrokeStyle(2, 0x294a5a).setVisible(false)
     const saved = this.worldSave.actors.find((candidate) => candidate.profileId === actor.profileId)
     const initial = saved ?? { x: WAYPOINTS.elevatorInside.x, y: WAYPOINTS.elevatorInside.y }
-    const container = this.add.container(initial.x, initial.y, [sprite, label, bubble]).setDepth(initial.y)
-    const view = { container, sprite, bubble, routeKey: '', stateMachine: new ActorStateMachine(actor.presence) }
+    const container = this.add.container(initial.x, initial.y, [sprite, label, bubble, prop]).setDepth(initial.y)
+    const view = { container, sprite, bubble, prop, routeKey: '', stateMachine: new ActorStateMachine(actor.presence) }
     this.actors.set(actor.profileId, view)
     return view
   }
@@ -359,6 +363,7 @@ export class OfficeScene extends Phaser.Scene {
     view.routeKey = routeKey
     this.tweens.killTweensOf(view.container)
     view.actionTween?.stop()
+    view.prop.setVisible(false)
     if (route.length === 0) return
     this.moveRoute(view, route, 0, actor)
   }
@@ -395,16 +400,51 @@ export class OfficeScene extends Phaser.Scene {
   private startActionAnimation(view: ActorView, actor: OfficeGameActor): void {
     const actorIndex = this.snapshot?.actors.findIndex((candidate) => candidate.profileId === actor.profileId) ?? 0
     view.stateMachine.arrive(actorIndex)
+    const action = view.stateMachine.current.action
     if (this.animationAtlasFor(actor.rosterIndex)) {
-      view.sprite.play(`actor-${actor.rosterIndex}-${actor.presence === 'working' ? 'work' : 'idle'}`, true)
+      view.sprite.play(`actor-${actor.rosterIndex}-${action === 'working' ? 'work' : 'idle'}`, true)
+    }
+    view.prop.setVisible(false)
+    const animatedActor = Boolean(this.animationAtlasFor(actor.rosterIndex))
+    view.sprite.setDisplaySize(animatedActor ? (action === 'working' ? 106 : 90) : (action === 'working' ? 76 : 50), animatedActor ? 90 : 68)
+    view.sprite.setY(action === 'sitting' ? (animatedActor ? -30 : -20) : (animatedActor ? -35 : -27))
+    if (action === 'sitting') {
+      const seatIndex = actorIndex % MEETING_SEATS.length
+      view.container.setDepth(view.container.y + (seatIndex < 4 ? -4 : 8))
+      view.container.setScale(1, 0.86)
+      return
     }
     if (!['working', 'pantry', 'meeting', 'requestingHelp', 'error'].includes(actor.presence)) return
+    if (action === 'eating' || action === 'drinking') {
+      const drinking = action === 'drinking'
+      view.prop.setFillStyle(drinking ? 0x6eb6d9 : 0xd99a45)
+        .setStrokeStyle(2, drinking ? 0x294a5a : 0x70431f)
+        .setSize(drinking ? 7 : 9, drinking ? 10 : 7)
+        .setPosition(12, -20)
+        .setVisible(true)
+      view.actionTween = this.tweens.add({
+        targets: view.prop,
+        x: 7,
+        y: -43,
+        duration: 260,
+        hold: 140,
+        yoyo: true,
+        repeat: 2,
+        ease: 'Stepped',
+        easeParams: [3],
+        onComplete: () => {
+          view.prop.setVisible(false)
+          view.stateMachine.completeAction()
+        }
+      })
+      return
+    }
     view.actionTween = this.tweens.add({
       targets: view.sprite,
       y: actor.presence === 'working' ? -29 : -25,
       duration: actor.presence === 'error' ? 150 : 420,
       yoyo: true,
-      repeat: actor.presence === 'pantry' ? 2 : -1,
+      repeat: -1,
       ease: 'Stepped',
       easeParams: [2],
       onComplete: () => view.stateMachine.completeAction()
