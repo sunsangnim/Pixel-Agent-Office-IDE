@@ -174,6 +174,11 @@ function verifyLivingOfficeAndRoster(): void {
   assert.ok(ceoSheet.readUInt32BE(16) / 8 >= 48)
   assert.ok(ceoSheet.readUInt32BE(20) / 6 >= 64)
   assert.ok(ceoSheet[25] === 4 || ceoSheet[25] === 6 || ceoSheet.includes(Buffer.from('tRNS')))
+  const teamAtlas = fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'codex-team-animation-atlas-v1.png'))
+  assert.equal(teamAtlas.toString('ascii', 1, 4), 'PNG')
+  assert.ok(teamAtlas.readUInt32BE(16) / 5 >= 128)
+  assert.ok(teamAtlas.readUInt32BE(20) / 4 >= 128)
+  assert.ok(teamAtlas[25] === 4 || teamAtlas[25] === 6 || teamAtlas.includes(Buffer.from('tRNS')))
   console.log('PASS living-office checkpoint policy and 20-character roster assets')
 }
 
