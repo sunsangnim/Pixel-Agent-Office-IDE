@@ -16,6 +16,7 @@ import { MEETING_SEATS, TEAM_DESKS, routeFor, type OfficeGameActor } from '../sr
 import { OFFICE_COLLISIONS, findOfficePath } from '../src/renderer/src/game/navigation'
 import { ActorStateMachine, actionForPresence } from '../src/renderer/src/game/actorStateMachine'
 import { OFFICE_OBJECTS, objectById } from '../src/renderer/src/game/officeObjects'
+import { parseOfficeWorldSave, upsertSavedActor } from '../src/renderer/src/game/worldPersistence'
 
 interface RecordedEvent {
   channel: string
@@ -163,6 +164,11 @@ function verifyLivingOfficeAndRoster(): void {
   assert.equal(OFFICE_OBJECTS.filter((object) => object.type === 'desk').length, 15)
   assert.equal(OFFICE_OBJECTS.filter((object) => object.id.startsWith('meeting-chair-')).length, 8)
   assert.deepEqual(objectById('representative-sofa')?.snapPoint, { x: 895, y: 458 })
+  const savedWorld = upsertSavedActor(parseOfficeWorldSave(null), {
+    profileId: 'test', x: 32, y: 48, presence: 'deskIdle', updatedAt: 1
+  })
+  assert.equal(parseOfficeWorldSave(JSON.stringify(savedWorld)).actors[0].x, 32)
+  assert.deepEqual(parseOfficeWorldSave('broken'), { version: 1, actors: [] })
   console.log('PASS living-office checkpoint policy and 20-character roster assets')
 }
 

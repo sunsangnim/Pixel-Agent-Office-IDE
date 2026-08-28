@@ -16,6 +16,7 @@ import {
 } from './officeWorld'
 import { findOfficePath } from './navigation'
 import { ActorStateMachine } from './actorStateMachine'
+import { OFFICE_WORLD_SAVE_KEY, parseOfficeWorldSave, upsertSavedActor, type OfficeWorldSave } from './worldPersistence'
 
 interface ActorView {
   container: Phaser.GameObjects.Container
@@ -40,6 +41,7 @@ export class OfficeScene extends Phaser.Scene {
   private snapshot: OfficeWorldSnapshot | null = null
   private pendingSnapshot: OfficeWorldSnapshot | null = null
   private doors = new Map<string, DoorView>()
+  private worldSave: OfficeWorldSave = { version: 1, actors: [] }
 
   constructor() {
     super(OFFICE_SCENE_KEY)
@@ -50,6 +52,7 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.worldSave = parseOfficeWorldSave(localStorage.getItem(OFFICE_WORLD_SAVE_KEY))
     this.cameras.main.setBackgroundColor('#17221f')
     this.createWorld()
     this.createRosterFrames()
@@ -221,8 +224,9 @@ export class OfficeScene extends Phaser.Scene {
     const bubble = this.add.text(18, -68, '', {
       fontFamily: 'monospace', fontSize: '8px', color: '#26332f', backgroundColor: '#fff7df'
     }).setPadding(3, 2).setVisible(false)
-    const container = this.add.container(WAYPOINTS.elevatorInside.x, WAYPOINTS.elevatorInside.y, [sprite, label, bubble])
-      .setDepth(WAYPOINTS.elevatorInside.y)
+    const saved = this.worldSave.actors.find((candidate) => candidate.profileId === actor.profileId)
+    const initial = saved ?? { x: WAYPOINTS.elevatorInside.x, y: WAYPOINTS.elevatorInside.y }
+    const container = this.add.container(initial.x, initial.y, [sprite, label, bubble]).setDepth(initial.y)
     const view = { container, sprite, bubble, routeKey: '', stateMachine: new ActorStateMachine(actor.presence) }
     this.actors.set(actor.profileId, view)
     return view
@@ -272,7 +276,10 @@ export class OfficeScene extends Phaser.Scene {
       duration,
       ease: 'Linear',
       onUpdate: () => view.container.setDepth(view.container.y),
-      onComplete: () => this.moveRoute(view, route, index + 1, actor)
+      onComplete: () => {
+        this.persistActor(actor, view)
+        this.moveRoute(view, route, index + 1, actor)
+      }
     })
   }
 
@@ -290,5 +297,16 @@ export class OfficeScene extends Phaser.Scene {
       easeParams: [2],
       onComplete: () => view.stateMachine.completeAction()
     })
+  }
+
+  private persistActor(actor: OfficeGameActor, view: ActorView): void {
+    this.worldSave = upsertSavedActor(this.worldSave, {
+      profileId: actor.profileId,
+      x: Math.round(view.container.x),
+      y: Math.round(view.container.y),
+      presence: actor.presence,
+      updatedAt: Date.now()
+    })
+    localStorage.setItem(OFFICE_WORLD_SAVE_KEY, JSON.stringify(this.worldSave))
   }
 }
