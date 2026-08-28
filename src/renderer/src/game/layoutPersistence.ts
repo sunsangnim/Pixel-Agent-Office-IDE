@@ -1,7 +1,7 @@
 import type { WorldPoint } from './officeWorld'
 
 export const OFFICE_LAYOUT_SAVE_KEY = 'pixel-office-layout-v1'
-export interface SavedFurniture extends WorldPoint { frame?: number; width?: number; height?: number }
+export interface SavedFurniture extends WorldPoint { frame?: number; width?: number; height?: number; rotation?: number }
 export type OfficeLayoutSave = Record<string, SavedFurniture>
 
 export function parseOfficeLayout(raw: string | null): OfficeLayoutSave {

@@ -68,3 +68,8 @@
 - [x] In-game draggable furniture editor with persistence
 - [x] Independent transparent furniture assets with per-asset bounds
 - [x] Dynamic navigation collision synchronization and verification
+## Phase 42 — Furniture Rotation
+
+- [x] Rotate selected furniture in the layout editor
+- [x] Persist rotation and synchronize rotated collision bounds
+- [x] Clear selection outline when editing ends

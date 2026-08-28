@@ -176,6 +176,7 @@ export class OfficeScene extends Phaser.Scene {
     const saved = this.layoutSave[id]
     const image = this.add.image(saved?.x ?? x, saved?.y ?? y, FURNITURE_TEXTURES[frame] ?? 'furniture-workstation-desk')
       .setDisplaySize(width, height)
+      .setAngle(saved?.rotation ?? 0)
       .setDepth(saved?.y ?? depth)
       .setInteractive({ useHandCursor: true, draggable: true })
     image.setData({ furnitureId: id, furnitureFrame: frame })
@@ -204,7 +205,7 @@ export class OfficeScene extends Phaser.Scene {
     this.editorUi.push(panel, help)
     const frames = [0, 1, 2, 5, 6, 10, 12, 15, 16, 17, 18, 19]
     frames.forEach((frame, index) => {
-      const x = 300 + index * 42
+      const x = 285 + index * 38
       const icon = this.add.image(x, 610, FURNITURE_TEXTURES[frame])
         .setDisplaySize(34, 34).setDepth(2001).setInteractive({ useHandCursor: true })
       icon.on('pointerdown', () => this.addFurnitureFromPalette(frame))
@@ -214,12 +215,23 @@ export class OfficeScene extends Phaser.Scene {
       fontFamily: 'monospace', fontSize: '10px', color: '#ffffff', backgroundColor: '#803c36'
     }).setPadding(6, 4).setDepth(2001).setInteractive({ useHandCursor: true })
     remove.on('pointerdown', () => this.deleteSelectedFurniture())
-    const reset = this.add.text(900, 582, '초기화', {
+    const rotateLeft = this.add.text(760, 582, '↶', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#ffffff', backgroundColor: '#31566a'
+    }).setPadding(7, 1).setDepth(2001).setInteractive({ useHandCursor: true })
+    rotateLeft.on('pointerdown', () => this.rotateSelectedFurniture(-90))
+    const rotateRight = this.add.text(795, 582, '↷', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#ffffff', backgroundColor: '#31566a'
+    }).setPadding(7, 1).setDepth(2001).setInteractive({ useHandCursor: true })
+    rotateRight.on('pointerdown', () => this.rotateSelectedFurniture(90))
+    remove.setX(835)
+    const reset = this.add.text(910, 582, '초기화', {
       fontFamily: 'monospace', fontSize: '10px', color: '#ffffff', backgroundColor: '#5a5034'
     }).setPadding(6, 4).setDepth(2001).setInteractive({ useHandCursor: true })
     reset.on('pointerdown', () => this.resetFurnitureLayout())
-    this.editorUi.push(remove, reset)
+    this.editorUi.push(rotateLeft, rotateRight, remove, reset)
     this.input.keyboard?.on('keydown-DELETE', () => this.deleteSelectedFurniture())
+    this.input.keyboard?.on('keydown-Q', () => this.rotateSelectedFurniture(-90))
+    this.input.keyboard?.on('keydown-E', () => this.rotateSelectedFurniture(90))
     this.setEditorUiVisible(false)
   }
 
@@ -229,20 +241,20 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private selectFurniture(id: string | null): void {
-    if (!this.layoutEditing) return
+    if (!this.layoutEditing && id) return
     this.selectedFurniture = id ? this.furniture.get(id) ?? null : null
     this.selectionOutline?.destroy()
     this.selectionOutline = undefined
     if (!this.selectedFurniture) return
     const image = this.selectedFurniture.image
     this.selectionOutline = this.add.rectangle(image.x, image.y, image.displayWidth + 6, image.displayHeight + 6)
-      .setStrokeStyle(3, 0xffdd55).setDepth(1990)
+      .setStrokeStyle(3, 0xffdd55).setAngle(image.angle).setDepth(1990)
   }
 
   private updateSelectionOutline(): void {
     if (this.selectedFurniture && this.selectionOutline) {
       const image = this.selectedFurniture.image
-      this.selectionOutline.setPosition(image.x, image.y).setSize(image.displayWidth + 6, image.displayHeight + 6)
+      this.selectionOutline.setPosition(image.x, image.y).setSize(image.displayWidth + 6, image.displayHeight + 6).setAngle(image.angle)
     }
   }
 
@@ -267,10 +279,19 @@ export class OfficeScene extends Phaser.Scene {
     localStorage.setItem(OFFICE_LAYOUT_SAVE_KEY, JSON.stringify(this.layoutSave))
   }
 
+  private rotateSelectedFurniture(delta: number): void {
+    if (!this.layoutEditing || !this.selectedFurniture) return
+    const image = this.selectedFurniture.image
+    image.setAngle(Phaser.Math.Wrap(image.angle + delta, 0, 360)).setDepth(image.y)
+    this.updateSelectionOutline()
+    this.saveFurnitureLayout()
+  }
+
   private saveFurnitureLayout(): void {
     this.furniture.forEach(({ id, frame, image }) => {
       this.layoutSave[id] = {
         x: Math.round(image.x), y: Math.round(image.y),
+        rotation: image.angle,
         ...(id.startsWith('custom-') ? { frame, width: image.displayWidth, height: image.displayHeight } : {})
       }
     })
@@ -292,7 +313,7 @@ export class OfficeScene extends Phaser.Scene {
         furniture.image.destroy()
         this.furniture.delete(id)
       } else {
-        furniture.image.setPosition(furniture.defaultPoint.x, furniture.defaultPoint.y).setDepth(furniture.defaultPoint.y)
+        furniture.image.setPosition(furniture.defaultPoint.x, furniture.defaultPoint.y).setAngle(0).setDepth(furniture.defaultPoint.y)
       }
     }
     this.selectFurniture(null)
@@ -301,11 +322,14 @@ export class OfficeScene extends Phaser.Scene {
   private collisionRects(): CollisionRect[] {
     const furnitureRects = [...this.furniture.values()].map(({ frame, image }) => {
       const [scaleX, scaleY] = FURNITURE_COLLISION_SCALE[frame] ?? [0.76, 0.56]
+      const quarterTurn = Math.abs(Math.round(image.angle / 90)) % 2 === 1
+      const width = (quarterTurn ? image.displayHeight * scaleY : image.displayWidth * scaleX)
+      const height = (quarterTurn ? image.displayWidth * scaleX : image.displayHeight * scaleY)
       return {
-        x: image.x - image.displayWidth * scaleX / 2,
-        y: image.y - image.displayHeight * scaleY / 2,
-        width: image.displayWidth * scaleX,
-        height: image.displayHeight * scaleY
+        x: image.x - width / 2,
+        y: image.y - height / 2,
+        width,
+        height
       }
     })
     return [...OFFICE_STRUCTURE_COLLISIONS, ...furnitureRects]

@@ -164,6 +164,7 @@ function verifyLivingOfficeAndRoster(): void {
   const [pushedA, pushedB] = pushApart({ id: 'a', x: 0, y: 0, radius: 10 }, { id: 'b', x: 5, y: 0, radius: 10 })
   assert.ok(Math.abs(Math.hypot(pushedB.x - pushedA.x, pushedB.y - pushedA.y) - 20) < 0.001)
   assert.deepEqual(parseOfficeLayout('{"desk":{"x":10,"y":20},"bad":{"x":"x"}}'), { desk: { x: 10, y: 20 } })
+  assert.deepEqual(parseOfficeLayout('{"sofa":{"x":30,"y":40,"rotation":90}}'), { sofa: { x: 30, y: 40, rotation: 90 } })
   const stateMachine = new ActorStateMachine('deskIdle')
   stateMachine.startWalking(20, 2)
   assert.equal(stateMachine.current.facing, 'right')
