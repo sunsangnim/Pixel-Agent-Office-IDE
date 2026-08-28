@@ -180,6 +180,11 @@ function verifyLivingOfficeAndRoster(): void {
   assert.ok(throughPantryDoor.every((point) => !OFFICE_WALL_COLLISIONS.some((wall) =>
     point.x > wall.x && point.x < wall.x + wall.width && point.y > wall.y && point.y < wall.y + wall.height
   )))
+  const architectureBlocks = (x: number, y: number): boolean => OFFICE_WALL_COLLISIONS.some((wall) =>
+    x >= wall.x && x < wall.x + wall.width && y >= wall.y && y < wall.y + wall.height)
+  assert.equal(architectureBlocks(816, 208), false, 'elevator lower corridor must stay fully open')
+  assert.equal(architectureBlocks(720, 464), true, 'representative room left opening must be closed')
+  assert.equal(architectureBlocks(832, 400), false, 'representative room top opening must stay open')
   const stateMachine = new ActorStateMachine('deskIdle')
   stateMachine.startWalking(20, 2)
   assert.equal(stateMachine.current.facing, 'right')

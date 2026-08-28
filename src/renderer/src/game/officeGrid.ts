@@ -12,14 +12,14 @@ function tiles(column: number, row: number, columns: number, rows: number): Coll
 
 export const OFFICE_WALL_COLLISIONS: CollisionRect[] = [
   tiles(0, 0, 60, 1), tiles(0, 39, 60, 1), tiles(0, 0, 1, 40), tiles(59, 0, 1, 40),
-  // Pantry: 2-tile door opening at columns 15-16.
-  tiles(17, 1, 1, 13), tiles(1, 13, 14, 1),
-  // Meeting room: 3-tile door opening at columns 28-30.
-  tiles(18, 1, 1, 13), tiles(41, 1, 1, 13), tiles(18, 13, 10, 1), tiles(31, 13, 11, 1),
-  // Entrance/elevator: 3-tile exit opening at columns 50-52.
-  tiles(42, 1, 1, 13), tiles(42, 13, 8, 1), tiles(53, 13, 6, 1),
-  // Representative room: 2-tile left-side door opening at rows 28-29.
-  tiles(45, 25, 14, 1), tiles(45, 25, 1, 3), tiles(45, 30, 1, 9)
+  // Pantry: widened 4-tile opening at columns 14-17.
+  tiles(17, 1, 1, 13), tiles(1, 13, 13, 1),
+  // Meeting room: widened 5-tile opening at columns 27-31.
+  tiles(18, 1, 1, 13), tiles(41, 1, 1, 13), tiles(18, 13, 9, 1), tiles(32, 13, 10, 1),
+  // Entrance/elevator: keep the side divider only; the lower corridor wall is fully open.
+  tiles(42, 1, 1, 13),
+  // Representative room: closed left side and a 4-tile opening in the top wall.
+  tiles(45, 25, 5, 1), tiles(54, 25, 5, 1), tiles(45, 25, 1, 14)
 ]
 
 export const OFFICE_FLOOR_REGION = { x: 480, y: 320, width: 928, height: 608 }
