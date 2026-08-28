@@ -8,7 +8,7 @@
 pixel-office/
 ├─ characters/   캐릭터 원본 및 애니메이션 시트
 ├─ furniture/    독립 투명 PNG 가구
-│  └─ directional/ 12종 × 정면·오른쪽·뒷면·왼쪽 방향 PNG
+│  └─ directional/ 13종 × 정면·오른쪽·뒷면·왼쪽 방향 PNG
 ├─ floors/       64×64 무봉제 바닥 타일
 └─ archive/      런타임에서 제외된 교체 전 원본
 ```
@@ -33,7 +33,8 @@ pixel-office/
 | `refrigerator-v2.png` | 정면형 탕비실 냉장고 | 4×8 |
 | `pantry-cabinet-v1.png` | 탕비실 수납장 | 8×4 |
 | `presentation-screen-v1.png` | 회의실 화면 | 10×2 |
-| `conference-table-v1.png` | 회의 테이블과 좌석 세트 | 24×12 |
+| `long-table-v1.png` | 독립형 긴 회의 테이블 | 16×6 |
+| `laptop-v1.png` | 테이블 위 배치 가능한 비충돌 노트북 | 3×2 |
 | `workstation-desk-v1.png` | 팀/대표 업무 책상 | 12×6 |
 | `office-chair-v2.png` | 정면형 사무용 의자 | 4×4 |
 | `office-plant-v1.png` | 실내 화분 | 2×4 |
@@ -60,3 +61,4 @@ pixel-office/
 - 삭제되거나 대체된 에셋은 코드 참조와 카탈로그에서 동시에 제거한다.
 - 업무 상태는 캐릭터·의자·책상을 런타임에 합성하며, 가구가 포함된 캐릭터 프레임을 사용하지 않는다.
 - 방향 전환은 `directional/<asset>-{front|right|back|left}-v1.png` 텍스처 교체로 표현한다.
+- 노트북은 테이블과 겹쳐 배치할 수 있는 비충돌 소품이며, 긴 회의 테이블은 일반 충돌 가구다.

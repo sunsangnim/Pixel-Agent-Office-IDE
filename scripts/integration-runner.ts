@@ -226,7 +226,7 @@ function verifyLivingOfficeAndRoster(): void {
   }
   const furnitureDirectory = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'furniture')
   const furnitureAssets = fs.readdirSync(furnitureDirectory).filter((file) => file.endsWith('.png'))
-  assert.equal(furnitureAssets.length, 12)
+  assert.equal(furnitureAssets.length, 13)
   furnitureAssets.forEach((file) => {
     const furniture = PNG.sync.read(fs.readFileSync(path.join(furnitureDirectory, file)))
     assert.ok(furniture.width >= 32 && furniture.height >= 32)
@@ -241,9 +241,9 @@ function verifyLivingOfficeAndRoster(): void {
   })
   const directionalFurnitureDirectory = path.join(furnitureDirectory, 'directional')
   const directionalFurnitureAssets = fs.readdirSync(directionalFurnitureDirectory).filter((file) => file.endsWith('.png'))
-  assert.equal(directionalFurnitureAssets.length, 48)
+  assert.equal(directionalFurnitureAssets.length, 52)
   for (const direction of ['front', 'right', 'back', 'left']) {
-    assert.equal(directionalFurnitureAssets.filter((file) => file.includes(`-${direction}-v1.png`)).length, 12)
+    assert.equal(directionalFurnitureAssets.filter((file) => file.includes(`-${direction}-v1.png`)).length, 13)
   }
   directionalFurnitureAssets.forEach((file) => {
     const furniture = PNG.sync.read(fs.readFileSync(path.join(directionalFurnitureDirectory, file)))

@@ -12,7 +12,8 @@ import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-
 import refrigeratorAsset from '../assets/pixel-office/furniture/refrigerator-v2.png'
 import pantryCabinetAsset from '../assets/pixel-office/furniture/pantry-cabinet-v1.png'
 import presentationScreenAsset from '../assets/pixel-office/furniture/presentation-screen-v1.png'
-import conferenceTableAsset from '../assets/pixel-office/furniture/conference-table-v1.png'
+import longTableAsset from '../assets/pixel-office/furniture/long-table-v1.png'
+import laptopAsset from '../assets/pixel-office/furniture/laptop-v1.png'
 import workstationDeskAsset from '../assets/pixel-office/furniture/workstation-desk-v1.png'
 import officeChairAsset from '../assets/pixel-office/furniture/office-chair-v2.png'
 import officePlantAsset from '../assets/pixel-office/furniture/office-plant-v1.png'
@@ -76,18 +77,19 @@ export const OFFICE_ACTOR_SELECT_EVENT = 'office:actor-select'
 
 const FURNITURE_TEXTURES: Record<number, string> = {
   0: 'furniture-coffee-machine', 1: 'furniture-refrigerator', 2: 'furniture-pantry-cabinet',
-  5: 'furniture-presentation-screen', 6: 'furniture-conference-table', 10: 'furniture-workstation-desk',
+  5: 'furniture-presentation-screen', 6: 'furniture-long-table', 7: 'furniture-laptop', 10: 'furniture-workstation-desk',
   12: 'furniture-office-chair', 13: 'furniture-office-chair', 14: 'furniture-office-chair',
   15: 'furniture-office-plant', 16: 'furniture-side-table', 17: 'furniture-office-sofa',
   18: 'furniture-floor-lamp', 19: 'furniture-bookcase'
 }
 const FURNITURE_ASSET_NAMES: Record<number, string> = {
   0: 'coffee-machine', 1: 'refrigerator', 2: 'pantry-cabinet', 5: 'presentation-screen',
-  6: 'conference-table', 10: 'workstation-desk', 12: 'office-chair', 13: 'office-chair',
+  6: 'long-table', 7: 'laptop', 10: 'workstation-desk', 12: 'office-chair', 13: 'office-chair',
   14: 'office-chair', 15: 'office-plant', 16: 'side-table', 17: 'office-sofa',
   18: 'floor-lamp', 19: 'bookcase'
 }
 const FURNITURE_DIRECTIONS = ['front', 'right', 'back', 'left'] as const
+const STACKABLE_FURNITURE_FRAMES = new Set([7])
 type FurnitureDirection = typeof FURNITURE_DIRECTIONS[number]
 const directionalFurnitureAssets = import.meta.glob('../assets/pixel-office/furniture/directional/*.png', {
   eager: true, query: '?url', import: 'default'
@@ -139,7 +141,8 @@ export class OfficeScene extends Phaser.Scene {
     const furnitureAssets: Array<[string, string]> = [
       ['furniture-coffee-machine', coffeeMachineAsset], ['furniture-refrigerator', refrigeratorAsset],
       ['furniture-pantry-cabinet', pantryCabinetAsset], ['furniture-presentation-screen', presentationScreenAsset],
-      ['furniture-conference-table', conferenceTableAsset], ['furniture-workstation-desk', workstationDeskAsset],
+      ['furniture-long-table', longTableAsset], ['furniture-laptop', laptopAsset],
+      ['furniture-workstation-desk', workstationDeskAsset],
       ['furniture-office-chair', officeChairAsset], ['furniture-office-plant', officePlantAsset],
       ['furniture-side-table', sideTableAsset], ['furniture-office-sofa', officeSofaAsset],
       ['furniture-floor-lamp', floorLampAsset], ['furniture-bookcase', bookcaseAsset]
@@ -258,7 +261,7 @@ export class OfficeScene extends Phaser.Scene {
       tile.on('pointerdown', () => this.setFloorTexture(texture))
       this.editorUi.push(tile)
     })
-    const frames = [0, 1, 2, 5, 6, 10, 12, 15, 16, 17, 18, 19]
+    const frames = [0, 1, 2, 5, 6, 7, 10, 12, 15, 16, 17, 18, 19]
     frames.forEach((frame, index) => {
       const x = 285 + index * 38
       const icon = this.add.image(x, 610, FURNITURE_TEXTURES[frame])
@@ -420,15 +423,18 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private collisionRects(): CollisionRect[] {
-    const furnitureRects = [...this.furniture.values()].map(({ frame, image }) =>
-      furnitureCollision({ x: image.x, y: image.y }, rotatedFootprint(frame, this.furnitureRotation(image))))
+    const furnitureRects = [...this.furniture.values()]
+      .filter(({ frame }) => !STACKABLE_FURNITURE_FRAMES.has(frame))
+      .map(({ frame, image }) =>
+        furnitureCollision({ x: image.x, y: image.y }, rotatedFootprint(frame, this.furnitureRotation(image))))
     return [...OFFICE_WALL_COLLISIONS, ...furnitureRects]
   }
 
   private furniturePlacementCollides(id: string, frame: number, point: WorldPoint, angle: number): boolean {
     const candidate = furnitureCollision(point, rotatedFootprint(frame, angle))
     if (OFFICE_WALL_COLLISIONS.some((wall) => intersectsAabb(candidate, wall))) return true
-    return [...this.furniture.values()].some((other) => other.id !== id && intersectsAabb(
+    if (STACKABLE_FURNITURE_FRAMES.has(frame)) return false
+    return [...this.furniture.values()].some((other) => other.id !== id && !STACKABLE_FURNITURE_FRAMES.has(other.frame) && intersectsAabb(
       candidate,
       furnitureCollision(other.image, rotatedFootprint(other.frame, this.furnitureRotation(other.image)))
     ))
@@ -521,7 +527,8 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createMeetingRoom(): void {
-    this.addFurniture('meeting-table', 6, 480, 128, 270, 118, 80)
+    this.addFurniture('meeting-table', 6, 480, 128, 256, 96, 80)
+    this.addFurniture('meeting-laptop', 7, 480, 132, 48, 32, 150)
     this.addFurniture('meeting-screen', 5, 480, 52, 135, 48, 35)
     this.createDoor('meeting', WAYPOINTS.meetingDoor.x, 200, 36, 46)
   }
