@@ -69,11 +69,34 @@ function windowPanel(width = 64, height = 64) {
   return target
 }
 
+function panoramicWindow(width = 64, height = 64) {
+  const target = image(width, height)
+  // Seamless glass: only continuous ceiling/floor rails, no repeated mullions.
+  rect(target, 0, 0, width, height, palette.glassShadow)
+  rect(target, 0, 6, width, height - 16, palette.glass)
+  rect(target, 0, 0, width, 3, palette.tealDark)
+  rect(target, 0, 3, width, 3, palette.teal)
+  line(target, 0, 6, width, palette.glassLight)
+  line(target, 0, height - 11, width, palette.glassLight)
+  rect(target, 0, height - 10, width, 3, palette.ivoryLight)
+  rect(target, 0, height - 7, width, 2, palette.ivoryShadow)
+  rect(target, 0, height - 5, width, 3, palette.walnutLight)
+  rect(target, 0, height - 2, width, 2, palette.walnut)
+  // Reflections cross tile edges so adjacent modules read as one glass wall.
+  for (let y = 10; y < height - 15; y += 1) {
+    for (const offset of [-48, 16, 80]) {
+      const x = offset + y
+      for (let thickness = 0; thickness < 4; thickness += 1) pixel(target, x + thickness, y, palette.glassLight)
+    }
+  }
+  return target
+}
+
 fs.mkdirSync(outputDirectory, { recursive: true })
 const outputs = {
   'wall-horizontal-v1.png': horizontalWall(),
   'wall-vertical-v1.png': verticalWall(),
-  'window-wide-v1.png': windowPanel(64, 64),
+  'window-wide-v1.png': panoramicWindow(64, 64),
   'window-narrow-v1.png': windowPanel(42, 92)
 }
 for (const [name, target] of Object.entries(outputs)) {
