@@ -8,6 +8,7 @@
 pixel-office/
 ├─ characters/   캐릭터 원본 및 애니메이션 시트
 ├─ furniture/    독립 투명 PNG 가구
+│  └─ directional/ 12종 × 정면·오른쪽·뒷면·왼쪽 방향 PNG
 ├─ floors/       64×64 무봉제 바닥 타일
 └─ archive/      런타임에서 제외된 교체 전 원본
 ```
@@ -58,3 +59,4 @@ pixel-office/
 - 투명 가구 에셋은 모든 외곽 경계 픽셀이 투명해야 한다.
 - 삭제되거나 대체된 에셋은 코드 참조와 카탈로그에서 동시에 제거한다.
 - 업무 상태는 캐릭터·의자·책상을 런타임에 합성하며, 가구가 포함된 캐릭터 프레임을 사용하지 않는다.
+- 방향 전환은 `directional/<asset>-{front|right|back|left}-v1.png` 텍스처 교체로 표현한다.

@@ -91,3 +91,6 @@
 # Phase 46 — Front-facing assets and composed work interaction
 
 - [x] Replace diagonal furniture, compose work interactions, and add the professional office floor
+# Phase 48 — Directional furniture editing
+
+- [x] Use four-view assets for right-click rotation and red collision warnings

@@ -239,6 +239,20 @@ function verifyLivingOfficeAndRoster(): void {
       assert.equal(furniture.data[(y * furniture.width + furniture.width - 1) * 4 + 3], 0)
     }
   })
+  const directionalFurnitureDirectory = path.join(furnitureDirectory, 'directional')
+  const directionalFurnitureAssets = fs.readdirSync(directionalFurnitureDirectory).filter((file) => file.endsWith('.png'))
+  assert.equal(directionalFurnitureAssets.length, 48)
+  for (const direction of ['front', 'right', 'back', 'left']) {
+    assert.equal(directionalFurnitureAssets.filter((file) => file.includes(`-${direction}-v1.png`)).length, 12)
+  }
+  directionalFurnitureAssets.forEach((file) => {
+    const furniture = PNG.sync.read(fs.readFileSync(path.join(directionalFurnitureDirectory, file)))
+    assert.ok(furniture.width >= 32 && furniture.height >= 32)
+    assert.equal(furniture.data[3], 0)
+    assert.equal(furniture.data[(furniture.width - 1) * 4 + 3], 0)
+    assert.equal(furniture.data[((furniture.height - 1) * furniture.width) * 4 + 3], 0)
+    assert.equal(furniture.data[(furniture.width * furniture.height - 1) * 4 + 3], 0)
+  })
   const floorDirectory = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'floors')
   const floorAssets = fs.readdirSync(floorDirectory).filter((file) => file.endsWith('.png'))
   assert.equal(floorAssets.length, 5)
