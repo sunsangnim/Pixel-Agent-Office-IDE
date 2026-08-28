@@ -24,6 +24,8 @@ Claude Code, Codex CLI, Antigravity CLI를 픽셀 오피스 안의 팀으로 표
 - 오피스 외곽에서 8px 이상 안쪽에 고정된 대표실과 좌측 상단 문·중앙 데스크·하단 양쪽 인테리어
 - 충돌 화분을 제거한 `office-background-v3`와 회의실 원본 문 유지·탕비실 단독 복제 구조
 - `@` 입력 시 멤버 목록형 자동완성과 입력창 내부 멘션 칩
+- 평일 근무시간 자동 출근, 엘리베이터·탕비실·회의실 문 동작, 휴식·회의 체크포인트·업무 복귀를 포함한 생활형 오피스
+- 대표 1명, 세 팀 15명, 확장 슬롯 4명으로 구성된 20인 고유 회사원 픽셀 캐릭터 세트
 
 ## 실행
 
@@ -76,8 +78,10 @@ npm run build
 - `scripts` — 비용 없는 PTY 통합 테스트 하네스
 - `tasks` — 작업별 SRS·PRD·화면설계, PHASES, 최종 결과 문서
 
-전체 구현 이력은 [PHASES.md](./PHASES.md), 최종 통합 검증 결과는
-[tasks/phase-20-integration/README.md](./tasks/phase-20-integration/README.md)에서 확인할 수 있습니다.
+전체 구현 이력은 [PHASES.md](./PHASES.md)에서 확인할 수 있습니다. 생활형 오피스와 20인
+캐릭터 세트의 최종 검증 결과는 각각
+[Phase 37 결과](./tasks/phase-37-living-agent-office/README.md),
+[Phase 38 결과](./tasks/phase-38-corporate-character-roster/README.md)에 기록되어 있습니다.
 
 ## 현재 제한사항
 
