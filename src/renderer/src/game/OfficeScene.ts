@@ -28,6 +28,7 @@ import carpetFloorAsset from '../assets/pixel-office/floors/teal-carpet-v1.png'
 import officeCarpetFloorAsset from '../assets/pixel-office/floors/office-carpet-tile-v1.png'
 import wallHorizontalAsset from '../assets/pixel-office/architecture/wall-horizontal-v1.png'
 import wallVerticalAsset from '../assets/pixel-office/architecture/wall-vertical-v1.png'
+import wallSurfaceAsset from '../assets/pixel-office/architecture/wall-surface-v1.png'
 import windowWideAsset from '../assets/pixel-office/architecture/window-wide-v1.png'
 import windowNarrowAsset from '../assets/pixel-office/architecture/window-narrow-v1.png'
 import {
@@ -163,6 +164,7 @@ export class OfficeScene extends Phaser.Scene {
     this.load.image('floor-office-carpet', officeCarpetFloorAsset)
     this.load.image('architecture-wall-horizontal', wallHorizontalAsset)
     this.load.image('architecture-wall-vertical', wallVerticalAsset)
+    this.load.image('architecture-wall-surface', wallSurfaceAsset)
     this.load.image('architecture-window-wide', windowWideAsset)
     this.load.image('architecture-window-narrow', windowNarrowAsset)
   }
@@ -305,7 +307,7 @@ export class OfficeScene extends Phaser.Scene {
       this.add.tileSprite(x, 58, width, 64, 'architecture-window-wide').setDepth(12)
     }
     addWindowBand(144, 256)
-    addWindowBand(480, 352)
+    this.add.tileSprite(480, 58, 352, 64, 'architecture-wall-surface').setDepth(12)
     this.add.image(712, 92, 'architecture-window-narrow').setDisplaySize(42, 92).setDepth(12)
     this.add.image(880, 92, 'architecture-window-narrow').setDisplaySize(42, 92).setDepth(12)
     OFFICE_WALL_COLLISIONS.forEach((wall) => {

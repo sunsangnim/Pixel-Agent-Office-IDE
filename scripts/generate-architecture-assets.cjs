@@ -51,6 +51,22 @@ function verticalWall() {
   return target
 }
 
+function wallSurface(width = 64, height = 64) {
+  const target = image(width, height)
+  rect(target, 0, 0, width, height, palette.ivory)
+  rect(target, 0, 0, width, 4, palette.ivoryLight)
+  line(target, 0, 5, width, palette.walnutLight)
+  line(target, 0, 6, width, palette.walnut)
+  rect(target, 0, height - 13, width, 3, palette.tealLight)
+  rect(target, 0, height - 10, width, 7, palette.teal)
+  rect(target, 0, height - 3, width, 3, palette.tealDark)
+  for (let x = 9; x < width; x += 19) {
+    pixel(target, x, 21, palette.ivoryLight)
+    pixel(target, x + 1, 22, palette.ivoryShadow)
+  }
+  return target
+}
+
 function windowPanel(width = 64, height = 64) {
   const target = image(width, height)
   rect(target, 0, 0, width, height, palette.tealDark)
@@ -96,6 +112,7 @@ fs.mkdirSync(outputDirectory, { recursive: true })
 const outputs = {
   'wall-horizontal-v1.png': horizontalWall(),
   'wall-vertical-v1.png': verticalWall(),
+  'wall-surface-v1.png': wallSurface(),
   'window-wide-v1.png': panoramicWindow(64, 64),
   'window-narrow-v1.png': windowPanel(42, 92)
 }
