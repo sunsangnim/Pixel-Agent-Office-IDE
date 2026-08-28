@@ -198,6 +198,16 @@ function verifyLivingOfficeAndRoster(): void {
     }
     assert.ok(transparentPixels / (decoded.width * decoded.height) > 0.45)
   }
+  const architecture = PNG.sync.read(fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'office-architecture-background-v1.png')))
+  assert.ok(Math.abs(architecture.width / architecture.height - 1.5) < 0.01)
+  const furniture = PNG.sync.read(fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'office-furniture-atlas-v1.png')))
+  assert.ok(furniture.width / 5 >= 128)
+  assert.ok(furniture.height / 4 >= 128)
+  let furnitureTransparent = 0
+  for (let index = 3; index < furniture.data.length; index += 4) {
+    if (furniture.data[index] === 0) furnitureTransparent += 1
+  }
+  assert.ok(furnitureTransparent / (furniture.width * furniture.height) > 0.4)
   console.log('PASS living-office checkpoint policy and 20-character roster assets')
 }
 

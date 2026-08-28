@@ -8,6 +8,8 @@ import codexTeamAnimationAtlas from '../assets/pixel-office/codex-team-animation
 import antigravityTeamAnimationAtlas from '../assets/pixel-office/antigravity-team-animation-atlas-v1.png'
 import rosterRow4AnimationAtlas from '../assets/pixel-office/roster-row-4-animation-atlas-v1.png'
 import claudeTeamAnimationAtlas from '../assets/pixel-office/claude-team-animation-atlas-v1.png'
+import officeArchitectureBackground from '../assets/pixel-office/office-architecture-background-v1.png'
+import officeFurnitureAtlas from '../assets/pixel-office/office-furniture-atlas-v1.png'
 import {
   MEETING_SEATS,
   OFFICE_WORLD_HEIGHT,
@@ -65,11 +67,14 @@ export class OfficeScene extends Phaser.Scene {
     this.load.image('antigravity-team-animation-atlas', antigravityTeamAnimationAtlas)
     this.load.image('roster-row-4-animation-atlas', rosterRow4AnimationAtlas)
     this.load.image('claude-team-animation-atlas', claudeTeamAnimationAtlas)
+    this.load.image('office-architecture-background', officeArchitectureBackground)
+    this.load.image('office-furniture-atlas', officeFurnitureAtlas)
   }
 
   create(): void {
     this.worldSave = parseOfficeWorldSave(localStorage.getItem(OFFICE_WORLD_SAVE_KEY))
     this.cameras.main.setBackgroundColor('#17221f')
+    this.createFurnitureFrames()
     this.createWorld()
     this.createRosterFrames()
     this.createTeamAnimations()
@@ -87,11 +92,9 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createWorld(): void {
-    const graphics = this.add.graphics()
-    graphics.fillStyle(0xa9d7c7).fillRect(0, 0, OFFICE_WORLD_WIDTH, OFFICE_WORLD_HEIGHT)
-    graphics.lineStyle(2, 0x86b8aa, 0.42)
-    for (let x = 0; x <= OFFICE_WORLD_WIDTH; x += 16) graphics.lineBetween(x, 0, x, OFFICE_WORLD_HEIGHT)
-    for (let y = 0; y <= OFFICE_WORLD_HEIGHT; y += 16) graphics.lineBetween(0, y, OFFICE_WORLD_WIDTH, y)
+    this.add.image(OFFICE_WORLD_WIDTH / 2, OFFICE_WORLD_HEIGHT / 2, 'office-architecture-background')
+      .setDisplaySize(OFFICE_WORLD_WIDTH, OFFICE_WORLD_HEIGHT)
+      .setDepth(0)
 
     this.createRoom(8, 8, 280, 205, '탕비실')
     this.createRoom(296, 8, 370, 205, '회의실')
@@ -105,9 +108,25 @@ export class OfficeScene extends Phaser.Scene {
     this.createDesks()
   }
 
+  private createFurnitureFrames(): void {
+    const texture = this.textures.get('office-furniture-atlas')
+    const source = texture.getSourceImage() as HTMLImageElement
+    const frameWidth = Math.floor(source.width / 5)
+    const frameHeight = Math.floor(source.height / 4)
+    for (let row = 0; row < 4; row += 1) {
+      for (let column = 0; column < 5; column += 1) {
+        texture.add(`furniture-${row * 5 + column}`, 0, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
+      }
+    }
+  }
+
+  private addFurniture(frame: number, x: number, y: number, width: number, height: number, depth = y): Phaser.GameObjects.Image {
+    return this.add.image(x, y, 'office-furniture-atlas', `furniture-${frame}`)
+      .setDisplaySize(width, height)
+      .setDepth(depth)
+  }
+
   private createRoom(x: number, y: number, width: number, height: number, label: string): void {
-    this.add.rectangle(x + width / 2, y + height / 2, width, height, 0xd5ebe4, 0.72)
-      .setStrokeStyle(5, 0x587a71).setDepth(5)
     this.add.text(x + 10, y + 8, label, {
       fontFamily: 'monospace', fontSize: '12px', color: '#17362e', backgroundColor: '#dff3ed'
     }).setPadding(4, 2).setDepth(800)
@@ -143,43 +162,37 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createPantry(): void {
-    this.add.rectangle(65, 100, 72, 58, 0xc6d2d0).setStrokeStyle(3, 0x5f726d).setDepth(20)
-    this.add.rectangle(145, 76, 45, 90, 0xb7c7c8).setStrokeStyle(3, 0x657679).setDepth(20)
-    this.add.rectangle(220, 105, 70, 45, 0x9c6843).setStrokeStyle(3, 0x65432f).setDepth(20)
-    this.add.text(45, 92, 'COFFEE', { fontFamily: 'monospace', fontSize: '9px', color: '#385a50' }).setDepth(21)
+    this.addFurniture(0, 65, 105, 70, 82, 40)
+    this.addFurniture(1, 145, 98, 62, 105, 40)
+    this.addFurniture(2, 220, 108, 105, 70, 40)
     this.createDoor('pantry', WAYPOINTS.pantryDoor.x, 200, 34, 46)
   }
 
   private createMeetingRoom(): void {
-    this.add.rectangle(480, 128, 245, 58, 0xa97043).setStrokeStyle(4, 0x69442e).setDepth(20)
-    MEETING_SEATS.forEach((seat) => {
-      this.add.rectangle(seat.x, seat.y, 24, 14, 0x52656a).setStrokeStyle(2, 0x2e4145).setDepth(seat.y - 1)
-    })
-    this.add.rectangle(480, 45, 125, 42, 0x26343a).setStrokeStyle(4, 0x60747b).setDepth(20)
+    this.addFurniture(6, 480, 128, 270, 118, 80)
+    this.addFurniture(5, 480, 52, 135, 48, 35)
     this.createDoor('meeting', WAYPOINTS.meetingDoor.x, 200, 36, 46)
   }
 
   private createEntrance(): void {
     this.createDoor('elevator', WAYPOINTS.elevatorInside.x, 94, 84, 112)
-    this.add.rectangle(735, 115, 34, 68, 0x567d55).setStrokeStyle(3, 0x31533a).setDepth(40)
-    this.add.rectangle(905, 115, 34, 68, 0x567d55).setStrokeStyle(3, 0x31533a).setDepth(40)
+    this.addFurniture(15, 735, 125, 45, 70, 40)
+    this.addFurniture(15, 905, 125, 45, 70, 40)
   }
 
   private createRepresentativeRoom(): void {
-    this.add.rectangle(760, 580, 40, 62, 0x3f7e4d).setStrokeStyle(3, 0x285235).setDepth(580)
-    this.add.rectangle(805, 592, 44, 32, 0x8c5f3c).setStrokeStyle(3, 0x593b2b).setDepth(592)
-    this.add.rectangle(895, 455, 92, 38, 0x455568).setStrokeStyle(3, 0x293744).setDepth(455)
-    this.add.rectangle(842, 455, 18, 52, 0xd5b858).setStrokeStyle(2, 0x745e2d).setDepth(455)
-    this.add.rectangle(912, 568, 34, 78, 0x7b4d31).setStrokeStyle(3, 0x493020).setDepth(568)
-    this.add.rectangle(835, 515, 92, 42, 0xa97043).setStrokeStyle(3, 0x65432f).setDepth(515)
+    this.addFurniture(15, 760, 580, 48, 70, 580)
+    this.addFurniture(16, 805, 592, 48, 42, 592)
+    this.addFurniture(17, 895, 455, 82, 48, 455)
+    this.addFurniture(18, 842, 455, 32, 62, 455)
+    this.addFurniture(19, 912, 568, 48, 86, 568)
+    this.addFurniture(10, 835, 515, 100, 58, 515)
   }
 
   private createDesks(): void {
-    const colors = [0x9b6c50, 0x4c827b, 0x6e5a91]
     TEAM_DESKS.forEach((team, teamIndex) => team.forEach((point, slotIndex) => {
-      this.add.rectangle(point.x, point.y + 16, 86, 26, 0xc18b59).setStrokeStyle(3, 0x765238).setDepth(point.y + 5)
-      this.add.rectangle(point.x, point.y - 1, 31, 23, 0x42545a).setStrokeStyle(3, 0x26363a).setDepth(point.y)
-      this.add.rectangle(point.x, point.y + 35, 28, 14, colors[teamIndex]).setStrokeStyle(2, 0x34413e).setDepth(point.y + 45)
+      this.addFurniture(10, point.x, point.y + 12, 92, 58, point.y + 5)
+      this.addFurniture(12 + teamIndex, point.x, point.y + 38, 38, 42, point.y + 45)
       if (slotIndex === 0) this.add.text(point.x - 36, point.y - 45, ['Claude', 'Codex', 'Antigravity'][teamIndex], {
         fontFamily: 'monospace', fontSize: '10px', color: '#24473e'
       }).setDepth(700)
