@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import Phaser from 'phaser'
-import { OFFICE_ACTOR_SELECT_EVENT, OFFICE_SCENE_KEY, OfficeScene } from '../game/OfficeScene'
+import { OfficeScene } from '../game/OfficeScene'
 import { OFFICE_WORLD_HEIGHT, OFFICE_WORLD_WIDTH, type OfficeWorldSnapshot } from '../game/officeWorld'
 
 interface PhaserOfficeProps {
@@ -19,9 +19,9 @@ function PhaserOffice({ snapshot, onActorSelect }: PhaserOfficeProps) {
     if (!hostRef.current || gameRef.current) return
     const scene = new OfficeScene()
     sceneRef.current = scene
-    scene.events.on(OFFICE_ACTOR_SELECT_EVENT, (profileId: string) => selectRef.current(profileId))
+    scene.setActorSelectHandler((profileId: string) => selectRef.current(profileId))
     const game = new Phaser.Game({
-      type: Phaser.AUTO,
+      type: Phaser.CANVAS,
       parent: hostRef.current,
       width: OFFICE_WORLD_WIDTH,
       height: OFFICE_WORLD_HEIGHT,
@@ -35,7 +35,7 @@ function PhaserOffice({ snapshot, onActorSelect }: PhaserOfficeProps) {
     })
     gameRef.current = game
     return () => {
-      scene.events.removeAllListeners(OFFICE_ACTOR_SELECT_EVENT)
+      scene.setActorSelectHandler(null)
       game.destroy(true)
       gameRef.current = null
       sceneRef.current = null
@@ -45,8 +45,7 @@ function PhaserOffice({ snapshot, onActorSelect }: PhaserOfficeProps) {
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
-    const activeScene = gameRef.current?.scene.getScene(OFFICE_SCENE_KEY) as OfficeScene | undefined
-    ;(activeScene ?? scene).updateSnapshot(snapshot)
+    scene.updateSnapshot(snapshot)
   }, [snapshot])
 
   return <div className="phaser-office-host" ref={hostRef} aria-label="Phaser 생활형 에이전트 오피스" />

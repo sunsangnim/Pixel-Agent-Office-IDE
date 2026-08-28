@@ -3,6 +3,7 @@ import row1 from '../assets/pixel-office/corporate-roster-row-1-v1.png'
 import row2 from '../assets/pixel-office/corporate-roster-row-2-v1.png'
 import row3 from '../assets/pixel-office/corporate-roster-row-3-v1.png'
 import row4 from '../assets/pixel-office/corporate-roster-row-4-v1.png'
+import ceoAnimationSheet from '../assets/pixel-office/ceo-animation-sheet-v2.png'
 import {
   MEETING_SEATS,
   OFFICE_WORLD_HEIGHT,
@@ -42,13 +43,19 @@ export class OfficeScene extends Phaser.Scene {
   private pendingSnapshot: OfficeWorldSnapshot | null = null
   private doors = new Map<string, DoorView>()
   private worldSave: OfficeWorldSave = { version: 1, actors: [] }
+  private actorSelectHandler: ((profileId: string) => void) | null = null
 
   constructor() {
     super(OFFICE_SCENE_KEY)
   }
 
+  setActorSelectHandler(handler: ((profileId: string) => void) | null): void {
+    this.actorSelectHandler = handler
+  }
+
   preload(): void {
     ;[row1, row2, row3, row4].forEach((url, index) => this.load.image(`roster-row-${index}`, url))
+    this.load.image('ceo-animation-sheet', ceoAnimationSheet)
   }
 
   create(): void {
@@ -56,12 +63,13 @@ export class OfficeScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#17221f')
     this.createWorld()
     this.createRosterFrames()
+    this.createCeoAnimations()
     this.createRepresentativeActor()
     if (this.pendingSnapshot) this.applySnapshot(this.pendingSnapshot)
   }
 
   updateSnapshot(snapshot: OfficeWorldSnapshot): void {
-    if (!this.scene.isActive()) {
+    if (!this.sys || !this.sys.isActive()) {
       this.pendingSnapshot = snapshot
       return
     }
@@ -180,11 +188,33 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createRepresentativeActor(): void {
-    const sprite = this.add.sprite(835, 478, 'roster-row-0', '0').setDisplaySize(52, 70).setDepth(490)
+    const sprite = this.add.sprite(835, 478, 'ceo-animation-sheet', 'ceo-work-0').setDisplaySize(94, 78).setDepth(490)
+    sprite.play('ceo-work')
     this.add.text(835, 505, '김태호 대표', {
       fontFamily: 'monospace', fontSize: '8px', color: '#17362e', backgroundColor: '#e7f3ef'
     }).setOrigin(0.5, 0).setPadding(2, 1).setDepth(700)
-    this.tweens.add({ targets: sprite, y: 476, duration: 700, yoyo: true, repeat: -1, ease: 'Stepped', easeParams: [2] })
+  }
+
+  private createCeoAnimations(): void {
+    const texture = this.textures.get('ceo-animation-sheet')
+    const source = texture.getSourceImage() as HTMLImageElement
+    const frameWidth = Math.floor(source.width / 8)
+    const frameHeight = Math.floor(source.height / 6)
+    const rowNames = ['idle', 'walk-down', 'walk-up', 'walk-left', 'work', 'interact']
+    rowNames.forEach((name, row) => {
+      const frames: string[] = []
+      for (let column = 0; column < 8; column += 1) {
+        const frameName = `ceo-${name}-${column}`
+        texture.add(frameName, 0, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
+        frames.push(frameName)
+      }
+      this.anims.create({
+        key: `ceo-${name}`,
+        frames: frames.map((frame) => ({ key: 'ceo-animation-sheet', frame })),
+        frameRate: name === 'idle' ? 4 : 8,
+        repeat: name === 'interact' ? 0 : -1
+      })
+    })
   }
 
   private applySnapshot(snapshot: OfficeWorldSnapshot): void {
@@ -216,7 +246,7 @@ export class OfficeScene extends Phaser.Scene {
     const frame = String(actor.rosterIndex)
     const sprite = this.add.sprite(0, -27, `roster-row-${row}`, frame).setDisplaySize(50, 68)
     sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
-      this.events.emit(OFFICE_ACTOR_SELECT_EVENT, actor.profileId)
+      this.actorSelectHandler?.(actor.profileId)
     })
     const label = this.add.text(0, 16, actor.displayName, {
       fontFamily: 'monospace', fontSize: '8px', color: '#18352e', backgroundColor: '#e7f3ef'

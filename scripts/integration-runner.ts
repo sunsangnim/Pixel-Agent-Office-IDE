@@ -169,6 +169,11 @@ function verifyLivingOfficeAndRoster(): void {
   })
   assert.equal(parseOfficeWorldSave(JSON.stringify(savedWorld)).actors[0].x, 32)
   assert.deepEqual(parseOfficeWorldSave('broken'), { version: 1, actors: [] })
+  const ceoSheet = fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'ceo-animation-sheet-v2.png'))
+  assert.equal(ceoSheet.toString('ascii', 1, 4), 'PNG')
+  assert.ok(ceoSheet.readUInt32BE(16) / 8 >= 48)
+  assert.ok(ceoSheet.readUInt32BE(20) / 6 >= 64)
+  assert.ok(ceoSheet[25] === 4 || ceoSheet[25] === 6 || ceoSheet.includes(Buffer.from('tRNS')))
   console.log('PASS living-office checkpoint policy and 20-character roster assets')
 }
 
