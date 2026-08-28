@@ -67,6 +67,36 @@ function wallSurface(width = 64, height = 64) {
   return target
 }
 
+function horizontalGlassWall() {
+  const target = image(64, 16)
+  rect(target, 0, 0, 64, 16, [111, 190, 187, 150])
+  rect(target, 0, 0, 64, 3, palette.tealDark)
+  line(target, 0, 3, 64, palette.tealLight)
+  line(target, 0, 6, 64, [214, 245, 232, 205])
+  line(target, 0, 12, 64, [185, 229, 217, 190])
+  rect(target, 0, 13, 64, 3, palette.tealDark)
+  for (let x = 11; x < 64; x += 24) {
+    pixel(target, x, 8, [225, 250, 238, 220])
+    pixel(target, x + 1, 9, [225, 250, 238, 180])
+  }
+  return target
+}
+
+function verticalGlassWall() {
+  const target = image(16, 64)
+  rect(target, 0, 0, 16, 64, [111, 190, 187, 150])
+  rect(target, 0, 0, 3, 64, palette.tealDark)
+  line(target, 3, 0, 64, palette.tealLight, true)
+  line(target, 6, 0, 64, [214, 245, 232, 205], true)
+  line(target, 12, 0, 64, [185, 229, 217, 190], true)
+  rect(target, 13, 0, 3, 64, palette.tealDark)
+  for (let y = 11; y < 64; y += 24) {
+    pixel(target, 8, y, [225, 250, 238, 220])
+    pixel(target, 9, y + 1, [225, 250, 238, 180])
+  }
+  return target
+}
+
 function windowPanel(width = 64, height = 64) {
   const target = image(width, height)
   rect(target, 0, 0, width, height, palette.tealDark)
@@ -113,6 +143,8 @@ const outputs = {
   'wall-horizontal-v1.png': horizontalWall(),
   'wall-vertical-v1.png': verticalWall(),
   'wall-surface-v1.png': wallSurface(),
+  'glass-wall-horizontal-v1.png': horizontalGlassWall(),
+  'glass-wall-vertical-v1.png': verticalGlassWall(),
   'window-wide-v1.png': panoramicWindow(64, 64),
   'window-narrow-v1.png': windowPanel(42, 92)
 }

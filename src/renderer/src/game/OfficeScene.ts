@@ -29,8 +29,8 @@ import officeCarpetFloorAsset from '../assets/pixel-office/floors/office-carpet-
 import wallHorizontalAsset from '../assets/pixel-office/architecture/wall-horizontal-v1.png'
 import wallVerticalAsset from '../assets/pixel-office/architecture/wall-vertical-v1.png'
 import wallSurfaceAsset from '../assets/pixel-office/architecture/wall-surface-v1.png'
-import windowWideAsset from '../assets/pixel-office/architecture/window-wide-v1.png'
-import windowNarrowAsset from '../assets/pixel-office/architecture/window-narrow-v1.png'
+import glassWallHorizontalAsset from '../assets/pixel-office/architecture/glass-wall-horizontal-v1.png'
+import glassWallVerticalAsset from '../assets/pixel-office/architecture/glass-wall-vertical-v1.png'
 import {
   MEETING_SEATS,
   OFFICE_WORLD_HEIGHT,
@@ -165,8 +165,8 @@ export class OfficeScene extends Phaser.Scene {
     this.load.image('architecture-wall-horizontal', wallHorizontalAsset)
     this.load.image('architecture-wall-vertical', wallVerticalAsset)
     this.load.image('architecture-wall-surface', wallSurfaceAsset)
-    this.load.image('architecture-window-wide', windowWideAsset)
-    this.load.image('architecture-window-narrow', windowNarrowAsset)
+    this.load.image('architecture-glass-wall-horizontal', glassWallHorizontalAsset)
+    this.load.image('architecture-glass-wall-vertical', glassWallVerticalAsset)
   }
 
   create(): void {
@@ -303,18 +303,19 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createHardcodedArchitecture(): void {
-    const addWindowBand = (x: number, width: number): void => {
-      this.add.tileSprite(x, 58, width, 64, 'architecture-window-wide').setDepth(12)
-    }
-    addWindowBand(144, 256)
+    // The north-facing room backs are part of the opaque exterior shell.
+    this.add.tileSprite(144, 58, 256, 64, 'architecture-wall-surface').setDepth(12)
     this.add.tileSprite(480, 58, 352, 64, 'architecture-wall-surface').setDepth(12)
-    this.add.image(712, 92, 'architecture-window-narrow').setDisplaySize(42, 92).setDepth(12)
-    this.add.image(880, 92, 'architecture-window-narrow').setDisplaySize(42, 92).setDepth(12)
+    this.add.tileSprite(808, 58, 272, 64, 'architecture-wall-surface').setDepth(12)
     OFFICE_WALL_COLLISIONS.forEach((wall) => {
       const horizontal = wall.width >= wall.height
+      const perimeter = wall.x === 0 || wall.y === 0 ||
+        wall.x + wall.width === OFFICE_WORLD_WIDTH || wall.y + wall.height === OFFICE_WORLD_HEIGHT
+      const texture = perimeter
+        ? (horizontal ? 'architecture-wall-horizontal' : 'architecture-wall-vertical')
+        : (horizontal ? 'architecture-glass-wall-horizontal' : 'architecture-glass-wall-vertical')
       this.add.tileSprite(
-        wall.x, wall.y, wall.width, wall.height,
-        horizontal ? 'architecture-wall-horizontal' : 'architecture-wall-vertical'
+        wall.x, wall.y, wall.width, wall.height, texture
       ).setOrigin(0).setDepth(20)
     })
   }
