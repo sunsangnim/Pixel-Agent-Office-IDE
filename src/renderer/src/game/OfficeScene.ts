@@ -282,7 +282,11 @@ export class OfficeScene extends Phaser.Scene {
 
   private createFloorLayers(): void {
     const region = OFFICE_FLOOR_REGION
-    this.floorLayers = [this.add.tileSprite(region.x, region.y, region.width, region.height, this.selectedFloor).setDepth(1)]
+    this.floorLayers = [
+      this.add.tileSprite(region.x, region.y, region.width, region.height, this.selectedFloor)
+        .setTileScale(2)
+        .setDepth(1)
+    ]
   }
 
   private createHardcodedArchitecture(): void {
@@ -467,7 +471,11 @@ export class OfficeScene extends Phaser.Scene {
   private directionalFurnitureTexture(frame: number, angle: number): string {
     const assetName = FURNITURE_ASSET_NAMES[frame]
     if (!assetName) return FURNITURE_TEXTURES[frame] ?? 'furniture-workstation-desk'
-    return `furniture-directional-${assetName}-${this.furnitureDirection(angle)}`
+    const direction = this.furnitureDirection(angle)
+    // Keep the approved, independently cropped source asset for the default
+    // front view. Generated cardinal variants are only used after rotation.
+    if (direction === 'front') return FURNITURE_TEXTURES[frame] ?? 'furniture-workstation-desk'
+    return `furniture-directional-${assetName}-${direction}`
   }
 
   private createRoom(x: number, y: number, width: number, height: number, label: string): void {

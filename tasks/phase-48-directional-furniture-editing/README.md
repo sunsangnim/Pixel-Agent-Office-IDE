@@ -7,5 +7,7 @@ Furniture rotation uses four cardinal-view assets instead of rotating the bitmap
 - Right-clicking selected furniture cycles front, right, back, and left.
 - Rotation buttons and Q/E rotation shortcuts are absent.
 - Direction changes swap texture and footprint without applying image angle.
+- The front direction always uses the approved standalone source asset to prevent quadrant bleed or clipping.
+- Floor textures render at 2× tile scale to reduce high-frequency visual noise.
 - Wall/furniture overlap does not block editing and renders a red outline.
 - Leaving edit mode sanitizes invalid placements.
