@@ -39,9 +39,9 @@ export interface OfficeWorldSnapshot {
 // DEFAULT_LAYOUT_SEED (layoutPersistence.ts); these points are only the
 // desk-creation fallback and the pre-seating deskPoint() fallback.
 export const TEAM_DESKS: WorldPoint[][] = [
-  [{ x: 112, y: 308 }],
-  [{ x: 336, y: 308 }],
-  [{ x: 576, y: 308 }, { x: 864, y: 548 }]
+  [{ x: 112, y: 468 }],
+  [{ x: 320, y: 468 }],
+  [{ x: 560, y: 468 }, { x: 864, y: 852 }]
 ]
 
 /** Team columns have no drawn boundary, so desk-count reporting infers which
