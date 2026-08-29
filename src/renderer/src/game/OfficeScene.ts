@@ -194,9 +194,12 @@ export class OfficeScene extends Phaser.Scene {
   // selected piece's fixed offset from the dragged (leader) piece.
   private groupDragOffsets = new Map<string, WorldPoint>()
   private nextFurnitureId = 1
-  // Team-lead nameplates (desk-T-0 only), tracked so they follow the desk if
-  // it's later dragged instead of staying behind at its original spot.
+  // Team-lead nameplates (desk-T-0 only) - fixed floor zone markers, not
+  // tied to the desk's live position (see ensureDeskPair); tracked here only
+  // so a deleted desk's label gets cleaned up with it.
   private teamLabels = new Map<string, Phaser.GameObjects.Text>()
+  private representativeSprite?: Phaser.GameObjects.Sprite
+  private representativeLabel?: Phaser.GameObjects.Text
   // Persisted (not just in-memory) so whichever piece was placed/edited most
   // recently keeps rendering on top of anything it overlaps even after a
   // reload, instead of only for the rest of the current session.
@@ -326,6 +329,11 @@ export class OfficeScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     this.updateActorMovement(Math.min(delta, 50) / 1000)
     this.resolveActorOverlaps()
+    // Keep the nameplate centered above the CEO sprite's head, whatever
+    // moves it - it's static today, but this doesn't assume that.
+    if (this.representativeSprite && this.representativeLabel) {
+      this.representativeLabel.setPosition(this.representativeSprite.x, this.representativeSprite.y - 63)
+    }
   }
 
   updateSnapshot(snapshot: OfficeWorldSnapshot): void {
@@ -1093,9 +1101,10 @@ export class OfficeScene extends Phaser.Scene {
     // Static, not sprite.play('ceo-idle') - nothing drives this character's
     // state (no actual agent behind it), so it should hold still instead of
     // looping a breathing animation nobody asked for.
-    this.add.sprite(835, 811, 'ceo-animation-sheet', 'ceo-idle-0').setDisplaySize(104, 120).setDepth(810)
-    this.add.text(835, 748, '김태호 대표', {
-      fontFamily: '"Malgun Gothic", sans-serif', fontSize: '13px', color: '#111111'
+    this.representativeSprite = this.add.sprite(835, 811, 'ceo-animation-sheet', 'ceo-idle-0')
+      .setDisplaySize(104, 120).setDepth(810)
+    this.representativeLabel = this.add.text(835, 748, '김태호 대표', {
+      fontFamily: '"Malgun Gothic", sans-serif', fontSize: '13px', color: '#111111', align: 'center'
     }).setOrigin(0.5, 0).setDepth(700)
   }
 
