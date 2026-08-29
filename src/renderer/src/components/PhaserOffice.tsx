@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Phaser from 'phaser'
 import { OfficeScene } from '../game/OfficeScene'
 import { OFFICE_WORLD_HEIGHT, OFFICE_WORLD_WIDTH, type OfficeWorldSnapshot } from '../game/officeWorld'
+import LayoutEditorPanel from './LayoutEditorPanel'
 
 interface PhaserOfficeProps {
   snapshot: OfficeWorldSnapshot
@@ -18,6 +19,8 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
   selectRef.current = onActorSelect
   const deskCountsRef = useRef(onDeskCountsChange)
   deskCountsRef.current = onDeskCountsChange
+  const [scene, setScene] = useState<OfficeScene | null>(null)
+  const [editing, setEditing] = useState(false)
 
   useEffect(() => {
     if (!hostRef.current || gameRef.current) return
@@ -39,11 +42,14 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
       scene
     })
     const handleLayoutEditing = (event: Event): void => {
-      scene.setLayoutEditing(Boolean((event as CustomEvent<{ editing: boolean }>).detail?.editing))
+      const nextEditing = Boolean((event as CustomEvent<{ editing: boolean }>).detail?.editing)
+      scene.setLayoutEditing(nextEditing)
+      setEditing(nextEditing)
     }
     window.addEventListener('office:layout-edit', handleLayoutEditing)
     scene.setLayoutEditing(false)
     gameRef.current = game
+    setScene(scene)
     return () => {
       window.removeEventListener('office:layout-edit', handleLayoutEditing)
       scene.setActorSelectHandler(null)
@@ -51,6 +57,7 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
       game.destroy(true)
       gameRef.current = null
       sceneRef.current = null
+      setScene(null)
     }
   }, [])
 
@@ -64,7 +71,12 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
     sceneRef.current?.setTeamTemplateIds(teamTemplateIds)
   }, [teamTemplateIds])
 
-  return <div className="phaser-office-host" ref={hostRef} aria-label="Phaser 생활형 에이전트 오피스" />
+  return (
+    <div className="phaser-office-wrap">
+      <div className="phaser-office-host" ref={hostRef} aria-label="Phaser 생활형 에이전트 오피스" />
+      {editing && <LayoutEditorPanel scene={scene} />}
+    </div>
+  )
 }
 
 export default PhaserOffice

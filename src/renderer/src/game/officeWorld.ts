@@ -26,23 +26,25 @@ export interface OfficeWorldSnapshot {
   actors: OfficeGameActor[]
 }
 
-export const TEAM_DESKS: WorldPoint[][] = [0, 1, 2].map((team) => {
-  const centerX = 130 + team * 245
-  return [
-    { x: centerX, y: 310 },
-    { x: centerX - 55, y: 440 },
-    { x: centerX + 55, y: 440 },
-    { x: centerX - 55, y: 560 },
-    { x: centerX + 55, y: 560 }
-  ]
-})
+// Team 2's column sits 30px left of the even 130/375/620 spacing - at 620 its
+// +55 desks' collision box (see collisionFootprint in officeGrid) reaches
+// into the representative room's left wall at x 704-720.
+const TEAM_COLUMN_CENTER_X = [130, 375, 590]
+
+export const TEAM_DESKS: WorldPoint[][] = TEAM_COLUMN_CENTER_X.map((centerX) => [
+  { x: centerX, y: 310 },
+  { x: centerX - 55, y: 440 },
+  { x: centerX + 55, y: 440 },
+  { x: centerX - 55, y: 560 },
+  { x: centerX + 55, y: 560 }
+])
 
 /** Team columns have no drawn boundary, so desk-count reporting infers which
  *  team a desk belongs to from its x position, split at the midpoints between
- *  the three TEAM_DESKS column centers (130, 375, 620). */
+ *  the three TEAM_DESKS column centers (130, 375, 590). */
 export function teamIndexForX(x: number): number {
   if (x < 252.5) return 0
-  if (x < 497.5) return 1
+  if (x < 482.5) return 1
   return 2
 }
 

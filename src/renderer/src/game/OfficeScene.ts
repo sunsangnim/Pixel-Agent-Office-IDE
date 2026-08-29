@@ -46,7 +46,7 @@ import {
 } from './officeWorld'
 import { findOfficePath } from './navigation'
 import {
-  furnitureCollision, OFFICE_FLOOR_REGION, OFFICE_WALL_COLLISIONS, rotatedFootprint, snapFurniturePoint
+  collisionFootprint, furnitureCollision, OFFICE_FLOOR_REGION, OFFICE_WALL_COLLISIONS, rotatedFootprint, snapFurniturePoint
 } from './officeGrid'
 import { intersectsAabb, pushApart, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
 import {
@@ -110,7 +110,40 @@ const directionalFurnitureAssets = import.meta.glob('../assets/pixel-office/furn
   eager: true, query: '?url', import: 'default'
 }) as Record<string, string>
 const FLOOR_TEXTURES = ['floor-mint', 'floor-oak', 'floor-stone', 'floor-carpet', 'floor-office-carpet', 'floor-plain-gray'] as const
-const DEFAULT_FLOOR_TEXTURE: typeof FLOOR_TEXTURES[number] = 'floor-plain-gray'
+export type FloorTexture = typeof FLOOR_TEXTURES[number]
+const DEFAULT_FLOOR_TEXTURE: FloorTexture = 'floor-plain-gray'
+
+// Consumed by LayoutEditorPanel (React) to render the same palette/floor
+// picker that used to be drawn as Phaser objects inside the scene itself.
+export const PALETTE_ITEMS: Array<{ frame: number; label: string; asset: string }> = [
+  { frame: 0, label: '커피머신', asset: coffeeMachineAsset },
+  { frame: 1, label: '냉장고', asset: refrigeratorAsset },
+  { frame: 2, label: '탕비장', asset: pantryCabinetAsset },
+  { frame: 5, label: '스크린', asset: presentationScreenAsset },
+  { frame: 6, label: '긴 테이블', asset: longTableAsset },
+  { frame: 7, label: '노트북', asset: laptopAsset },
+  { frame: 10, label: '책상', asset: workstationDeskAsset },
+  { frame: 12, label: '의자', asset: officeChairAsset },
+  { frame: 15, label: '화분', asset: officePlantAsset },
+  { frame: 16, label: '사이드테이블', asset: sideTableAsset },
+  { frame: 17, label: '소파', asset: officeSofaAsset },
+  { frame: 18, label: '스탠드조명', asset: floorLampAsset },
+  { frame: 19, label: '책장', asset: bookcaseAsset }
+]
+
+export const FLOOR_ITEMS: Array<{ texture: FloorTexture; label: string; asset: string }> = [
+  { texture: 'floor-mint', label: '민트', asset: mintFloorAsset },
+  { texture: 'floor-oak', label: '오크', asset: oakFloorAsset },
+  { texture: 'floor-stone', label: '블루스톤', asset: stoneFloorAsset },
+  { texture: 'floor-carpet', label: '틸 카펫', asset: carpetFloorAsset },
+  { texture: 'floor-office-carpet', label: '오피스 카펫', asset: officeCarpetFloorAsset },
+  { texture: 'floor-plain-gray', label: '그레이', asset: plainGrayFloorAsset }
+]
+
+export interface EditorState {
+  hasSelection: boolean
+  floor: FloorTexture
+}
 const OFFICE_FLOOR_SAVE_KEY = 'pixel-office-floor-v4'
 const ACTOR_SCALE = 2
 const ACTOR_COLLISION_RADIUS = 11 * ACTOR_SCALE
@@ -144,10 +177,10 @@ export class OfficeScene extends Phaser.Scene {
   private removedDeskIds = new Set<string>()
   private deskCountsHandler: ((counts: number[]) => void) | null = null
   private teamTemplateIds: string[] = []
+  private editorStateHandler: ((state: EditorState) => void) | null = null
   private layoutEditing = false
   private selectedFurniture: FurnitureView | null = null
   private selectionOutline?: Phaser.GameObjects.Rectangle
-  private editorUi: Array<Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text | Phaser.GameObjects.Image> = []
   private nextFurnitureId = 1
   private frontmostFurnitureId: string | null = null
   private floorLayers: Phaser.GameObjects.TileSprite[] = []
@@ -172,6 +205,21 @@ export class OfficeScene extends Phaser.Scene {
    *  against that team's currently running session count. */
   setTeamTemplateIds(ids: string[]): void {
     this.teamTemplateIds = ids
+  }
+
+  /** Drives LayoutEditorPanel (React): current selection/floor, so it can
+   *  enable the "선택 삭제" button and highlight the active floor swatch. */
+  setEditorStateHandler(handler: ((state: EditorState) => void) | null): void {
+    this.editorStateHandler = handler
+    if (handler && this.sys?.isActive()) handler(this.editorState())
+  }
+
+  private editorState(): EditorState {
+    return { hasSelection: Boolean(this.selectedFurniture), floor: this.selectedFloor }
+  }
+
+  private notifyEditorState(): void {
+    this.editorStateHandler?.(this.editorState())
   }
 
   setLayoutEditing(editing: boolean): void {
@@ -335,39 +383,14 @@ export class OfficeScene extends Phaser.Scene {
     return image
   }
 
+  // The palette/floor-picker/remove-buttons used to render as Phaser objects
+  // overlapping the bottom of the office scene itself. They now live in
+  // LayoutEditorPanel (React, below the canvas) and drive this scene through
+  // the public editor methods + setEditorStateHandler below - this only
+  // wires the one interaction that has to stay at the Phaser/input level.
   private createLayoutEditor(): void {
     this.input.mouse?.disableContextMenu()
-    const panel = this.add.rectangle(480, 606, 720, 56, 0x12251f, 0.94).setDepth(1900)
-    const help = this.add.text(132, 582, '드래그: 이동  |  우클릭: 방향 전환  |  빨강: 충돌', {
-      fontFamily: 'monospace', fontSize: '10px', color: '#dff3ed'
-    }).setDepth(2000)
-    this.editorUi.push(panel, help)
-    FLOOR_TEXTURES.forEach((texture, index) => {
-      const tile = this.add.image(145 + index * 34, 610, texture)
-        .setDisplaySize(28, 28).setDepth(2001).setInteractive({ useHandCursor: true })
-      tile.on('pointerdown', () => this.setFloorTexture(texture))
-      this.editorUi.push(tile)
-    })
-    const frames = [0, 1, 2, 5, 6, 7, 10, 12, 15, 16, 17, 18, 19]
-    frames.forEach((frame, index) => {
-      const x = 350 + index * 38
-      const icon = this.add.image(x, 610, FURNITURE_TEXTURES[frame])
-        .setDisplaySize(34, 34).setDepth(2001).setInteractive({ useHandCursor: true })
-      icon.on('pointerdown', () => this.addFurnitureFromPalette(frame))
-      this.editorUi.push(icon)
-    })
-    const remove = this.add.text(820, 582, '선택 삭제', {
-      fontFamily: 'monospace', fontSize: '10px', color: '#ffffff', backgroundColor: '#803c36'
-    }).setPadding(6, 4).setDepth(2001).setInteractive({ useHandCursor: true })
-    remove.on('pointerdown', () => this.deleteSelectedFurniture())
-    remove.setX(780)
-    const reset = this.add.text(910, 582, '초기화', {
-      fontFamily: 'monospace', fontSize: '10px', color: '#ffffff', backgroundColor: '#5a5034'
-    }).setPadding(6, 4).setDepth(2001).setInteractive({ useHandCursor: true })
-    reset.on('pointerdown', () => this.resetFurnitureLayout())
-    this.editorUi.push(remove, reset)
     this.input.keyboard?.on('keydown-DELETE', () => this.deleteSelectedFurniture())
-    this.setEditorUiVisible(false)
   }
 
   private createFloorLayers(): void {
@@ -398,15 +421,15 @@ export class OfficeScene extends Phaser.Scene {
     })
   }
 
-  private setFloorTexture(texture: typeof FLOOR_TEXTURES[number]): void {
+  setFloorTexture(texture: FloorTexture): void {
     if (!this.layoutEditing) return
     this.selectedFloor = texture
     this.floorLayers.forEach((layer) => layer.setTexture(texture))
     localStorage.setItem(OFFICE_FLOOR_SAVE_KEY, texture)
+    this.notifyEditorState()
   }
 
   private setEditorUiVisible(visible: boolean): void {
-    this.editorUi.forEach((object) => object.setVisible(visible))
     this.furniture.forEach(({ image }) => image.setAlpha(visible ? 0.88 : 1))
   }
 
@@ -418,14 +441,21 @@ export class OfficeScene extends Phaser.Scene {
     // Deselecting (id null - including when the editor closes) must NOT
     // revert the front bonus: whichever piece was last worked on stays on
     // top after you leave the editor, not just while it's actively selected.
-    if (!id) return
+    if (!id) {
+      this.notifyEditorState()
+      return
+    }
     this.bringFurnitureToFront(id)
-    if (!this.selectedFurniture) return
+    if (!this.selectedFurniture) {
+      this.notifyEditorState()
+      return
+    }
     const { image } = this.selectedFurniture
     image.setDepth(image.y + this.furnitureDepthOffset(image) + this.furnitureDepthBonus(id))
     this.selectionOutline = this.add.rectangle(image.x, image.y, image.displayWidth + 6, image.displayHeight + 6)
       .setDepth(1990)
     this.updateSelectionOutline()
+    this.notifyEditorState()
   }
 
   private updateSelectionOutline(): void {
@@ -441,7 +471,7 @@ export class OfficeScene extends Phaser.Scene {
     }
   }
 
-  private addFurnitureFromPalette(frame: number): void {
+  addFurnitureFromPalette(frame: number): void {
     if (!this.layoutEditing) return
     const id = `custom-${Date.now()}-${this.nextFurnitureId++}`
     const point = this.findFreeFurniturePoint(frame)
@@ -453,7 +483,7 @@ export class OfficeScene extends Phaser.Scene {
     this.selectFurniture(id)
   }
 
-  private async deleteSelectedFurniture(): Promise<void> {
+  async deleteSelectedFurniture(): Promise<void> {
     if (!this.layoutEditing || !this.selectedFurniture) return
     const { id, frame, image } = this.selectedFurniture
 
@@ -489,6 +519,7 @@ export class OfficeScene extends Phaser.Scene {
     this.selectionOutline?.destroy()
     this.selectionOutline = undefined
     this.saveFurnitureLayout()
+    this.notifyEditorState()
   }
 
   private rotateSelectedFurniture(delta: number): void {
@@ -528,30 +559,19 @@ export class OfficeScene extends Phaser.Scene {
     })
   }
 
-  private resetFurnitureLayout(): void {
+  // "초기화" clears the interior entirely - floor/walls/elevator stay, every
+  // desk/chair and custom piece goes - rather than restoring the furnished
+  // defaults, matching the stripped-down office this is meant to reset to.
+  resetFurnitureLayout(): void {
     this.layoutSave = {}
     this.frontmostFurnitureId = null
     localStorage.removeItem(OFFICE_LAYOUT_SAVE_KEY)
-    this.removedDeskIds.clear()
-    localStorage.removeItem(OFFICE_REMOVED_DESKS_KEY)
     for (const [id, furniture] of this.furniture) {
-      if (id.startsWith('custom-')) {
-        furniture.image.destroy()
-        this.furniture.delete(id)
-      } else {
-        const footprint = rotatedFootprint(furniture.frame, 0)
-        const displaySize = furnitureDisplaySize(furniture.frame, footprint.columns, footprint.rows)
-        furniture.image
-          .setPosition(furniture.defaultPoint.x, furniture.defaultPoint.y)
-          .setTexture(this.directionalFurnitureTexture(furniture.frame, 0))
-          .setDisplaySize(displaySize.width, displaySize.height)
-          .setData('furnitureRotation', 0)
-          .setDepth(furniture.defaultPoint.y + this.furnitureDepthOffset(furniture.image))
-      }
+      furniture.image.destroy()
+      this.furniture.delete(id)
+      if (!id.startsWith('custom-')) this.removedDeskIds.add(id)
     }
-    // Recreate any default desk/chair pairs that were previously deleted -
-    // ensureDeskPair is a no-op for pairs that are still present.
-    this.createDesks()
+    localStorage.setItem(OFFICE_REMOVED_DESKS_KEY, JSON.stringify([...this.removedDeskIds]))
     this.reportDeskCounts()
     this.selectFurniture(null)
   }
@@ -560,18 +580,18 @@ export class OfficeScene extends Phaser.Scene {
     const furnitureRects = [...this.furniture.values()]
       .filter(({ frame }) => !STACKABLE_FURNITURE_FRAMES.has(frame))
       .map(({ frame, image }) =>
-        furnitureCollision({ x: image.x, y: image.y }, rotatedFootprint(frame, this.furnitureRotation(image))))
+        furnitureCollision({ x: image.x, y: image.y }, collisionFootprint(frame, this.furnitureRotation(image))))
     return [...OFFICE_WALL_COLLISIONS, ...furnitureRects]
   }
 
   private furniturePlacementCollides(id: string, frame: number, point: WorldPoint, angle: number): boolean {
-    const candidate = furnitureCollision(point, rotatedFootprint(frame, angle))
+    const candidate = furnitureCollision(point, collisionFootprint(frame, angle))
     if (OFFICE_WALL_COLLISIONS.some((wall) => intersectsAabb(candidate, wall))) return true
     if (STACKABLE_FURNITURE_FRAMES.has(frame)) return false
     const partnerId = pairedFurnitureId(id)
     return [...this.furniture.values()].some((other) => other.id !== id && other.id !== partnerId && !STACKABLE_FURNITURE_FRAMES.has(other.frame) && intersectsAabb(
       candidate,
-      furnitureCollision(other.image, rotatedFootprint(other.frame, this.furnitureRotation(other.image)))
+      furnitureCollision(other.image, collisionFootprint(other.frame, this.furnitureRotation(other.image)))
     ))
   }
 
