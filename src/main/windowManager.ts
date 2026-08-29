@@ -25,7 +25,7 @@ function loadRendererView(win: BrowserWindow, view?: string): void {
 export function createMainWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({
     width: 1680,
-    height: 1050,
+    height: 960,
     minWidth: 1100,
     minHeight: 720,
     show: false,
