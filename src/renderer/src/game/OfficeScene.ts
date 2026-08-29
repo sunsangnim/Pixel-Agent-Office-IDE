@@ -440,7 +440,9 @@ export class OfficeScene extends Phaser.Scene {
     // continuous strip spans the full interior width so there is no seam at
     // the 탕비실/회의실/출입구 boundaries (previously three separate tiles
     // left visible gaps where the vertical dividers meet the top wall).
-    this.add.tileSprite(480, 58, OFFICE_WORLD_WIDTH, 64, 'architecture-wall-surface').setDepth(12)
+    // Extended up to y=0 (was y=26) so it's flush with the top edge of the
+    // world instead of leaving a sliver of bare floor tile visible above it.
+    this.add.tileSprite(480, 45, OFFICE_WORLD_WIDTH, 90, 'architecture-wall-surface').setDepth(12)
     OFFICE_WALL_COLLISIONS.forEach((wall) => {
       const horizontal = wall.width >= wall.height
       const perimeter = wall.x === 0 || wall.y === 0 ||
