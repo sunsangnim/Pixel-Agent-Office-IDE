@@ -1236,9 +1236,11 @@ export class OfficeScene extends Phaser.Scene {
     sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
       this.actorSelectHandler?.(actor.profileId)
     })
+    // Same style as the CEO's own nameplate (createRepresentativeActor) -
+    // no background box, bigger and darker text.
     const label = this.add.text(0, 28, actor.displayName, {
-      fontFamily: '"Malgun Gothic", sans-serif', fontSize: '8px', color: '#18352e', backgroundColor: '#e7f3ef'
-    }).setOrigin(0.5, 0).setPadding(2, 1)
+      fontFamily: '"Malgun Gothic", sans-serif', fontSize: '13px', color: '#111111', align: 'center'
+    }).setOrigin(0.5, 0)
     const bubble = this.add.text(36, -136, '', {
       fontFamily: '"Malgun Gothic", sans-serif', fontSize: '8px', color: '#26332f', backgroundColor: '#fff7df'
     }).setPadding(3, 2).setVisible(false)
@@ -1361,6 +1363,13 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private startActionAnimation(view: ActorView, actor: OfficeGameActor): void {
+    // A previous bob/eating/drinking tween from the last time this actor
+    // arrived somewhere may still be running (nothing here ever stopped it)
+    // - left alone, it keeps nudging sprite.y on its own schedule even after
+    // setY below puts the sprite back where it belongs, fighting the fresh
+    // pose and reading as a piece of the character (usually the legs, since
+    // that's near the tween's other extreme) floating away from the rest.
+    view.actionTween?.stop()
     const actorIndex = this.snapshot?.actors.findIndex((candidate) => candidate.profileId === actor.profileId) ?? 0
     view.stateMachine.arrive(actorIndex)
     const action = view.stateMachine.current.action
