@@ -904,8 +904,10 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createRepresentativeActor(): void {
-    const sprite = this.add.sprite(835, 811, 'ceo-animation-sheet', 'ceo-idle-0').setDisplaySize(104, 120).setDepth(810)
-    sprite.play('ceo-idle')
+    // Static, not sprite.play('ceo-idle') - nothing drives this character's
+    // state (no actual agent behind it), so it should hold still instead of
+    // looping a breathing animation nobody asked for.
+    this.add.sprite(835, 811, 'ceo-animation-sheet', 'ceo-idle-0').setDisplaySize(104, 120).setDepth(810)
     this.add.text(835, 748, '김태호 대표', {
       fontFamily: 'monospace', fontSize: '8px', color: '#17362e', backgroundColor: '#e7f3ef'
     }).setOrigin(0.5, 0).setPadding(2, 1).setDepth(700)
@@ -928,7 +930,13 @@ export class OfficeScene extends Phaser.Scene {
         key: `ceo-${name}`,
         frames: frames.map((frame) => ({ key: 'ceo-animation-sheet', frame })),
         frameRate: name === 'idle' ? 4 : 8,
-        repeat: name === 'interact' ? 0 : -1
+        repeat: name === 'interact' ? 0 : -1,
+        // The idle row's frames aren't perfectly recentered in their cells
+        // (last frame sits a bit off from the first), so a hard loop back to
+        // frame 0 reads as a visible snap/teleport. Playing it forward then
+        // back removes that jump cut - every step is a real consecutive-frame
+        // transition either way.
+        yoyo: name === 'idle'
       })
     })
   }
