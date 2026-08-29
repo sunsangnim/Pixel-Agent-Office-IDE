@@ -1132,8 +1132,13 @@ export class OfficeScene extends Phaser.Scene {
   /** Which of the 5 skin variants in the actor's team atlas to use - the
    *  lead (slotIndex 0) gets column 0, sub-agents fill the rest, wrapping
    *  around past a 5th so a very large team still gets an animated sprite
-   *  instead of falling back to a generic static one. */
+   *  instead of falling back to a generic static one. Claude's lead is
+   *  pinned to column 4 instead: column 0 there is dark hair + a navy suit,
+   *  near-identical to the CEO sprite, so the two were hard to tell apart
+   *  at a glance in the office.
+   */
   private actorAnimationKey(actor: OfficeGameActor): string {
+    if (actor.teamIndex === 0 && actor.slotIndex === 0) return '0-4'
     return `${actor.teamIndex}-${actor.slotIndex % 5}`
   }
 
