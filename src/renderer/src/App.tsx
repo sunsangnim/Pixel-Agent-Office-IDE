@@ -126,7 +126,7 @@ function App() {
   }
 
   const buildWorkflowPrompt = (plan: PendingPlan): string =>
-    `[실행 단계 — 기획이 승인되었습니다]\n프로젝트 폴더: ${workFolder}\n비공개 작업 문서 폴더: ${plan.rootPath}\n1. 승인된 기획서(${plan.specPath})와 Phase 문서(${plan.phasesPath})를 바탕으로 Phase 1부터 순서대로 구현하세요. 한 번에 한 Phase만 수행하세요.\n2. 코드는 프로젝트 폴더에서 작업하고, 문서 갱신은 비공개 작업 문서 폴더에서만 하세요.\n3. API 키·토큰·로그인 정보·세션·PTY 버퍼·로컬 절대경로·사용자 작업 문서는 Git에 추가하지 마세요.\n4. 각 Phase 완료 시 테스트와 빌드를 실행하고 공개 가능한 코드·자산만 커밋하세요. 원격 푸시는 저장소 공개 범위와 사용자 승인을 확인한 경우에만 수행하세요.\n5. 전체 작업 완료 시 ${plan.readmePath}에 최종 결과물, 실행법, 검증 결과, 변경 이력을 완성하세요.\n6. 직접 지정된 팀장은 하위 세션 사용 여부와 작업 방법을 자율적으로 결정하세요.\n\n[사용자 요청]\n${plan.originalText}`
+    `[실행 단계 — 기획이 승인되었습니다]\n프로젝트 폴더: ${workFolder}\n비공개 작업 문서 폴더: ${plan.rootPath}\n1. 구현을 시작하기 전에 프로젝트 폴더에서 feature/${plan.taskId} 브랜치가 이미 있으면(다른 팀원이 먼저 만들었을 수 있습니다) 그 브랜치로 체크아웃하고, 없으면 최신 main에서 새로 만들어 체크아웃한 뒤 그 위에서 작업하세요. 팀장·하위 세션 모두 같은 프로젝트 폴더를 공유하므로 이 브랜치 하나로만 작업하고, main에는 직접 커밋하지 마세요.\n2. 승인된 기획서(${plan.specPath})와 Phase 문서(${plan.phasesPath})를 바탕으로 Phase 1부터 순서대로 구현하세요. 한 번에 한 Phase만 수행하세요.\n3. 코드는 프로젝트 폴더에서 작업하고, 문서 갱신은 비공개 작업 문서 폴더에서만 하세요.\n4. API 키·토큰·로그인 정보·세션·PTY 버퍼·로컬 절대경로·사용자 작업 문서는 Git에 추가하지 마세요.\n5. 각 Phase 완료 시 테스트와 빌드를 실행하고 공개 가능한 코드·자산만 feature 브랜치에 커밋하세요. feature 브랜치의 원격 푸시는 저장소 공개 범위와 사용자 승인을 확인한 경우에만 수행하세요.\n6. 전체 작업 완료 시 ${plan.readmePath}에 최종 결과물, 실행법, 검증 결과, 변경 이력을 완성하세요.\n7. 모든 Phase와 인수 조건이 끝나면 최신 main을 다시 받아 충돌을 해결한 뒤 feature 브랜치를 main에 병합(--no-ff)하세요. main 병합·푸시는 저장소 공개 범위와 사용자 승인을 확인한 경우에만 수행하고, 완료 후 병합 결과를 보고하세요.\n8. 직접 지정된 팀장은 하위 세션 사용 여부와 작업 방법을 자율적으로 결정하세요.\n\n[사용자 요청]\n${plan.originalText}`
 
   const executePrompt = async (text: string, targetIds = Array.from(selectedTargetIds)): Promise<void> => {
     if (!workFolder) {
