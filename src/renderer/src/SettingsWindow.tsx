@@ -3,6 +3,7 @@ import type { AgentTemplate } from '@shared/types'
 import TerminalModal from './components/TerminalModal'
 import CorporateCharacterSprite from './components/CorporateCharacterSprite'
 import { CORPORATE_ROSTER_SIZE } from './lib/corporateRoster'
+import { DEFAULT_TEAM_CAPACITY, MAX_TEAM_CAPACITY, MIN_TEAM_CAPACITY } from '@shared/orchestrationPolicy'
 
 interface FormState {
   name: string
@@ -58,16 +59,53 @@ function SettingsWindow() {
   const [form, setForm] = useState<FormState>(emptyForm)
   const [loading, setLoading] = useState(true)
   const [loginSession, setLoginSession] = useState<{ ptyId: string; title: string } | null>(null)
+  const [capacities, setCapacities] = useState<Record<string, number>>({})
+  const [capacityDrafts, setCapacityDrafts] = useState<Record<string, string>>({})
+  const [capacityErrors, setCapacityErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     window.api.templates.list().then((list) => {
       setTemplates(list)
       setLoading(false)
     })
-    return window.api.templates.onChanged(() => {
+    window.api.teamCapacity.list().then(setCapacities)
+    const unsubscribeTemplates = window.api.templates.onChanged(() => {
       window.api.templates.list().then(setTemplates)
     })
+    const unsubscribeCapacity = window.api.teamCapacity.onChanged(() => {
+      window.api.teamCapacity.list().then(setCapacities)
+    })
+    return () => {
+      unsubscribeTemplates()
+      unsubscribeCapacity()
+    }
   }, [])
+
+  const capacityFor = (templateId: string): string =>
+    capacityDrafts[templateId] ?? String(capacities[templateId] ?? DEFAULT_TEAM_CAPACITY)
+
+  const saveCapacity = async (templateId: string): Promise<void> => {
+    const value = Number(capacityFor(templateId))
+    try {
+      const updated = await window.api.teamCapacity.set(templateId, value)
+      setCapacities(updated)
+      setCapacityDrafts((prev) => {
+        const next = { ...prev }
+        delete next[templateId]
+        return next
+      })
+      setCapacityErrors((prev) => {
+        const next = { ...prev }
+        delete next[templateId]
+        return next
+      })
+    } catch (e) {
+      setCapacityErrors((prev) => ({
+        ...prev,
+        [templateId]: e instanceof Error ? e.message : String(e)
+      }))
+    }
+  }
 
   const resetForm = (): void => {
     setEditingId(null)
@@ -145,6 +183,25 @@ function SettingsWindow() {
                 {t.env && Object.keys(t.env).length > 0 && (
                   <span className="settings-env-badge">환경변수 {Object.keys(t.env).length}개</span>
                 )}
+                <div className="settings-capacity-row">
+                  <span>영역 할당 (데스크 수)</span>
+                  <input
+                    type="number"
+                    min={MIN_TEAM_CAPACITY}
+                    max={MAX_TEAM_CAPACITY}
+                    className="settings-capacity-input"
+                    value={capacityFor(t.id)}
+                    onChange={(e) =>
+                      setCapacityDrafts((prev) => ({ ...prev, [t.id]: e.target.value }))
+                    }
+                  />
+                  <button type="button" className="pill-btn" onClick={() => saveCapacity(t.id)}>
+                    저장
+                  </button>
+                  {capacityErrors[t.id] && (
+                    <span className="settings-capacity-error">{capacityErrors[t.id]}</span>
+                  )}
+                </div>
               </div>
               <div className="settings-card-actions">
                 <button className="pill-btn" onClick={() => startLogin(t)}>

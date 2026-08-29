@@ -7,6 +7,7 @@ import { ORCHESTRATION_POLICY } from '../shared/orchestrationPolicy'
 import { adapterIdForTemplate } from './cliAdapters'
 import { buildAgentProfiles } from '../shared/agentProfiles'
 import { ensureDeskWorktree, removeDeskWorktree } from './gitWorktreeManager'
+import { teamCapacityStore } from './teamCapacityStore'
 
 class InstanceManager {
   private runs = new Map<string, AgentRun>()
@@ -20,7 +21,7 @@ class InstanceManager {
   }
 
   private profiles() {
-    return buildAgentProfiles(agentTemplateStore.list())
+    return buildAgentProfiles(agentTemplateStore.list(), teamCapacityStore.getAll())
   }
 
   /** Compatibility projection while renderer callers migrate to profiles+runs. */
@@ -54,7 +55,7 @@ class InstanceManager {
     const team = this.list()
       .filter((instance) => instance.templateId === templateId)
       .sort((a, b) => a.slotIndex - b.slotIndex)
-    const maxTeamSize = ORCHESTRATION_POLICY.maxChildrenPerLead + 1
+    const maxTeamSize = teamCapacityStore.get(templateId)
     if (team.length >= maxTeamSize) {
       throw new Error(`${template.name} 팀은 최대 ${maxTeamSize}개 세션까지 실행할 수 있습니다.`)
     }

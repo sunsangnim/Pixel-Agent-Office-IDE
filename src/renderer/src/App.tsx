@@ -87,7 +87,14 @@ function App() {
     window.api.workspace.getWorkFolder().then(setWorkFolder)
     refreshTemplates()
     window.api.instances.list().then(setInstances)
-    return window.api.templates.onChanged(refreshTemplates)
+    const unsubscribeTemplates = window.api.templates.onChanged(refreshTemplates)
+    const unsubscribeCapacity = window.api.teamCapacity.onChanged(() => {
+      window.api.profiles.list().then(setProfiles)
+    })
+    return () => {
+      unsubscribeTemplates()
+      unsubscribeCapacity()
+    }
   }, [])
 
   const chooseFolder = async (): Promise<void> => {

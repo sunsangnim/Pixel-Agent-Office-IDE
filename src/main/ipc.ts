@@ -8,6 +8,7 @@ import { instanceManager } from './instanceManager'
 import { openSettingsWindow } from './windowManager'
 import { taskWorkspaceManager } from './taskWorkspaceManager'
 import { diffAgainstBase, mergeDeskBranch } from './gitWorktreeManager'
+import { teamCapacityStore } from './teamCapacityStore'
 import { buildAgentProfiles } from '../shared/agentProfiles'
 import type {
   AgentTemplateInput,
@@ -21,6 +22,12 @@ import type {
 function broadcastTemplatesChanged(): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('templates:changed')
+  }
+}
+
+function broadcastTeamCapacityChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('team-capacity:changed')
   }
 }
 
@@ -105,8 +112,20 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('instances:list', () => instanceManager.list())
 
-  ipcMain.handle('profiles:list', () => buildAgentProfiles(agentTemplateStore.list()))
+  ipcMain.handle('profiles:list', () =>
+    buildAgentProfiles(agentTemplateStore.list(), teamCapacityStore.getAll())
+  )
   ipcMain.handle('runs:list', () => instanceManager.listRuns())
+
+  ipcMain.handle('team-capacity:list', () => teamCapacityStore.getAll())
+  ipcMain.handle('team-capacity:set', (_event, templateId: string, capacity: number) => {
+    const activeCount = instanceManager
+      .listRuns()
+      .filter((run) => run.templateId === templateId).length
+    const result = teamCapacityStore.set(templateId, capacity, activeCount)
+    broadcastTeamCapacityChanged()
+    return result
+  })
 
   ipcMain.handle('instances:create', (event, templateId: string) => {
     const cwd = workspaceStore.get()

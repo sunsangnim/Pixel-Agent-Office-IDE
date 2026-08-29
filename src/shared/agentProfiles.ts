@@ -37,10 +37,12 @@ export function findAgentProfile(profileIdValue: string): AgentProfile | undefin
 }
 
 export function buildAgentProfiles(
-  templates: Array<Pick<AgentTemplate, 'id' | 'name'>>
+  templates: Array<Pick<AgentTemplate, 'id' | 'name'>>,
+  capacityByTemplateId: Record<string, number> = {}
 ): AgentProfile[] {
-  return templates.flatMap((template) =>
-    Array.from({ length: 5 }, (_, slotIndex) => {
+  return templates.flatMap((template) => {
+    const capacity = Math.max(1, capacityByTemplateId[template.id] ?? 5)
+    return Array.from({ length: capacity }, (_, slotIndex) => {
       const rank: AgentRank = slotIndex === 0 ? 'teamLead' : 'subAgent'
       return {
         profileId: profileId(template.id, slotIndex),
@@ -53,5 +55,5 @@ export function buildAgentProfiles(
             : `${template.name} 하위 세션 ${slotIndex}`
       }
     })
-  )
+  })
 }

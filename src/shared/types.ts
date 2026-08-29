@@ -92,12 +92,17 @@ export type OfficePresence =
 export type OfficeDoorState = 'closed' | 'opening' | 'open' | 'closing'
 
 export interface OrchestrationPolicy {
-  maxChildrenPerLead: number
   maxConcurrentRuns: number
   maxDepth: number
   simpleTaskMaxAgents: number
   cancelChildrenWithParent: boolean
   idleProcessTimeoutMs: number
+}
+
+export interface TeamCapacityApi {
+  list(): Promise<Record<string, number>>
+  set(templateId: string, capacity: number): Promise<Record<string, number>>
+  onChanged(callback: () => void): () => void
 }
 
 export interface AgentProfile {
@@ -227,4 +232,5 @@ export interface PreloadApi {
   runs: AgentRunApi
   system: SystemApi
   git: GitApi
+  teamCapacity: TeamCapacityApi
 }
