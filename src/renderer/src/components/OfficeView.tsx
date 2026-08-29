@@ -15,6 +15,7 @@ interface OfficeViewProps {
   onSelect: (instanceId: string) => void
   onRemove: (instanceId: string) => void
   meetingActive: boolean
+  manuallyOffDutyIds: Set<string>
 }
 
 function OfficeView(props: OfficeViewProps) {
@@ -24,9 +25,9 @@ function OfficeView(props: OfficeViewProps) {
     props.instances,
     props.runtimeStates,
     props.tasks,
-    officeClock.isWorkingHours,
     officeClock.isClockInActive,
-    props.meetingActive
+    props.meetingActive,
+    props.manuallyOffDutyIds
   )
   const teamIds = Array.from(new Set(props.profiles.map((profile) => profile.templateId)))
   const snapshot: OfficeWorldSnapshot = {

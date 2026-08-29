@@ -11,6 +11,7 @@ import { useAgentChat, type PlanReadyPayload } from './hooks/useAgentChat'
 import { planTask } from './lib/taskRouter'
 import { leadTitleFor, SUB_AGENT_TITLE } from '@shared/agentProfiles'
 import { isMeetingEndCommand, isMeetingStartCommand } from './lib/meetingCommands'
+import { parseAttendanceCommand } from './lib/attendanceCommands'
 import {
   MEETING_CHECKPOINT_KEY,
   MEETING_QUEUE_KEY,
@@ -43,6 +44,7 @@ function App() {
   const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [meetingActive, setMeetingActive] = useState(() => Boolean(localStorage.getItem(MEETING_CHECKPOINT_KEY)))
+  const [manuallyOffDutyIds, setManuallyOffDutyIds] = useState<Set<string>>(new Set())
   const [heldPrompts, setHeldPrompts] = useState<HeldMeetingPrompt[]>(() =>
     readStoredJson(localStorage.getItem(MEETING_QUEUE_KEY), [])
   )
@@ -279,6 +281,21 @@ function App() {
   }
 
   const sendPromptToSelected = async (text: string): Promise<void> => {
+    const attendanceCommand = parseAttendanceCommand(text)
+    if (attendanceCommand) {
+      const leadProfileIds = attendanceCommand.templateIds.map((templateId) => `${templateId}:lead`)
+      const teamNames = attendanceCommand.templateIds
+        .map((templateId) => templates.find((t) => t.id === templateId)?.name ?? templateId)
+        .join(', ')
+      setManuallyOffDutyIds((prev) => {
+        const next = new Set(prev)
+        leadProfileIds.forEach((id) => (attendanceCommand.clockIn ? next.delete(id) : next.add(id)))
+        return next
+      })
+      addSystemMessage(`${teamNames} 팀장이 ${attendanceCommand.clockIn ? '출근' : '퇴근'}했습니다.`)
+      return
+    }
+
     if (isMeetingStartCommand(text)) {
       if (meetingActive) {
         addSystemMessage('이미 전체 회의가 진행 중입니다.')
@@ -353,6 +370,7 @@ function App() {
           onSelect={setSelectedInstanceId}
           onRemove={removeInstance}
           meetingActive={meetingActive}
+          manuallyOffDutyIds={manuallyOffDutyIds}
         />
 
         <AgentProfileRow

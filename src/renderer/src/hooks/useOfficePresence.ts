@@ -36,9 +36,9 @@ export function useOfficePresence(
   instances: AgentInstance[],
   runtimeStates: Record<string, AgentStatePayload>,
   tasks: Record<string, string>,
-  isWorkingHours: boolean,
   isClockInActive: boolean,
-  meetingActive: boolean
+  meetingActive: boolean,
+  manuallyOffDutyIds: Set<string> = new Set()
 ): Record<string, OfficePresence> {
   const [presenceByProfile, setPresenceByProfile] = useState<Record<string, OfficePresence>>({})
   const restTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
@@ -51,8 +51,8 @@ export function useOfficePresence(
     const meetingAttendeeIds = new Set(
       profiles
         .filter((profile) =>
-          instances.some((instance) => instance.profileId === profile.profileId) ||
-          (profile.rank === 'teamLead' && isWorkingHours)
+          !manuallyOffDutyIds.has(profile.profileId) &&
+          (instances.some((instance) => instance.profileId === profile.profileId) || profile.rank === 'teamLead')
         )
         .slice(0, 8)
         .map((profile) => profile.profileId)
@@ -60,11 +60,25 @@ export function useOfficePresence(
     for (const profile of profiles) {
       const instance = instances.find((candidate) => candidate.profileId === profile.profileId)
       const previousTimer = restTimers.current.get(profile.profileId)
+      // A team lead explicitly sent home ("@Team 퇴근해") stays off-duty
+      // regardless of anything else, until "@Team 출근해" brings them back -
+      // checked before both the no-instance default and the running-instance
+      // state machine below, since it overrides both.
+      if (manuallyOffDutyIds.has(profile.profileId)) {
+        clearTimeout(previousTimer)
+        restTimers.current.delete(profile.profileId)
+        restedProfiles.current.delete(profile.profileId)
+        immediate[profile.profileId] = 'offDuty'
+        continue
+      }
       if (!instance) {
         clearTimeout(previousTimer)
         restTimers.current.delete(profile.profileId)
         restedProfiles.current.delete(profile.profileId)
-        immediate[profile.profileId] = profile.rank === 'teamLead' && isWorkingHours
+        // Team leads are checked in by default whenever the app is running -
+        // no real CLI process required, and not gated to real-world business
+        // hours (this is a desk toy, not a literal 9-to-5 simulation).
+        immediate[profile.profileId] = profile.rank === 'teamLead'
           ? meetingActive && meetingAttendeeIds.has(profile.profileId) ? 'meeting' : isClockInActive ? 'arriving' : restPresence(profile)
           : 'offDuty'
         continue
@@ -80,9 +94,9 @@ export function useOfficePresence(
       } else if (runtimeState === 'working' || runtimeState === 'starting') {
         immediate[profile.profileId] = 'working'
       } else if (runtimeState === 'exited') {
-        // Team leads stay clocked in through working hours even after their
-        // CLI process exits - only send them home once the day is over.
-        immediate[profile.profileId] = profile.rank === 'teamLead' && isWorkingHours
+        // Team leads stay checked in even after their CLI process exits -
+        // only "@Team 퇴근해" (handled above) actually sends them home.
+        immediate[profile.profileId] = profile.rank === 'teamLead'
           ? restPresence(profile)
           : 'offDuty'
       } else if (runtimeState === 'completed') {
@@ -150,7 +164,7 @@ export function useOfficePresence(
       }
       return { ...prev, ...routed }
     })
-  }, [instances, profiles, runtimeStates, tasks, isWorkingHours, isClockInActive, meetingActive])
+  }, [instances, profiles, runtimeStates, tasks, isClockInActive, meetingActive, manuallyOffDutyIds])
 
   useEffect(
     () => () => {
