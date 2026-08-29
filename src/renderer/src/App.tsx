@@ -9,6 +9,7 @@ import ChatPanel from './components/ChatPanel'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
 import { useAgentChat, type PlanReadyPayload } from './hooks/useAgentChat'
 import { planTask } from './lib/taskRouter'
+import { leadTitleFor, SUB_AGENT_TITLE } from '@shared/agentProfiles'
 import { isMeetingEndCommand, isMeetingStartCommand } from './lib/meetingCommands'
 import {
   MEETING_CHECKPOINT_KEY,
@@ -248,18 +249,19 @@ function App() {
       const child = availableInstances.find(
         (instance) => instance.parentInstanceId === leader.instanceId && instance.rank === 'subAgent'
       )
+      const leadTitle = leadTitleFor(leader.templateId)
       const leadAssignment = {
         instanceId: leader.instanceId,
-        role: `${templateName} 팀장 · 조율`,
-        prompt: `[팀장 역할 — 기획 승인됨] 아래 운영정책을 지키며 ${templateName} 팀의 실행 계획과 최종 취합 기준을 제시하세요.\n\n${workflowPrompt}`
+        role: `${templateName} ${leadTitle} · 조율`,
+        prompt: `[${leadTitle} 역할 — 기획 승인됨] 아래 운영정책을 지키며 ${templateName} 팀의 실행 계획과 최종 취합 기준을 제시하세요.\n\n${workflowPrompt}`
       }
       return child
         ? [
             leadAssignment,
             {
               instanceId: child.instanceId,
-              role: `${templateName} 하위 세션 · ${specialties[leader.templateId]}`,
-              prompt: `[하위 세션 역할: ${specialties[leader.templateId]}] 아래 운영정책을 지키며 맡은 영역을 수행하고 팀장이 취합할 수 있는 결과와 검증 내용을 명확히 보고하세요.\n\n${workflowPrompt}`
+              role: `${templateName} ${SUB_AGENT_TITLE} · ${specialties[leader.templateId]}`,
+              prompt: `[${SUB_AGENT_TITLE} 역할: ${specialties[leader.templateId]}] 아래 운영정책을 지키며 맡은 영역을 수행하고 ${leadTitle}이 취합할 수 있는 결과와 검증 내용을 명확히 보고하세요.\n\n${workflowPrompt}`
             }
           ]
         : [leadAssignment]

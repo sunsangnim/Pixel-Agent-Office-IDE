@@ -778,7 +778,9 @@ export class OfficeScene extends Phaser.Scene {
         // Anchored to the desk's actual (possibly dragged-elsewhere) position,
         // not the static TEAM_DESKS fallback point - otherwise the label stays
         // wherever the desk originally spawned even after it's moved.
-        const label = this.add.text(desk.x - 36, desk.y - 45, ['Claude', 'Codex', 'Antigravity'][teamIndex], {
+        const teamNames = ['Claude', 'Codex', 'Antigravity']
+        const leadTitles = ['부장', '차장', '과장']
+        const label = this.add.text(desk.x - 36, desk.y - 45, `${teamNames[teamIndex]} ${leadTitles[teamIndex]}`, {
           fontFamily: 'monospace', fontSize: '10px', color: '#24473e'
         }).setDepth(700)
         this.teamLabels.set(deskId, label)

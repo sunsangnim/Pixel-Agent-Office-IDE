@@ -7,6 +7,20 @@ const TEAM_NAMES: Record<(typeof BUILT_IN_TEAM_IDS)[number], string> = {
   'antigravity-cli': 'Antigravity'
 }
 
+// Team-lead job titles - Claude/Codex/Antigravity aren't peers, they're a
+// small hierarchy. Sub-sessions are all 사원 regardless of team.
+const TEAM_LEAD_TITLES: Record<(typeof BUILT_IN_TEAM_IDS)[number], string> = {
+  'claude-code': '부장',
+  'codex-cli': '차장',
+  'antigravity-cli': '과장'
+}
+const DEFAULT_LEAD_TITLE = '팀장'
+export const SUB_AGENT_TITLE = '사원'
+
+export function leadTitleFor(templateId: string): string {
+  return TEAM_LEAD_TITLES[templateId as (typeof BUILT_IN_TEAM_IDS)[number]] ?? DEFAULT_LEAD_TITLE
+}
+
 function profileId(templateId: string, slotIndex: number): string {
   return `${templateId}:${slotIndex === 0 ? 'lead' : `child-${slotIndex}`}`
 }
@@ -22,8 +36,8 @@ export const BUILT_IN_AGENT_PROFILES: readonly AgentProfile[] = BUILT_IN_TEAM_ID
         slotIndex,
         displayName:
           rank === 'teamLead'
-            ? `${TEAM_NAMES[templateId]} 팀장`
-            : `${TEAM_NAMES[templateId]} 하위 세션 ${slotIndex}`
+            ? `${TEAM_NAMES[templateId]} ${leadTitleFor(templateId)}`
+            : `${TEAM_NAMES[templateId]} ${SUB_AGENT_TITLE} ${slotIndex}`
       }
     })
 )
@@ -51,8 +65,8 @@ export function buildAgentProfiles(
         slotIndex,
         displayName:
           rank === 'teamLead'
-            ? `${template.name} 팀장`
-            : `${template.name} 하위 세션 ${slotIndex}`
+            ? `${template.name} ${leadTitleFor(template.id)}`
+            : `${template.name} ${SUB_AGENT_TITLE} ${slotIndex}`
       }
     })
   })
