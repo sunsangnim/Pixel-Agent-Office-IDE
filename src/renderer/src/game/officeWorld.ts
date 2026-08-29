@@ -89,11 +89,21 @@ export function targetPoint(
   if (actor.presence === 'pantryDoor') return WAYPOINTS.pantryDoor
   if (actor.presence === 'pantry') return {
     x: actorIndex % 2 === 0 ? 220 : 65,
-    y: actorIndex % 2 === 0 ? 155 : 150
+    y: actorIndex % 2 === 0 ? 175 : 150
   }
   if (actor.presence === 'meetingDoor') return WAYPOINTS.meetingDoor
   if (actor.presence === 'meeting') return MEETING_SEATS[actorIndex % MEETING_SEATS.length]
   return resolveDesk(actor)
+}
+
+// A room only has one doorway each (see officeGrid.ts) - roughly its own
+// interior, used only to decide whether a route needs to detour through
+// that doorway before heading anywhere else.
+const PANTRY_BOUNDS = { x0: 16, x1: 272, y0: 16, y1: 352 }
+const MEETING_BOUNDS = { x0: 288, x1: 656, y0: 16, y1: 352 }
+
+function isInside(point: WorldPoint, bounds: { x0: number; x1: number; y0: number; y1: number }): boolean {
+  return point.x >= bounds.x0 && point.x <= bounds.x1 && point.y >= bounds.y0 && point.y <= bounds.y1
 }
 
 // resolveDesk lets the caller (OfficeScene) supply the *live* chair position
@@ -102,6 +112,7 @@ export function targetPoint(
 export function routeFor(
   actor: OfficeGameActor,
   actorIndex: number,
+  currentPosition: WorldPoint,
   resolveDesk: (actor: OfficeGameActor) => WorldPoint = deskPoint
 ): WorldPoint[] {
   const target = targetPoint(actor, actorIndex, resolveDesk)
@@ -109,5 +120,12 @@ export function routeFor(
   if (actor.presence === 'arriving') return [WAYPOINTS.elevatorInside, WAYPOINTS.elevatorExit, resolveDesk(actor)]
   if (actor.presence === 'pantry') return [WAYPOINTS.pantryDoor, target]
   if (actor.presence === 'meeting') return [WAYPOINTS.meetingDoor, target]
+  // Presence itself only says where the actor is headed next, not where it
+  // currently is - without this, leaving the pantry/meeting room for
+  // anywhere else (back to desk, etc.) beelined straight at the new target
+  // and tried to walk through the wall instead of funneling back out
+  // through that room's one doorway first.
+  if (isInside(currentPosition, PANTRY_BOUNDS)) return [WAYPOINTS.pantryDoor, target]
+  if (isInside(currentPosition, MEETING_BOUNDS)) return [WAYPOINTS.meetingDoor, target]
   return [target]
 }

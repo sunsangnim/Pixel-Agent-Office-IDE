@@ -1244,9 +1244,12 @@ export class OfficeScene extends Phaser.Scene {
     sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
       this.actorSelectHandler?.(actor.profileId)
     })
-    // Same style as the CEO's own nameplate (createRepresentativeActor) -
-    // no background box, bigger and darker text.
-    const label = this.add.text(0, 28, actor.displayName, {
+    // Same style/placement as the CEO's own nameplate (createRepresentativeActor)
+    // - no background box, bigger/darker text, sitting just above the head
+    // (sprite top edge is ACTOR_SPRITE_Y_OFFSET - height/2 = -124). y:28 was
+    // below the container's own ground anchor, i.e. under the character's
+    // feet rather than above its head.
+    const label = this.add.text(0, ACTOR_SPRITE_Y_OFFSET - ACTOR_SPRITE_HEIGHT / 2 - 3, actor.displayName, {
       fontFamily: '"Malgun Gothic", sans-serif', fontSize: '13px', color: '#111111', align: 'center'
     }).setOrigin(0.5, 0)
     const bubble = this.add.text(36, -136, '', {
@@ -1276,7 +1279,9 @@ export class OfficeScene extends Phaser.Scene {
 
   private updateActor(view: ActorView, actor: OfficeGameActor, actorIndex: number): void {
     if (!view.stateMachine.requestPresence(actor.presence)) return
-    const waypoints = routeFor(actor, actorIndex, (candidate) => this.deskSeatPoint(candidate))
+    const waypoints = routeFor(
+      actor, actorIndex, { x: view.container.x, y: view.container.y }, (candidate) => this.deskSeatPoint(candidate)
+    )
     const route: WorldPoint[] = []
     let cursor = { x: view.container.x, y: view.container.y }
     for (const waypoint of waypoints) {
@@ -1321,7 +1326,7 @@ export class OfficeScene extends Phaser.Scene {
         }
         continue
       }
-      const amount = Math.min(distance, 320 * deltaSeconds)
+      const amount = Math.min(distance, 160 * deltaSeconds)
       const desired = { x: view.container.x + dx / distance * amount, y: view.container.y + dy / distance * amount }
       const movementCollisions = collisions.filter((rect) => !(
         target.x >= rect.x && target.x <= rect.x + rect.width && target.y >= rect.y && target.y <= rect.y + rect.height
