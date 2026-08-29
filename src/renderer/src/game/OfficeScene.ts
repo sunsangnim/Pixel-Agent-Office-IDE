@@ -50,11 +50,13 @@ import {
 } from './officeGrid'
 import { intersectsAabb, pushApart, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
 import {
+  DEFAULT_LAYOUT_SEED,
   OFFICE_LAYOUT_SAVE_KEY,
   OFFICE_REMOVED_DESKS_KEY,
   parseOfficeLayout,
   parseRemovedIds,
-  type OfficeLayoutSave
+  type OfficeLayoutSave,
+  type SavedFurniture
 } from './layoutPersistence'
 import { ActorStateMachine } from './actorStateMachine'
 import { OFFICE_WORLD_SAVE_KEY, parseOfficeWorldSave, upsertSavedActor, type OfficeWorldSave } from './worldPersistence'
@@ -183,6 +185,11 @@ export class OfficeScene extends Phaser.Scene {
   private selectionOutline?: Phaser.GameObjects.Rectangle
   private nextFurnitureId = 1
   private frontmostFurnitureId: string | null = null
+  // Persisted (not just in-memory) so whichever piece was placed/edited most
+  // recently keeps rendering on top of anything it overlaps even after a
+  // reload, instead of only for the rest of the current session.
+  private zOrderById = new Map<string, number>()
+  private nextZOrder = 1
   private floorLayers: Phaser.GameObjects.TileSprite[] = []
   private selectedFloor = DEFAULT_FLOOR_TEXTURE
 
@@ -222,13 +229,22 @@ export class OfficeScene extends Phaser.Scene {
     this.editorStateHandler?.(this.editorState())
   }
 
-  setLayoutEditing(editing: boolean): void {
+  /** Returns whether the transition was actually applied. Leaving edit mode
+   *  is refused (scene stays in editing state) while any piece still
+   *  collides - no more silently shoving overlapping furniture aside. */
+  setLayoutEditing(editing: boolean): boolean {
+    if (!editing && this.hasCollidingFurniture()) {
+      this.showEditorNotice('배치를 수정해주세요!')
+      return false
+    }
     this.layoutEditing = editing
     this.setEditorUiVisible(editing)
-    if (!editing) {
-      this.selectFurniture(null)
-      this.sanitizeFurniturePlacements()
-    }
+    if (!editing) this.selectFurniture(null)
+    return true
+  }
+
+  isLayoutEditing(): boolean {
+    return this.layoutEditing
   }
 
   preload(): void {
@@ -267,8 +283,16 @@ export class OfficeScene extends Phaser.Scene {
 
   create(): void {
     this.worldSave = parseOfficeWorldSave(localStorage.getItem(OFFICE_WORLD_SAVE_KEY))
-    this.layoutSave = parseOfficeLayout(localStorage.getItem(OFFICE_LAYOUT_SAVE_KEY))
+    // The seed only fills in ids the saved layout has no opinion on, so any
+    // further edit the user makes always wins and persists exactly as before.
+    this.layoutSave = { ...DEFAULT_LAYOUT_SEED, ...parseOfficeLayout(localStorage.getItem(OFFICE_LAYOUT_SAVE_KEY)) }
     this.removedDeskIds = parseRemovedIds(localStorage.getItem(OFFICE_REMOVED_DESKS_KEY))
+    this.zOrderById = new Map(
+      Object.entries(this.layoutSave)
+        .filter((entry): entry is [string, SavedFurniture & { zOrder: number }] => typeof entry[1].zOrder === 'number')
+        .map(([id, saved]) => [id, saved.zOrder])
+    )
+    this.nextZOrder = 1 + Math.max(0, ...Array.from(this.zOrderById.values()))
     const savedFloor = localStorage.getItem(OFFICE_FLOOR_SAVE_KEY)
     this.selectedFloor = FLOOR_TEXTURES.includes(savedFloor as typeof FLOOR_TEXTURES[number])
       ? savedFloor as typeof FLOOR_TEXTURES[number]
@@ -334,7 +358,7 @@ export class OfficeScene extends Phaser.Scene {
     const depthOffset = depth - y
     const image = this.add.image(initial.x, initial.y, this.directionalFurnitureTexture(frame, angle))
       .setDisplaySize(initialDisplaySize.width, initialDisplaySize.height)
-      .setDepth(initial.y + depthOffset)
+      .setDepth(initial.y + depthOffset + this.furnitureDepthBonus(id))
       // Pixel-perfect hit testing: without it, overlapping pieces (e.g. a
       // desk and its chair) hit-test as solid rectangles, so whichever one
       // currently renders on top steals clicks even over the other's fully
@@ -502,6 +526,7 @@ export class OfficeScene extends Phaser.Scene {
     image.destroy()
     this.furniture.delete(id)
     delete this.layoutSave[id]
+    this.zOrderById.delete(id)
     if (!id.startsWith('custom-')) {
       this.removedDeskIds.add(id)
       const paired = pairedFurnitureId(id)
@@ -510,6 +535,7 @@ export class OfficeScene extends Phaser.Scene {
         pairedView.image.destroy()
         this.furniture.delete(paired)
         delete this.layoutSave[paired]
+        this.zOrderById.delete(paired)
         this.removedDeskIds.add(paired)
       }
       localStorage.setItem(OFFICE_REMOVED_DESKS_KEY, JSON.stringify([...this.removedDeskIds]))
@@ -545,6 +571,7 @@ export class OfficeScene extends Phaser.Scene {
       this.layoutSave[id] = {
         x: Math.round(image.x), y: Math.round(image.y),
         rotation: this.furnitureRotation(image),
+        zOrder: this.zOrderById.get(id),
         ...(id.startsWith('custom-') ? { frame, width: image.displayWidth, height: image.displayHeight } : {})
       }
     })
@@ -565,6 +592,8 @@ export class OfficeScene extends Phaser.Scene {
   resetFurnitureLayout(): void {
     this.layoutSave = {}
     this.frontmostFurnitureId = null
+    this.zOrderById.clear()
+    this.nextZOrder = 1
     localStorage.removeItem(OFFICE_LAYOUT_SAVE_KEY)
     for (const [id, furniture] of this.furniture) {
       furniture.image.destroy()
@@ -584,15 +613,13 @@ export class OfficeScene extends Phaser.Scene {
     return [...OFFICE_WALL_COLLISIONS, ...furnitureRects]
   }
 
-  private furniturePlacementCollides(id: string, frame: number, point: WorldPoint, angle: number): boolean {
+  // Only walls block furniture placement now - two pieces of furniture are
+  // free to overlap however you arrange them (a chair tucked under a desk,
+  // decorations layered together, whatever the look calls for). Characters
+  // still can't walk through either; collisionRects() below is unaffected.
+  private furniturePlacementCollides(_id: string, frame: number, point: WorldPoint, angle: number): boolean {
     const candidate = furnitureCollision(point, collisionFootprint(frame, angle))
-    if (OFFICE_WALL_COLLISIONS.some((wall) => intersectsAabb(candidate, wall))) return true
-    if (STACKABLE_FURNITURE_FRAMES.has(frame)) return false
-    const partnerId = pairedFurnitureId(id)
-    return [...this.furniture.values()].some((other) => other.id !== id && other.id !== partnerId && !STACKABLE_FURNITURE_FRAMES.has(other.frame) && intersectsAabb(
-      candidate,
-      furnitureCollision(other.image, collisionFootprint(other.frame, this.furnitureRotation(other.image)))
-    ))
+    return OFFICE_WALL_COLLISIONS.some((wall) => intersectsAabb(candidate, wall))
   }
 
   // Searches outward in expanding rings from `near` (falling back to the
@@ -628,32 +655,26 @@ export class OfficeScene extends Phaser.Scene {
   // Whichever piece was most recently selected/dragged/rotated/added renders
   // above every other piece, even a chair with a large "always behind the
   // desk" depthOffset or a laptop with an "always above the table" one -
-  // editing needs WYSIWYG visibility over those baked defaults. Only one
-  // piece can hold the bonus at a time (selecting a different piece, or
-  // deselecting, hands it back), and it isn't persisted: a fresh scene load
-  // starts with nothing frontmost, so gameplay depth tuning always reasserts
-  // itself on the next restart.
+  // editing needs WYSIWYG visibility over those baked defaults, and it has to
+  // survive a reload or the very next piece you touch after opening the
+  // editor again would jump behind whatever it overlaps. zOrderById tracks
+  // each touched piece's place in that history (persisted via
+  // saveFurnitureLayout), not just a single frontmost slot.
   private bringFurnitureToFront(id: string): void {
     this.frontmostFurnitureId = id
+    this.zOrderById.set(id, this.nextZOrder++)
   }
 
   private furnitureDepthBonus(id: string): number {
-    return id === this.frontmostFurnitureId ? 10000 : 0
+    const zOrder = this.zOrderById.get(id)
+    return zOrder ? zOrder * 20000 : 0
   }
 
-  private sanitizeFurniturePlacements(): void {
-    if (this.furniture.size === 0) return
-    for (const furniture of this.furniture.values()) {
-      const { id, frame, image, defaultPoint } = furniture
-      const rotation = this.furnitureRotation(image)
-      if (!this.furniturePlacementCollides(id, frame, image, rotation)) continue
-      const fallback = snapFurniturePoint(defaultPoint, rotatedFootprint(frame, rotation))
-      const point = this.furniturePlacementCollides(id, frame, fallback, rotation)
-        ? this.findFreeFurniturePoint(frame, rotation, defaultPoint)
-        : fallback
-      image.setPosition(point.x, point.y).setDepth(point.y + this.furnitureDepthOffset(image) + this.furnitureDepthBonus(id))
+  private hasCollidingFurniture(): boolean {
+    for (const { id, frame, image } of this.furniture.values()) {
+      if (this.furniturePlacementCollides(id, frame, image, this.furnitureRotation(image))) return true
     }
-    this.saveFurnitureLayout()
+    return false
   }
 
   private furnitureRotation(image: Phaser.GameObjects.Image): number {
@@ -763,7 +784,7 @@ export class OfficeScene extends Phaser.Scene {
     // so the desk front edge convincingly occludes the seated actor
     // without also swallowing the chair when nobody's sitting in it.
     if (!this.removedDeskIds.has(chairId) && !this.furniture.has(chairId)) {
-      this.addFurniture(chairId, 12 + teamIndex, point.x, point.y + 54, 38, 42)
+      this.addFurniture(chairId, 12 + teamIndex, point.x, point.y + 18, 38, 42)
     }
   }
 

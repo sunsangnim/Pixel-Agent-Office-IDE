@@ -42,9 +42,14 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
       scene
     })
     const handleLayoutEditing = (event: Event): void => {
-      const nextEditing = Boolean((event as CustomEvent<{ editing: boolean }>).detail?.editing)
-      scene.setLayoutEditing(nextEditing)
-      setEditing(nextEditing)
+      const requested = Boolean((event as CustomEvent<{ editing: boolean }>).detail?.editing)
+      const accepted = scene.setLayoutEditing(requested)
+      // Refused only when leaving edit mode with something still colliding -
+      // stay in editing state and tell ChatPanel's toggle button to match.
+      if (!requested && !accepted) {
+        window.dispatchEvent(new CustomEvent('office:layout-edit-rejected'))
+      }
+      setEditing(accepted ? requested : true)
     }
     window.addEventListener('office:layout-edit', handleLayoutEditing)
     scene.setLayoutEditing(false)

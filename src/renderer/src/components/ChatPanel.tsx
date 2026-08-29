@@ -50,6 +50,14 @@ function ChatPanel({
     }
   }, [])
 
+  useEffect(() => {
+    // The office scene refuses to leave edit mode while furniture still
+    // overlaps - keep this button showing "편집 완료" when that happens.
+    const handler = (): void => setLayoutEditing(true)
+    window.addEventListener('office:layout-edit-rejected', handler)
+    return () => window.removeEventListener('office:layout-edit-rejected', handler)
+  }, [])
+
   const selectedNames = instances
     .filter((i) => selectedTargetIds.has(i.instanceId))
     .map((i) => templates.find((t) => t.id === i.templateId)?.name ?? i.templateId)

@@ -26,18 +26,18 @@ export interface OfficeWorldSnapshot {
   actors: OfficeGameActor[]
 }
 
-// Team 2's column sits 30px left of the even 130/375/620 spacing - at 620 its
-// +55 desks' collision box (see collisionFootprint in officeGrid) reaches
-// into the representative room's left wall at x 704-720.
-const TEAM_COLUMN_CENTER_X = [130, 375, 590]
-
-export const TEAM_DESKS: WorldPoint[][] = TEAM_COLUMN_CENTER_X.map((centerX) => [
-  { x: centerX, y: 310 },
-  { x: centerX - 55, y: 440 },
-  { x: centerX + 55, y: 440 },
-  { x: centerX - 55, y: 560 },
-  { x: centerX + 55, y: 560 }
-])
+// The office no longer boots into a fixed 5-desks-per-team grid - this is
+// the hand-arranged layout that's actually in use (1 seat each for Claude
+// and Codex, 2 for Antigravity), baked in as the default so a fresh install
+// or a cleared interior save starts here instead of with 15 desks nobody
+// asked for. Exact desk/chair pixel positions and chair rotation live in
+// DEFAULT_LAYOUT_SEED (layoutPersistence.ts); these points are only the
+// desk-creation fallback and the pre-seating deskPoint() fallback.
+export const TEAM_DESKS: WorldPoint[][] = [
+  [{ x: 112, y: 308 }],
+  [{ x: 336, y: 308 }],
+  [{ x: 576, y: 308 }, { x: 864, y: 548 }]
+]
 
 /** Team columns have no drawn boundary, so desk-count reporting infers which
  *  team a desk belongs to from its x position, split at the midpoints between
