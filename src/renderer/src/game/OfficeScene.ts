@@ -965,7 +965,7 @@ export class OfficeScene extends Phaser.Scene {
         // tagging along whenever the desk itself gets moved around.
         const teamNames = ['Claude', 'Codex', 'Antigravity']
         const label = this.add.text(point.x - 36, point.y - 33, `Team ${teamNames[teamIndex]}`, {
-          fontFamily: 'monospace', fontSize: '10px', color: '#24473e'
+          fontFamily: 'monospace', fontSize: '10px', color: '#111111'
         }).setDepth(700)
         this.teamLabels.set(deskId, label)
       }
