@@ -1359,7 +1359,12 @@ export class OfficeScene extends Phaser.Scene {
         { x: view.container.x, y: view.container.y }, desired, movementCollisions,
         ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT
       )
-      view.container.setPosition(resolved.x, resolved.y).setDepth(Math.max(resolved.y, inFrontOfFurniture))
+      // Additive, not Math.max: max() would collapse every walking actor to
+      // the exact same depth (inFrontOfFurniture dwarfs any real y), losing
+      // their relative front/back order against each other. Adding keeps
+      // that relative order intact while still guaranteeing every actor
+      // outranks every current furniture piece.
+      view.container.setPosition(resolved.x, resolved.y).setDepth(inFrontOfFurniture + resolved.y)
       view.stateMachine.startWalking(dx, dy)
       view.sprite.setFlipX(dx < 0)
       if (this.animationAtlasFor(view.actor.teamIndex)) {
@@ -1394,8 +1399,8 @@ export class OfficeScene extends Phaser.Scene {
           { x: b.container.x, y: b.container.y }, nextB, collisions,
           ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT
         )
-        a.container.setPosition(safeA.x, safeA.y).setDepth(Math.max(safeA.y, inFrontOfFurniture))
-        b.container.setPosition(safeB.x, safeB.y).setDepth(Math.max(safeB.y, inFrontOfFurniture))
+        a.container.setPosition(safeA.x, safeA.y).setDepth(inFrontOfFurniture + safeA.y)
+        b.container.setPosition(safeB.x, safeB.y).setDepth(inFrontOfFurniture + safeB.y)
       }
     }
   }
