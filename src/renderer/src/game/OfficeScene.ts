@@ -190,6 +190,9 @@ export class OfficeScene extends Phaser.Scene {
   private multiSelectOutlines = new Map<string, Phaser.GameObjects.Rectangle>()
   private marqueeRect?: Phaser.GameObjects.Rectangle
   private marqueeStart: WorldPoint | null = null
+  // While dragging one piece of an active multi-selection, each other
+  // selected piece's fixed offset from the dragged (leader) piece.
+  private groupDragOffsets = new Map<string, WorldPoint>()
   private nextFurnitureId = 1
   // Team-lead nameplates (desk-T-0 only), tracked so they follow the desk if
   // it's later dragged instead of staying behind at its original spot.
@@ -396,6 +399,11 @@ export class OfficeScene extends Phaser.Scene {
       // handlers below (createLayoutEditor) - toggle-select on click,
       // rectangle-select on drag - so it must not also single-select here.
       if (this.layoutEditing && pointer.event.shiftKey) return
+      // Clicking (to start a drag) on a piece that's already part of an
+      // active multi-selection must NOT collapse it down to just this one -
+      // otherwise dragging any multi-selected piece would silently drop the
+      // rest of the group right before the drag even starts.
+      if (this.layoutEditing && this.multiSelectedIds.has(id) && this.multiSelectedIds.size > 1) return
       this.selectFurniture(id)
     })
     image.on('dragstart', () => {
@@ -404,6 +412,14 @@ export class OfficeScene extends Phaser.Scene {
       // even dropped, so it's never hidden behind whatever it's dragged over.
       this.bringFurnitureToFront(id)
       image.setDepth(image.y + this.furnitureDepthBonus(id))
+      this.groupDragOffsets.clear()
+      if (this.multiSelectedIds.has(id) && this.multiSelectedIds.size > 1) {
+        this.multiSelectedIds.forEach((otherId) => {
+          if (otherId === id) return
+          const otherView = this.furniture.get(otherId)
+          if (otherView) this.groupDragOffsets.set(otherId, { x: otherView.image.x - image.x, y: otherView.image.y - image.y })
+        })
+      }
     })
     image.on('drag', (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
       if (!this.layoutEditing) return
@@ -416,6 +432,20 @@ export class OfficeScene extends Phaser.Scene {
       image.setPosition(snapped.x, snapped.y).setDepth(snapped.y + this.furnitureDepthBonus(id))
       this.teamLabels.get(id)?.setPosition(snapped.x - 36, snapped.y - 45)
       this.updateSelectionOutline()
+      // Carry the rest of the multi-selected group along by the same delta -
+      // each piece keeps its own offset from the dragged (leader) piece, and
+      // is independently clamped to the world bounds.
+      this.groupDragOffsets.forEach((offset, otherId) => {
+        const otherView = this.furniture.get(otherId)
+        if (!otherView) return
+        const otherImage = otherView.image
+        const otherFootprint = rotatedFootprint(otherView.frame, this.furnitureRotation(otherImage))
+        const nx = Phaser.Math.Clamp(snapped.x + offset.x, otherFootprint.columns * 8, OFFICE_WORLD_WIDTH - otherFootprint.columns * 8)
+        const ny = Phaser.Math.Clamp(snapped.y + offset.y, otherFootprint.rows * 8, OFFICE_WORLD_HEIGHT - otherFootprint.rows * 8)
+        otherImage.setPosition(nx, ny).setDepth(ny + this.furnitureDepthBonus(otherId))
+        this.teamLabels.get(otherId)?.setPosition(nx - 36, ny - 45)
+        this.multiSelectOutlines.get(otherId)?.setPosition(nx, ny)
+      })
     })
     image.on('dragend', () => {
       if (!this.layoutEditing) return
@@ -424,6 +454,18 @@ export class OfficeScene extends Phaser.Scene {
       image.setDepth(image.y + this.furnitureDepthBonus(id))
       this.teamLabels.get(id)?.setPosition(snapped.x - 36, snapped.y - 45)
       this.updateSelectionOutline()
+      this.groupDragOffsets.forEach((_offset, otherId) => {
+        const otherView = this.furniture.get(otherId)
+        if (!otherView) return
+        const otherImage = otherView.image
+        const otherSnapped = snapFurniturePoint(
+          { x: otherImage.x, y: otherImage.y }, rotatedFootprint(otherView.frame, this.furnitureRotation(otherImage))
+        )
+        otherImage.setPosition(otherSnapped.x, otherSnapped.y).setDepth(otherSnapped.y + this.furnitureDepthBonus(otherId))
+        this.teamLabels.get(otherId)?.setPosition(otherSnapped.x - 36, otherSnapped.y - 45)
+        this.multiSelectOutlines.get(otherId)?.setPosition(otherSnapped.x, otherSnapped.y)
+      })
+      this.groupDragOffsets.clear()
       this.saveFurnitureLayout()
     })
     this.furniture.set(id, { id, frame, image, defaultPoint: { x, y } })
