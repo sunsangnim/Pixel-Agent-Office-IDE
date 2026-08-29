@@ -157,6 +157,13 @@ const ACTOR_SCALE = 2
 const ACTOR_COLLISION_RADIUS = 11 * ACTOR_SCALE
 const ACTOR_COLLISION_HALF_WIDTH = 7 * ACTOR_SCALE
 const ACTOR_COLLISION_HALF_HEIGHT = 5 * ACTOR_SCALE
+// Same size as the CEO sprite (createRepresentativeActor) so every
+// character in the office reads at a consistent scale, animated or not.
+const ACTOR_SPRITE_WIDTH = 104
+const ACTOR_SPRITE_HEIGHT = 120
+const ACTOR_SPRITE_WORKING_HEIGHT = 104
+const ACTOR_SPRITE_SITTING_HEIGHT = 112
+const ACTOR_SPRITE_Y_OFFSET = -64
 
 function furnitureDisplaySize(frame: number, columns: number, rows: number): { width: number; height: number } {
   const scale = frame === DESK_FURNITURE_FRAME ? DESK_ASSET_SCALE : 1
@@ -873,6 +880,12 @@ export class OfficeScene extends Phaser.Scene {
     return zOrder ? zOrder * 20000 : 0
   }
 
+  private maxFurnitureDepth(): number {
+    let max = 0
+    this.furniture.forEach(({ image }) => { if (image.depth > max) max = image.depth })
+    return max
+  }
+
   private hasCollidingFurniture(): boolean {
     for (const { id, frame, image } of this.furniture.values()) {
       if (this.furniturePlacementCollides(id, frame, image, this.furnitureRotation(image))) return true
@@ -1049,47 +1062,51 @@ export class OfficeScene extends Phaser.Scene {
 
   private createTeamAnimations(): void {
     const states = ['idle', 'walk-down', 'walk-up', 'work'] as const
+    // Keyed by team (0=Claude/1=Codex/2=Antigravity), not a global roster
+    // index - see animationAtlasFor for why: team capacity is desk-count
+    // driven now and usually well under 5, so a global 1-4/5-9/10-14 band
+    // scheme silently mismatched teams to atlases as soon as any team had
+    // fewer than 5 people ahead of it in the profile list.
     const atlases = [
-      { key: 'claude-team-animation-atlas', start: 0 },
-      { key: 'codex-team-animation-atlas', start: 5 },
-      { key: 'antigravity-team-animation-atlas', start: 10 },
-      { key: 'roster-row-4-animation-atlas', start: 15 }
+      { key: 'claude-team-animation-atlas', teamIndex: 0 },
+      { key: 'codex-team-animation-atlas', teamIndex: 1 },
+      { key: 'antigravity-team-animation-atlas', teamIndex: 2 }
     ]
-    atlases.forEach(({ key, start }) => {
+    atlases.forEach(({ key, teamIndex }) => {
       const texture = this.textures.get(key)
       const source = texture.getSourceImage() as HTMLImageElement
       const frameWidth = Math.floor(source.width / 5)
       const frameHeight = Math.floor(source.height / 4)
       for (let column = 0; column < 5; column += 1) {
-        const rosterIndex = column + start
+        const actorKey = `${teamIndex}-${column}`
       states.forEach((state, row) => {
-        texture.add(`actor-${rosterIndex}-${state}`, 0, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
+        texture.add(`actor-${actorKey}-${state}`, 0, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
       })
       this.anims.create({
-        key: `actor-${rosterIndex}-idle`,
-        frames: [{ key, frame: `actor-${rosterIndex}-idle` }],
+        key: `actor-${actorKey}-idle`,
+        frames: [{ key, frame: `actor-${actorKey}-idle` }],
         frameRate: 2,
         repeat: -1
       })
       this.anims.create({
-        key: `actor-${rosterIndex}-walk-down`,
+        key: `actor-${actorKey}-walk-down`,
         frames: [
-          { key, frame: `actor-${rosterIndex}-idle` },
-          { key, frame: `actor-${rosterIndex}-walk-down` }
+          { key, frame: `actor-${actorKey}-idle` },
+          { key, frame: `actor-${actorKey}-walk-down` }
         ],
         frameRate: 6,
         repeat: -1,
         yoyo: true
       })
       this.anims.create({
-        key: `actor-${rosterIndex}-walk-up`,
-        frames: [{ key, frame: `actor-${rosterIndex}-walk-up` }],
+        key: `actor-${actorKey}-walk-up`,
+        frames: [{ key, frame: `actor-${actorKey}-walk-up` }],
         frameRate: 6,
         repeat: -1
       })
       this.anims.create({
-        key: `actor-${rosterIndex}-work`,
-        frames: [{ key, frame: `actor-${rosterIndex}-work` }],
+        key: `actor-${actorKey}-work`,
+        frames: [{ key, frame: `actor-${actorKey}-work` }],
         frameRate: 3,
         repeat: -1
       })
@@ -1097,12 +1114,19 @@ export class OfficeScene extends Phaser.Scene {
     })
   }
 
-  private animationAtlasFor(rosterIndex: number): string | null {
-    if (rosterIndex >= 1 && rosterIndex <= 4) return 'claude-team-animation-atlas'
-    if (rosterIndex >= 5 && rosterIndex <= 9) return 'codex-team-animation-atlas'
-    if (rosterIndex >= 10 && rosterIndex <= 14) return 'antigravity-team-animation-atlas'
-    if (rosterIndex >= 15 && rosterIndex <= 19) return 'roster-row-4-animation-atlas'
+  private animationAtlasFor(teamIndex: number): string | null {
+    if (teamIndex === 0) return 'claude-team-animation-atlas'
+    if (teamIndex === 1) return 'codex-team-animation-atlas'
+    if (teamIndex === 2) return 'antigravity-team-animation-atlas'
     return null
+  }
+
+  /** Which of the 5 skin variants in the actor's team atlas to use - the
+   *  lead (slotIndex 0) gets column 0, sub-agents fill the rest, wrapping
+   *  around past a 5th so a very large team still gets an animated sprite
+   *  instead of falling back to a generic static one. */
+  private actorAnimationKey(actor: OfficeGameActor): string {
+    return `${actor.teamIndex}-${actor.slotIndex % 5}`
   }
 
   private createRepresentativeActor(): void {
@@ -1199,15 +1223,16 @@ export class OfficeScene extends Phaser.Scene {
   private createActor(actor: OfficeGameActor): ActorView {
     const row = Math.floor(actor.rosterIndex / 5)
     const frame = String(actor.rosterIndex)
-    const animationAtlas = this.animationAtlasFor(actor.rosterIndex)
+    const animationAtlas = this.animationAtlasFor(actor.teamIndex)
+    const animKey = this.actorAnimationKey(actor)
     const sprite = this.add.sprite(
       0,
       -27,
       animationAtlas ?? `roster-row-${row}`,
-      animationAtlas ? `actor-${actor.rosterIndex}-idle` : frame
-    ).setDisplaySize(animationAtlas ? 180 : 100, animationAtlas ? 180 : 136)
-      .setY(animationAtlas ? -70 : -54)
-    if (animationAtlas) sprite.play(`actor-${actor.rosterIndex}-idle`)
+      animationAtlas ? `actor-${animKey}-idle` : frame
+    ).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
+      .setY(ACTOR_SPRITE_Y_OFFSET)
+    if (animationAtlas) sprite.play(`actor-${animKey}-idle`)
     sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
       this.actorSelectHandler?.(actor.profileId)
     })
@@ -1298,9 +1323,9 @@ export class OfficeScene extends Phaser.Scene {
       view.container.setPosition(resolved.x, resolved.y).setDepth(resolved.y)
       view.stateMachine.startWalking(dx, dy)
       view.sprite.setFlipX(dx < 0)
-      if (this.animationAtlasFor(view.actor.rosterIndex)) {
+      if (this.animationAtlasFor(view.actor.teamIndex)) {
         const animation = Math.abs(dy) > Math.abs(dx) && dy < 0 ? 'walk-up' : 'walk-down'
-        view.sprite.play(`actor-${view.actor.rosterIndex}-${animation}`, true)
+        view.sprite.play(`actor-${this.actorAnimationKey(view.actor)}-${animation}`, true)
       }
       if (resolved.blockedX && resolved.blockedY) {
         const remaining = findOfficePath({ x: view.container.x, y: view.container.y }, target, movementCollisions)
@@ -1339,21 +1364,20 @@ export class OfficeScene extends Phaser.Scene {
     const actorIndex = this.snapshot?.actors.findIndex((candidate) => candidate.profileId === actor.profileId) ?? 0
     view.stateMachine.arrive(actorIndex)
     const action = view.stateMachine.current.action
-    if (this.animationAtlasFor(actor.rosterIndex)) {
+    if (this.animationAtlasFor(actor.teamIndex)) {
       // Furniture is always composed at runtime. The atlas work row contains a
       // baked desk, so a desk-facing character frame is used at the chair snap.
-      view.sprite.play(`actor-${actor.rosterIndex}-${action === 'working' ? 'walk-up' : 'idle'}`, true)
+      view.sprite.play(`actor-${this.actorAnimationKey(actor)}-${action === 'working' ? 'walk-up' : 'idle'}`, true)
     }
     view.prop.setVisible(false)
-    const animatedActor = Boolean(this.animationAtlasFor(actor.rosterIndex))
     view.sprite.setDisplaySize(
-      animatedActor ? 180 : 100,
-      action === 'working' ? (animatedActor ? 152 : 116) : (animatedActor ? 180 : 136)
+      ACTOR_SPRITE_WIDTH,
+      action === 'working' ? ACTOR_SPRITE_WORKING_HEIGHT : action === 'sitting' ? ACTOR_SPRITE_SITTING_HEIGHT : ACTOR_SPRITE_HEIGHT
     )
     view.sprite.setY(
-      action === 'working' ? (animatedActor ? -40 : -30)
-        : action === 'sitting' ? (animatedActor ? -60 : -40)
-          : (animatedActor ? -70 : -54)
+      action === 'working' ? ACTOR_SPRITE_Y_OFFSET + 24
+        : action === 'sitting' ? ACTOR_SPRITE_Y_OFFSET + 8
+          : ACTOR_SPRITE_Y_OFFSET
     )
     if (actor.presence === 'working' || actor.presence === 'deskIdle') {
       // Sit exactly at the chair snap point and render just behind the desk
@@ -1363,8 +1387,16 @@ export class OfficeScene extends Phaser.Scene {
       if (desk) view.container.setDepth(desk.image.depth - 1)
     }
     if (action === 'sitting') {
-      const seatIndex = actorIndex % MEETING_SEATS.length
-      view.container.setDepth(view.container.y + (seatIndex < 4 ? -4 : 8))
+      // The meeting table is ordinary custom furniture, and furniture depth
+      // is y + zOrder*20000 (see furnitureDepthBonus) - once it's been
+      // edited even once, its zOrder alone puts it at a depth in the
+      // millions, which swallows a plain y-based actor depth whole (a small
+      // +/-4..8 bias was never going to clear that gap, whichever way it
+      // pointed - this is why a seated head reads as "buried" in the table).
+      // Meeting seating isn't tied to one specific desk the way desk-seating
+      // is, so instead of matching one piece of furniture, this actor is
+      // pushed in front of every piece of furniture currently in the scene.
+      view.container.setDepth(this.maxFurnitureDepth() + 1 + actorIndex)
       view.container.setScale(1, 0.86)
       return
     }
