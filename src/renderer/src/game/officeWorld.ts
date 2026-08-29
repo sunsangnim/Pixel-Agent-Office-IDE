@@ -63,10 +63,10 @@ export const WAYPOINTS = {
   // of floating mid-room, so arriving reads as "step out of the elevator".
   elevatorInside: { x: 820, y: 80 },
   elevatorExit: { x: 820, y: 130 },
-  pantryDoor: { x: 270, y: 220 },
+  pantryDoor: { x: 270, y: 364 },
   pantryTarget: { x: 130, y: 125 },
-  meetingDoor: { x: 475, y: 220 },
-  representativeDoor: { x: 735, y: 765 }
+  meetingDoor: { x: 475, y: 364 },
+  representativeDoor: { x: 735, y: 685 }
 } satisfies Record<string, WorldPoint>
 
 export function deskPoint(actor: Pick<OfficeGameActor, 'teamIndex' | 'slotIndex'>): WorldPoint {

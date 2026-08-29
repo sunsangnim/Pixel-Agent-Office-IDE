@@ -12,15 +12,19 @@ function tiles(column: number, row: number, columns: number, rows: number): Coll
 
 export const OFFICE_WALL_COLLISIONS: CollisionRect[] = [
   tiles(0, 0, 60, 1), tiles(0, 59, 60, 1), tiles(0, 0, 1, 60), tiles(59, 0, 1, 60),
+  // Pantry/meeting/entrance: enlarged 9 tiles taller (row 13 -> row 22) for
+  // more usable room inside each, per the user's marked-up screenshot.
   // Pantry: widened 4-tile opening at columns 14-17.
-  tiles(17, 1, 1, 13), tiles(1, 13, 13, 1),
+  tiles(17, 1, 1, 22), tiles(1, 22, 13, 1),
   // Meeting room: widened 5-tile opening at columns 27-31.
-  tiles(18, 1, 1, 13), tiles(41, 1, 1, 13), tiles(18, 13, 9, 1), tiles(32, 13, 10, 1),
+  tiles(18, 1, 1, 22), tiles(41, 1, 1, 22), tiles(18, 22, 9, 1), tiles(32, 22, 10, 1),
   // Entrance/elevator: keep the side divider only; the lower corridor wall is fully open.
-  tiles(42, 1, 1, 13),
+  tiles(42, 1, 1, 22),
   // Representative room: shifted down 20 tiles (the extra floor space added
-  // below the top-row rooms), still flush against the new bottom wall.
-  tiles(44, 45, 6, 1), tiles(54, 45, 5, 1), tiles(44, 45, 1, 14)
+  // below the top-row rooms) and enlarged 5 tiles taller (top wall row 45 ->
+  // row 40), still flush against the bottom wall and clear of the desk
+  // placed just above it.
+  tiles(44, 40, 6, 1), tiles(54, 40, 5, 1), tiles(44, 40, 1, 19)
 ]
 
 export const OFFICE_FLOOR_REGION = { x: 480, y: 480, width: 928, height: 928 }
