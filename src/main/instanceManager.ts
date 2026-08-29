@@ -6,12 +6,17 @@ import type { AgentInstance, AgentRun } from '../shared/types'
 import { ORCHESTRATION_POLICY } from '../shared/orchestrationPolicy'
 import { adapterIdForTemplate } from './cliAdapters'
 import { buildAgentProfiles } from '../shared/agentProfiles'
+import { ensureDeskWorktree, removeDeskWorktree } from './gitWorktreeManager'
 
 class InstanceManager {
   private runs = new Map<string, AgentRun>()
 
   listRuns(): AgentRun[] {
     return Array.from(this.runs.values())
+  }
+
+  getRun(runId: string): AgentRun | undefined {
+    return this.runs.get(runId)
   }
 
   private profiles() {
@@ -27,6 +32,8 @@ class InstanceManager {
         instanceId: run.runId,
         templateId: run.templateId,
         cwd: run.cwd,
+        repoRoot: run.repoRoot,
+        worktreeBranch: run.worktreeBranch,
         ptyId: run.ptyId,
         rank: profile.rank,
         slotIndex: profile.slotIndex,
@@ -37,7 +44,7 @@ class InstanceManager {
     })
   }
 
-  create(templateId: string, cwd: string, sender: WebContents): AgentInstance[] {
+  async create(templateId: string, repoRoot: string, sender: WebContents): Promise<AgentInstance[]> {
     const template = agentTemplateStore.list().find((candidate) => candidate.id === templateId)
     if (!template) throw new Error(`Unknown agent template: ${templateId}`)
     if (this.runs.size >= ORCHESTRATION_POLICY.maxConcurrentRuns) {
@@ -63,6 +70,10 @@ class InstanceManager {
     )
     if (!profile) throw new Error(`${template.name} 팀의 좌석 프로필을 찾을 수 없습니다.`)
 
+    const deskKey = `${templateId}-${slotIndex}`
+    const worktree = await ensureDeskWorktree(repoRoot, deskKey).catch(() => null)
+    const cwd = worktree?.path ?? repoRoot
+
     const ptyId = ptyManager.spawn(
       {
         command: template.command,
@@ -78,6 +89,9 @@ class InstanceManager {
       profileId: profile.profileId,
       templateId,
       cwd,
+      repoRoot,
+      worktreeBranch: worktree?.branch ?? null,
+      baseSha: worktree?.baseSha ?? null,
       ptyId,
       parentRunId: leader?.instanceId ?? null,
       presence: 'deskIdle'
@@ -86,15 +100,15 @@ class InstanceManager {
     return this.list()
   }
 
-  createChild(parentInstanceId: string, sender: WebContents): AgentInstance[] {
+  async createChild(parentInstanceId: string, sender: WebContents): Promise<AgentInstance[]> {
     const parent = this.runs.get(parentInstanceId)
     if (!parent) throw new Error('하위 세션을 생성할 팀장 세션을 찾을 수 없습니다.')
     const profile = this.profiles().find((candidate) => candidate.profileId === parent.profileId)
     if (profile?.rank !== 'teamLead') throw new Error('하위 세션은 팀장만 생성할 수 있습니다.')
-    return this.create(parent.templateId, parent.cwd, sender)
+    return this.create(parent.templateId, parent.repoRoot, sender)
   }
 
-  restart(instanceId: string, sender: WebContents): AgentInstance[] {
+  async restart(instanceId: string, sender: WebContents): Promise<AgentInstance[]> {
     const run = this.runs.get(instanceId)
     if (!run) throw new Error('재시작할 에이전트 세션을 찾을 수 없습니다.')
     const template = agentTemplateStore.list().find((candidate) => candidate.id === run.templateId)
@@ -115,7 +129,7 @@ class InstanceManager {
     return this.list()
   }
 
-  remove(instanceId: string): AgentInstance[] {
+  async remove(instanceId: string): Promise<AgentInstance[]> {
     const run = this.runs.get(instanceId)
     if (!run) return this.list()
     const profile = this.profiles().find((candidate) => candidate.profileId === run.profileId)
@@ -125,6 +139,9 @@ class InstanceManager {
     for (const target of removals) {
       ptyManager.kill(target.ptyId)
       this.runs.delete(target.runId)
+      if (target.worktreeBranch) {
+        await removeDeskWorktree(target.repoRoot, target.cwd).catch(() => {})
+      }
     }
     return this.list()
   }

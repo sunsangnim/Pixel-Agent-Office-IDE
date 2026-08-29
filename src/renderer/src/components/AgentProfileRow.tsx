@@ -11,6 +11,7 @@ interface AgentProfileRowProps {
   tasks: Record<string, string>
   selectedTargetIds: Set<string>
   onToggleTarget: (instanceId: string) => void
+  onOpenDiff: (instanceId: string) => void
 }
 
 function AgentProfileRow({
@@ -21,7 +22,8 @@ function AgentProfileRow({
   runtimeStates,
   tasks,
   selectedTargetIds,
-  onToggleTarget
+  onToggleTarget,
+  onOpenDiff
 }: AgentProfileRowProps) {
   const teamIds = Array.from(new Set(profiles.map((profile) => profile.templateId)))
   const teamLabels: Record<string, string> = {
@@ -50,6 +52,7 @@ function AgentProfileRow({
                   task={tasks[instance.instanceId]}
                   selected={selectedTargetIds.has(instance.instanceId)}
                   onToggle={() => onToggleTarget(instance.instanceId)}
+                  onOpenDiff={() => onOpenDiff(instance.instanceId)}
                   displayName={profile.displayName}
                   rosterIndex={rosterIndex}
                 />

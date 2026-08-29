@@ -9,6 +9,7 @@ interface AgentProfileCardProps {
   task?: string
   selected: boolean
   onToggle: () => void
+  onOpenDiff: () => void
   displayName: string
   rosterIndex: number
 }
@@ -19,7 +20,7 @@ const statusLabel: Record<DeskStatus, string> = {
   error: '오류'
 }
 
-function AgentProfileCard({ instance, status, runtimeState, task, selected, onToggle, displayName, rosterIndex }: AgentProfileCardProps) {
+function AgentProfileCard({ instance, status, runtimeState, task, selected, onToggle, onOpenDiff, displayName, rosterIndex }: AgentProfileCardProps) {
   return (
     <button
       className={`profile-card profile-card-${status}${selected ? ' profile-card-selected' : ''}`}
@@ -27,6 +28,19 @@ function AgentProfileCard({ instance, status, runtimeState, task, selected, onTo
       title={instance.cwd}
     >
       {selected && <span className="profile-card-check">✓</span>}
+      {instance.worktreeBranch && (
+        <span
+          className="profile-card-diff-btn"
+          role="button"
+          title="변경사항 검토"
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpenDiff()
+          }}
+        >
+          ⇄
+        </span>
+      )}
       <CorporateCharacterSprite rosterIndex={rosterIndex} className="profile-character" />
       <span className="profile-card-name">{displayName}</span>
       <span className="profile-card-task">

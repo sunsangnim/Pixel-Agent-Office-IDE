@@ -5,6 +5,8 @@ import type {
   AgentTemplate,
   AgentTemplateInput,
   AgentTemplatePatch,
+  GitDiffResult,
+  GitMergeResult,
   PreloadApi,
   PtyDataPayload,
   PtyExitPayload,
@@ -62,7 +64,8 @@ const api: PreloadApi = {
     chooseWorkFolder: (): Promise<string | null> => ipcRenderer.invoke('workspace:choose')
   },
   tasks: {
-    prepare: (request: string) => ipcRenderer.invoke('tasks:prepare', request)
+    prepare: (request: string) => ipcRenderer.invoke('tasks:prepare', request),
+    readSpec: (specPath: string): Promise<string> => ipcRenderer.invoke('tasks:read-spec', specPath)
   },
   instances: {
     list: (): Promise<AgentInstance[]> => ipcRenderer.invoke('instances:list'),
@@ -89,6 +92,10 @@ const api: PreloadApi = {
     openSettings: (): void => {
       ipcRenderer.send('settings:open')
     }
+  },
+  git: {
+    diff: (runId: string): Promise<GitDiffResult> => ipcRenderer.invoke('git:diff', runId),
+    merge: (runId: string): Promise<GitMergeResult> => ipcRenderer.invoke('git:merge', runId)
   }
 }
 

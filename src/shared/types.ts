@@ -113,6 +113,9 @@ export interface AgentRun {
   profileId: string
   templateId: string
   cwd: string
+  repoRoot: string
+  worktreeBranch: string | null
+  baseSha: string | null
   ptyId: string
   parentRunId: string | null
   presence: OfficePresence
@@ -122,6 +125,8 @@ export interface AgentInstance {
   instanceId: string
   templateId: string
   cwd: string
+  repoRoot: string
+  worktreeBranch: string | null
   ptyId: string
   rank: AgentRank
   slotIndex: number
@@ -158,6 +163,46 @@ export interface TaskWorkspace {
 
 export interface TaskApi {
   prepare(request: string): Promise<TaskWorkspace>
+  readSpec(specPath: string): Promise<string>
+}
+
+export type GitDiffLineType = 'context' | 'add' | 'del'
+
+export interface GitDiffLine {
+  type: GitDiffLineType
+  text: string
+  oldLine?: number
+  newLine?: number
+}
+
+export interface GitDiffHunk {
+  header: string
+  lines: GitDiffLine[]
+}
+
+export type GitDiffFileStatus = 'added' | 'modified' | 'deleted' | 'renamed'
+
+export interface GitDiffFile {
+  path: string
+  status: GitDiffFileStatus
+  hunks: GitDiffHunk[]
+}
+
+export interface GitDiffResult {
+  branch: string | null
+  baseSha: string | null
+  files: GitDiffFile[]
+  error?: string
+}
+
+export interface GitMergeResult {
+  ok: boolean
+  message: string
+}
+
+export interface GitApi {
+  diff(runId: string): Promise<GitDiffResult>
+  merge(runId: string): Promise<GitMergeResult>
 }
 
 export interface AgentInstanceApi {
@@ -181,4 +226,5 @@ export interface PreloadApi {
   profiles: AgentProfileApi
   runs: AgentRunApi
   system: SystemApi
+  git: GitApi
 }

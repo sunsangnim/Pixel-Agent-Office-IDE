@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { ptyManager } from './ptyManager'
 import { agentTemplateStore } from './agentStore'
@@ -6,10 +7,13 @@ import { workspaceStore } from './workspaceStore'
 import { instanceManager } from './instanceManager'
 import { openSettingsWindow } from './windowManager'
 import { taskWorkspaceManager } from './taskWorkspaceManager'
+import { diffAgainstBase, mergeDeskBranch } from './gitWorktreeManager'
 import { buildAgentProfiles } from '../shared/agentProfiles'
 import type {
   AgentTemplateInput,
   AgentTemplatePatch,
+  GitDiffResult,
+  GitMergeResult,
   PtySpawnOptions,
   PtySpawnResult
 } from '../shared/types'
@@ -90,6 +94,15 @@ export function registerIpcHandlers(): void {
     return taskWorkspaceManager.prepare(privateTaskRoot, request)
   })
 
+  ipcMain.handle('tasks:read-spec', (_event, specPath: string) => {
+    const privateTaskRoot = join(app.getPath('userData'), 'private-tasks')
+    const resolved = join(specPath)
+    if (!resolved.startsWith(privateTaskRoot) || !existsSync(resolved)) {
+      throw new Error('접근할 수 없는 문서 경로입니다.')
+    }
+    return readFileSync(resolved, 'utf-8')
+  })
+
   ipcMain.handle('instances:list', () => instanceManager.list())
 
   ipcMain.handle('profiles:list', () => buildAgentProfiles(agentTemplateStore.list()))
@@ -103,34 +116,51 @@ export function registerIpcHandlers(): void {
     return instanceManager.create(templateId, cwd, event.sender)
   })
 
-  ipcMain.handle('runs:create', (event, templateId: string) => {
+  ipcMain.handle('runs:create', async (event, templateId: string) => {
     const cwd = workspaceStore.get()
     if (!cwd) throw new Error('작업 폴더를 먼저 지정해주세요.')
-    instanceManager.create(templateId, cwd, event.sender)
+    await instanceManager.create(templateId, cwd, event.sender)
     return instanceManager.listRuns()
   })
 
   ipcMain.handle('instances:create-child', (event, parentInstanceId: string) =>
     instanceManager.createChild(parentInstanceId, event.sender)
   )
-  ipcMain.handle('runs:create-child', (event, parentRunId: string) => {
-    instanceManager.createChild(parentRunId, event.sender)
+  ipcMain.handle('runs:create-child', async (event, parentRunId: string) => {
+    await instanceManager.createChild(parentRunId, event.sender)
     return instanceManager.listRuns()
   })
 
   ipcMain.handle('instances:restart', (event, instanceId: string) =>
     instanceManager.restart(instanceId, event.sender)
   )
-  ipcMain.handle('runs:restart', (event, runId: string) => {
-    instanceManager.restart(runId, event.sender)
+  ipcMain.handle('runs:restart', async (event, runId: string) => {
+    await instanceManager.restart(runId, event.sender)
     return instanceManager.listRuns()
   })
 
   ipcMain.handle('instances:remove', (_event, instanceId: string) =>
     instanceManager.remove(instanceId)
   )
-  ipcMain.handle('runs:remove', (_event, runId: string) => {
-    instanceManager.remove(runId)
+  ipcMain.handle('runs:remove', async (_event, runId: string) => {
+    await instanceManager.remove(runId)
     return instanceManager.listRuns()
+  })
+
+  ipcMain.handle('git:diff', async (_event, runId: string): Promise<GitDiffResult> => {
+    const run = instanceManager.getRun(runId)
+    if (!run || !run.worktreeBranch || !run.baseSha) {
+      return { branch: run?.worktreeBranch ?? null, baseSha: run?.baseSha ?? null, files: [], error: 'Git 저장소가 아니어서 diff를 표시할 수 없습니다.' }
+    }
+    const result = await diffAgainstBase(run.cwd, run.baseSha)
+    return { ...result, branch: run.worktreeBranch }
+  })
+
+  ipcMain.handle('git:merge', async (_event, runId: string): Promise<GitMergeResult> => {
+    const run = instanceManager.getRun(runId)
+    if (!run || !run.worktreeBranch) {
+      return { ok: false, message: 'Git 저장소가 아니어서 병합할 수 없습니다.' }
+    }
+    return mergeDeskBranch(run.repoRoot, run.cwd, run.worktreeBranch)
   })
 }

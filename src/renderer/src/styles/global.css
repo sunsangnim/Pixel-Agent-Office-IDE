@@ -865,3 +865,254 @@ body {
   display: flex;
   gap: 8px;
 }
+
+.profile-card-diff-btn {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #cfd3e6;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.profile-card-diff-btn:hover {
+  background: #6ea8fe;
+  color: #0f1420;
+}
+
+.plan-pending-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(110, 168, 254, 0.12);
+  color: #cfe0ff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+.plan-pending-banner button {
+  font-size: 11.5px;
+  padding: 3px 10px;
+}
+
+.plan-approval-panel {
+  width: 640px;
+}
+
+.plan-spec-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #1a1a2c;
+  border-radius: 6px;
+  padding: 12px;
+  max-height: 50vh;
+  overflow-y: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-family: Consolas, monospace;
+}
+
+.plan-approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.plan-approve-btn {
+  background: #4caf7d;
+  color: #08150f;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+}
+
+.plan-reject-btn {
+  background: transparent;
+  border: 1px solid #ff8a8a;
+  color: #ff8a8a;
+  padding: 8px 16px;
+  border-radius: 6px;
+}
+
+.plan-reject-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-reject-input {
+  min-height: 80px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.plan-reject-submit {
+  background: #ff8a8a;
+  color: #2a0d0d;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+}
+
+.diff-panel {
+  width: 900px;
+  max-width: 94vw;
+  height: 78vh;
+}
+
+.diff-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.diff-merge-status {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.diff-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+
+.diff-file-list {
+  width: 220px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.diff-file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  text-align: left;
+  background: transparent;
+  color: #cfd3e6;
+  font-size: 12px;
+}
+
+.diff-file-item.is-active {
+  background: rgba(110, 168, 254, 0.16);
+  color: #eef0f6;
+}
+
+.diff-file-status {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.diff-file-status-added { background: rgba(76, 175, 125, 0.25); color: #7be0ab; }
+.diff-file-status-modified { background: rgba(245, 197, 66, 0.25); color: #f5c542; }
+.diff-file-status-deleted { background: rgba(255, 92, 92, 0.25); color: #ff8a8a; }
+.diff-file-status-renamed { background: rgba(110, 168, 254, 0.25); color: #6ea8fe; }
+
+.diff-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: #1a1a2c;
+  border-radius: 6px;
+  padding: 8px 0;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.diff-hunk-header {
+  color: #7f8bb0;
+  padding: 4px 10px;
+}
+
+.diff-line {
+  display: flex;
+  gap: 10px;
+  padding: 1px 10px;
+  cursor: pointer;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-line:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.diff-line-number {
+  flex: 0 0 34px;
+  color: #6a6a80;
+  text-align: right;
+  user-select: none;
+}
+
+.diff-line-add { background: rgba(76, 175, 125, 0.12); }
+.diff-line-del { background: rgba(255, 92, 92, 0.12); }
+
+.diff-comment-bubble {
+  margin: 2px 10px 4px 44px;
+  background: rgba(110, 168, 254, 0.14);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  color: #cfe0ff;
+}
+
+.diff-comment-draft {
+  margin: 4px 10px 8px 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diff-comment-draft textarea {
+  min-height: 50px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.diff-comment-draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.diff-comment-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(110, 168, 254, 0.12);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+}

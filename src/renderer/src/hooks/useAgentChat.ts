@@ -17,7 +17,15 @@ interface CaptureEntry {
   instanceId: string
   buffer: string
   timer: ReturnType<typeof setTimeout>
-  stage: 'task' | 'teamSynthesis' | 'globalSynthesis'
+  stage: 'task' | 'teamSynthesis' | 'globalSynthesis' | 'planning'
+  taskId?: string
+  specPath?: string
+}
+
+export interface PlanReadyPayload {
+  instanceId: string
+  taskId: string
+  specPath: string
 }
 
 interface ChildReport {
@@ -37,7 +45,11 @@ export interface AgentAssignment {
   role: string
 }
 
-export function useAgentChat(instances: AgentInstance[], templates: AgentTemplate[]) {
+export function useAgentChat(
+  instances: AgentInstance[],
+  templates: AgentTemplate[],
+  onPlanReady?: (payload: PlanReadyPayload) => void
+) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [lastTaskByInstance, setLastTaskByInstance] = useState<Record<string, string>>({})
 
@@ -47,6 +59,8 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
   instancesRef.current = instances
   const templatesRef = useRef(templates)
   templatesRef.current = templates
+  const onPlanReadyRef = useRef(onPlanReady)
+  onPlanReadyRef.current = onPlanReady
 
   const capturesRef = useRef(new Map<string, CaptureEntry>())
   const pendingReportsRef = useRef(new Map<string, ChildReport[]>())
@@ -186,6 +200,13 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
     const template = instance
       ? templatesRef.current.find((candidate) => candidate.id === instance.templateId)
       : undefined
+
+    if (capture.stage === 'planning' && capture.taskId && capture.specPath) {
+      addSystemMessage(`${template?.name ?? '에이전트'} 기획서 초안 작성 완료 — 검토 대기`)
+      onPlanReadyRef.current?.({ instanceId: capture.instanceId, taskId: capture.taskId, specPath: capture.specPath })
+      return
+    }
+
     setMessages((prev) => [
       ...prev,
       {
@@ -284,6 +305,56 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
     }
   }
 
+  const sendPlanningPrompt = (
+    text: string,
+    targetInstanceIds: string[],
+    taskId: string,
+    specPath: string,
+    sourceInstances = instances,
+    displayText = text
+  ): void => {
+    const targets = sourceInstances.filter((i) => targetInstanceIds.includes(i.instanceId))
+    if (targets.length === 0) return
+
+    const targetNames = targets.map(
+      (t) => templates.find((tpl) => tpl.id === t.templateId)?.name ?? t.templateId
+    )
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        kind: 'user',
+        authorName: '김태호',
+        authorColor: '#6ea8fe',
+        authorSeed: 'me',
+        text: displayText
+      },
+      {
+        id: crypto.randomUUID(),
+        kind: 'system',
+        authorName: '',
+        authorColor: '',
+        authorSeed: '',
+        text: `${targetNames.join(', ')}에게 기획 작성 요청 (구현 전 승인 필요)`
+      }
+    ])
+
+    for (const instance of targets) {
+      const existing = capturesRef.current.get(instance.ptyId)
+      clearTimeout(existing?.timer)
+      capturesRef.current.set(instance.ptyId, {
+        instanceId: instance.instanceId,
+        buffer: '',
+        timer: setTimeout(() => {}, 0),
+        stage: 'planning',
+        taskId,
+        specPath
+      })
+      window.api.pty.sendPrompt(instance.ptyId, text)
+    }
+  }
+
   const sendAssignments = (
     originalText: string,
     assignments: AgentAssignment[],
@@ -352,5 +423,5 @@ export function useAgentChat(instances: AgentInstance[], templates: AgentTemplat
     }
   }
 
-  return { messages, lastTaskByInstance, sendPrompt, sendAssignments, addSystemMessage }
+  return { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage }
 }
