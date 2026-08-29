@@ -430,6 +430,14 @@ export class OfficeScene extends Phaser.Scene {
       this.selectFurniture(id)
     })
     image.on('dragstart', () => {
+      // draggable was set unconditionally above (so drag works the instant
+      // edit mode turns on, no re-binding needed) - but that also means a
+      // plain click outside edit mode fires a dragstart Phaser considers a
+      // (zero-distance) drag. Without this guard, that alone bumped the
+      // clicked piece to the front even though drag/dragend both already
+      // refuse to run outside edit mode - the exact z-order-on-click bug
+      // this was supposed to have stayed fixed.
+      if (!this.layoutEditing) return
       image.setData({ dragStartX: image.x, dragStartY: image.y })
       // Bring the piece being moved to the front immediately, before it's
       // even dropped, so it's never hidden behind whatever it's dragged over.

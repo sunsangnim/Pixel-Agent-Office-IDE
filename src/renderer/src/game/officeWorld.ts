@@ -63,7 +63,13 @@ export const WAYPOINTS = {
   // of floating mid-room, so arriving reads as "step out of the elevator".
   elevatorInside: { x: 820, y: 80 },
   elevatorExit: { x: 820, y: 130 },
-  pantryDoor: { x: 270, y: 364 },
+  // The pantry's doorway gap (officeGrid.ts OFFICE_WALL_COLLISIONS) runs
+  // x:224-272 - this used to sit at x:270, just 2px off the column-17 wall's
+  // edge at x:272. An actor's collision box is +/-14px wide, so standing
+  // "at" that waypoint already overlapped the wall by 12px, which is why a
+  // character walking to/through the pantry door read as stuck on it.
+  // Re-centered in the gap (248) with margin on both sides.
+  pantryDoor: { x: 248, y: 364 },
   pantryTarget: { x: 130, y: 125 },
   meetingDoor: { x: 475, y: 364 },
   representativeDoor: { x: 735, y: 685 }
