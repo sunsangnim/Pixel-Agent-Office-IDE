@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { AgentTemplate } from '@shared/types'
+import type { AgentProfile, AgentTemplate } from '@shared/types'
+import { leadTitleFor } from '@shared/agentProfiles'
 import TerminalModal from './components/TerminalModal'
 import CorporateCharacterSprite from './components/CorporateCharacterSprite'
 import { CORPORATE_ROSTER_SIZE } from './lib/corporateRoster'
@@ -12,6 +13,7 @@ interface FormState {
   color: string
   env: string
   loginArgs: string
+  leadTitle: string
 }
 
 const emptyForm: FormState = {
@@ -20,7 +22,8 @@ const emptyForm: FormState = {
   args: '',
   color: '#6ea8fe',
   env: '',
-  loginArgs: ''
+  loginArgs: '',
+  leadTitle: ''
 }
 
 function toFormState(template: AgentTemplate): FormState {
@@ -32,7 +35,8 @@ function toFormState(template: AgentTemplate): FormState {
     env: Object.entries(template.env ?? {})
       .map(([k, v]) => `${k}=${v}`)
       .join('\n'),
-    loginArgs: (template.loginArgs ?? []).join(' ')
+    loginArgs: (template.loginArgs ?? []).join(' '),
+    leadTitle: template.leadTitle ?? ''
   }
 }
 
@@ -60,6 +64,7 @@ function SettingsWindow() {
   const [loading, setLoading] = useState(true)
   const [loginSession, setLoginSession] = useState<{ ptyId: string; title: string } | null>(null)
   const [capacities, setCapacities] = useState<Record<string, number>>({})
+  const [profiles, setProfiles] = useState<AgentProfile[]>([])
 
   useEffect(() => {
     window.api.templates.list().then((list) => {
@@ -67,11 +72,14 @@ function SettingsWindow() {
       setLoading(false)
     })
     window.api.teamCapacity.list().then(setCapacities)
+    window.api.profiles.list().then(setProfiles)
     const unsubscribeTemplates = window.api.templates.onChanged(() => {
       window.api.templates.list().then(setTemplates)
+      window.api.profiles.list().then(setProfiles)
     })
     const unsubscribeCapacity = window.api.teamCapacity.onChanged(() => {
       window.api.teamCapacity.list().then(setCapacities)
+      window.api.profiles.list().then(setProfiles)
     })
     return () => {
       unsubscribeTemplates()
@@ -97,7 +105,8 @@ function SettingsWindow() {
       args: parseArgs(form.args),
       color: form.color,
       env: parseEnv(form.env),
-      loginArgs: parseArgs(form.loginArgs)
+      loginArgs: parseArgs(form.loginArgs),
+      leadTitle: form.leadTitle.trim() || undefined
     }
     const updated = editingId
       ? await window.api.templates.update(editingId, input)
@@ -148,7 +157,9 @@ function SettingsWindow() {
                 {t.name.slice(0, 1).toUpperCase()}
               </span>
               <div className="settings-card-body">
-                <span className="settings-card-name">{t.name}</span>
+                <span className="settings-card-name">
+                  {t.name} <span className="settings-card-title">· {leadTitleFor(t.id, t.leadTitle)}</span>
+                </span>
                 <code className="settings-card-command">
                   {t.command} {t.args.join(' ')}
                 </code>
@@ -213,6 +224,14 @@ function SettingsWindow() {
           />
         </label>
         <label>
+          직급 (팀장 호칭)
+          <input
+            value={form.leadTitle}
+            onChange={(e) => setForm({ ...form, leadTitle: e.target.value })}
+            placeholder="예: 부장, 차장, 과장"
+          />
+        </label>
+        <label>
           로그인 명령 인자 (공백 구분, 기본값: login)
           <input
             value={form.loginArgs}
@@ -256,12 +275,19 @@ function SettingsWindow() {
           <span className="settings-count-badge">20명</span>
         </div>
         <div className="settings-roster-grid">
-          {Array.from({ length: CORPORATE_ROSTER_SIZE }, (_, index) => (
-            <figure key={index} data-roster-index={index}>
-              <CorporateCharacterSprite rosterIndex={index} />
-              <figcaption>{index === 0 ? '대표' : index <= 15 ? `직원 ${index}` : `확장 ${index - 15}`}</figcaption>
-            </figure>
-          ))}
+          {Array.from({ length: CORPORATE_ROSTER_SIZE }, (_, index) => {
+            const profile = index === 0 ? null : profiles[index - 1]
+            const label =
+              index === 0
+                ? '대표'
+                : (profile?.displayName ?? (index <= 15 ? `직원 ${index}` : `확장 ${index - 15}`))
+            return (
+              <figure key={index} data-roster-index={index}>
+                <CorporateCharacterSprite rosterIndex={index} />
+                <figcaption>{label}</figcaption>
+              </figure>
+            )
+          })}
         </div>
       </section>
 

@@ -17,8 +17,13 @@ const TEAM_LEAD_TITLES: Record<(typeof BUILT_IN_TEAM_IDS)[number], string> = {
 const DEFAULT_LEAD_TITLE = '팀장'
 export const SUB_AGENT_TITLE = '사원'
 
-export function leadTitleFor(templateId: string): string {
+export function leadTitleFor(templateId: string, override?: string): string {
+  if (override && override.trim().length > 0) return override.trim()
   return TEAM_LEAD_TITLES[templateId as (typeof BUILT_IN_TEAM_IDS)[number]] ?? DEFAULT_LEAD_TITLE
+}
+
+function shortTeamName(templateId: string, fallbackName: string): string {
+  return TEAM_NAMES[templateId as (typeof BUILT_IN_TEAM_IDS)[number]] ?? fallbackName
 }
 
 function profileId(templateId: string, slotIndex: number): string {
@@ -51,11 +56,12 @@ export function findAgentProfile(profileIdValue: string): AgentProfile | undefin
 }
 
 export function buildAgentProfiles(
-  templates: Array<Pick<AgentTemplate, 'id' | 'name'>>,
+  templates: Array<Pick<AgentTemplate, 'id' | 'name' | 'leadTitle'>>,
   capacityByTemplateId: Record<string, number> = {}
 ): AgentProfile[] {
   return templates.flatMap((template) => {
     const capacity = Math.max(1, capacityByTemplateId[template.id] ?? 5)
+    const name = shortTeamName(template.id, template.name)
     return Array.from({ length: capacity }, (_, slotIndex) => {
       const rank: AgentRank = slotIndex === 0 ? 'teamLead' : 'subAgent'
       return {
@@ -65,8 +71,8 @@ export function buildAgentProfiles(
         slotIndex,
         displayName:
           rank === 'teamLead'
-            ? `${template.name} ${leadTitleFor(template.id)}`
-            : `${template.name} ${SUB_AGENT_TITLE} ${slotIndex}`
+            ? `${name} ${leadTitleFor(template.id, template.leadTitle)}`
+            : `${name} ${SUB_AGENT_TITLE} ${slotIndex}`
       }
     })
   })

@@ -5,14 +5,15 @@ import { app } from 'electron'
 import type { AgentTemplate, AgentTemplateInput, AgentTemplatePatch } from '../shared/types'
 
 const defaultTemplates: AgentTemplate[] = [
-  { id: 'claude-code', name: 'Claude Code', command: 'claude', args: [], color: '#d97757' },
-  { id: 'codex-cli', name: 'Codex CLI', command: 'codex', args: [], color: '#10a37f' },
+  { id: 'claude-code', name: 'Claude Code', command: 'claude', args: [], color: '#d97757', leadTitle: '부장' },
+  { id: 'codex-cli', name: 'Codex CLI', command: 'codex', args: [], color: '#10a37f', leadTitle: '차장' },
   {
     id: 'antigravity-cli',
     name: 'Antigravity CLI',
     command: 'antigravity',
     args: [],
-    color: '#8b7cf6'
+    color: '#8b7cf6',
+    leadTitle: '과장'
   }
 ]
 
