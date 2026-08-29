@@ -722,6 +722,11 @@ export class OfficeScene extends Phaser.Scene {
     delete this.layoutSave[id]
     this.zOrderById.delete(id)
     this.removeFromMultiSelection(id)
+    // A team's "Team X" label rides along with its lead desk (see
+    // ensureDeskPair) - without this it would be left behind as an orphaned
+    // text object floating on the floor once that desk is gone.
+    this.teamLabels.get(id)?.destroy()
+    this.teamLabels.delete(id)
     if (!id.startsWith('custom-')) {
       this.removedDeskIds.add(id)
       const paired = pairedFurnitureId(id)
@@ -789,6 +794,8 @@ export class OfficeScene extends Phaser.Scene {
       this.furniture.delete(id)
       if (!id.startsWith('custom-')) this.removedDeskIds.add(id)
     }
+    this.teamLabels.forEach((label) => label.destroy())
+    this.teamLabels.clear()
     localStorage.setItem(OFFICE_REMOVED_DESKS_KEY, JSON.stringify([...this.removedDeskIds]))
     this.reportDeskCounts()
     this.selectFurniture(null)
