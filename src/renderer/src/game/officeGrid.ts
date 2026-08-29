@@ -11,18 +11,19 @@ function tiles(column: number, row: number, columns: number, rows: number): Coll
 }
 
 export const OFFICE_WALL_COLLISIONS: CollisionRect[] = [
-  tiles(0, 0, 60, 1), tiles(0, 39, 60, 1), tiles(0, 0, 1, 40), tiles(59, 0, 1, 40),
+  tiles(0, 0, 60, 1), tiles(0, 59, 60, 1), tiles(0, 0, 1, 60), tiles(59, 0, 1, 60),
   // Pantry: widened 4-tile opening at columns 14-17.
   tiles(17, 1, 1, 13), tiles(1, 13, 13, 1),
   // Meeting room: widened 5-tile opening at columns 27-31.
   tiles(18, 1, 1, 13), tiles(41, 1, 1, 13), tiles(18, 13, 9, 1), tiles(32, 13, 10, 1),
   // Entrance/elevator: keep the side divider only; the lower corridor wall is fully open.
   tiles(42, 1, 1, 13),
-  // Representative room: one tile wider, with a closed left side and a 4-tile opening in the top wall.
-  tiles(44, 25, 6, 1), tiles(54, 25, 5, 1), tiles(44, 25, 1, 14)
+  // Representative room: shifted down 20 tiles (the extra floor space added
+  // below the top-row rooms), still flush against the new bottom wall.
+  tiles(44, 45, 6, 1), tiles(54, 45, 5, 1), tiles(44, 45, 1, 14)
 ]
 
-export const OFFICE_FLOOR_REGION = { x: 480, y: 320, width: 928, height: 608 }
+export const OFFICE_FLOOR_REGION = { x: 480, y: 480, width: 928, height: 928 }
 
 export const FURNITURE_FOOTPRINTS: Record<number, TileFootprint> = {
   0: { columns: 4, rows: 6 }, 1: { columns: 4, rows: 8 }, 2: { columns: 8, rows: 4 },

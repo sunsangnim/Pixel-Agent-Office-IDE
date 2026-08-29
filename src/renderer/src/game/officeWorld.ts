@@ -1,7 +1,12 @@
 import type { OfficePresence } from '@shared/types'
 
 export const OFFICE_WORLD_WIDTH = 960
-export const OFFICE_WORLD_HEIGHT = 640
+// +320px of open floor added below the existing rooms (was 640) - the desk
+// area was pinned right up against the bottom wall with no room to grow.
+// The representative room and bottom outer wall shift down by the same
+// amount (see officeGrid.ts) so the top-row rooms (탕비실/회의실/출입구)
+// stay exactly where they were.
+export const OFFICE_WORLD_HEIGHT = 960
 
 export interface WorldPoint {
   x: number
@@ -61,7 +66,7 @@ export const WAYPOINTS = {
   pantryDoor: { x: 270, y: 220 },
   pantryTarget: { x: 130, y: 125 },
   meetingDoor: { x: 475, y: 220 },
-  representativeDoor: { x: 735, y: 445 }
+  representativeDoor: { x: 735, y: 765 }
 } satisfies Record<string, WorldPoint>
 
 export function deskPoint(actor: Pick<OfficeGameActor, 'teamIndex' | 'slotIndex'>): WorldPoint {

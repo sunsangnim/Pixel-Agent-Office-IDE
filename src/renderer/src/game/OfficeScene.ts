@@ -240,6 +240,12 @@ export class OfficeScene extends Phaser.Scene {
     this.layoutEditing = editing
     this.setEditorUiVisible(editing)
     if (!editing) this.selectFurniture(null)
+    // furnitureDepthBonus's output just changed for every piece with a
+    // zOrder - reapply immediately rather than waiting for the next
+    // interaction (or the desk/chair depth sync's next tick) to notice.
+    this.furniture.forEach(({ id, image }) => {
+      image.setDepth(image.y + this.furnitureDepthOffset(image) + this.furnitureDepthBonus(id))
+    })
     return true
   }
 
@@ -322,14 +328,16 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createWorld(): void {
-    this.add.rectangle(480, 320, 960, 640, 0x18352e).setDepth(0)
+    this.add.rectangle(
+      OFFICE_WORLD_WIDTH / 2, OFFICE_WORLD_HEIGHT / 2, OFFICE_WORLD_WIDTH, OFFICE_WORLD_HEIGHT, 0x18352e
+    ).setDepth(0)
     this.createFloorLayers()
     this.createHardcodedArchitecture()
 
     this.createRoom(8, 8, 280, 205, '탕비실')
     this.createRoom(296, 8, 370, 205, '회의실')
     this.createRoom(674, 8, 278, 205, '출입구')
-    this.createRoom(709, 405, 243, 227, '대표실')
+    this.createRoom(709, 725, 243, 227, '대표실')
 
     // Pantry/meeting/representative-room decoration stays stripped per
     // request. Desks are back: capacity is now driven by how many are
@@ -462,14 +470,15 @@ export class OfficeScene extends Phaser.Scene {
     this.selectedFurniture = id ? this.furniture.get(id) ?? null : null
     this.selectionOutline?.destroy()
     this.selectionOutline = undefined
-    // Deselecting (id null - including when the editor closes) must NOT
-    // revert the front bonus: whichever piece was last worked on stays on
-    // top after you leave the editor, not just while it's actively selected.
     if (!id) {
       this.notifyEditorState()
       return
     }
-    this.bringFurnitureToFront(id)
+    // Selecting (clicking) a piece is just inspection - it must NOT bump the
+    // z-order on its own, or clicking something to look at/delete it quietly
+    // reorders it in front of whatever it overlaps. Only an actual
+    // reposition (dragstart), rotation, or new placement calls
+    // bringFurnitureToFront.
     if (!this.selectedFurniture) {
       this.notifyEditorState()
       return
@@ -665,6 +674,14 @@ export class OfficeScene extends Phaser.Scene {
     this.zOrderById.set(id, this.nextZOrder++)
   }
 
+  // Only matters while actually editing - outside the editor this must stay
+  // out of the way of the gameplay-tuned depth logic (desk occludes a seated
+  // actor, an empty chair sits in front of its desk, etc.), which assumes
+  // plain y-based ordering.
+  // Applies in and out of the editor: a deliberate reorder (drag, rotate, or
+  // a fresh placement - never just clicking to select) is the user's actual
+  // intent for how those pieces stack, and has to stick after "편집 완료"
+  // too, not just while the editor happens to be open.
   private furnitureDepthBonus(id: string): number {
     const zOrder = this.zOrderById.get(id)
     return zOrder ? zOrder * 20000 : 0
@@ -753,13 +770,13 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createRepresentativeRoom(): void {
-    this.addFurniture('representative-plant', 15, 760, 580, 48, 70, 580)
-    this.addFurniture('representative-side-table', 16, 805, 592, 48, 42, 592)
-    this.addFurniture('representative-sofa', 17, 895, 455, 82, 48, 455)
-    this.addFurniture('representative-lamp', 18, 842, 455, 32, 62, 455)
-    this.addFurniture('representative-bookcase', 19, 912, 568, 48, 86, 568)
-    this.addFurniture('representative-desk', 10, 835, 515, 100, 58, 515)
-    this.addFurniture('representative-chair', 12, 835, 495, 38, 42, 477)
+    this.addFurniture('representative-plant', 15, 760, 900, 48, 70, 900)
+    this.addFurniture('representative-side-table', 16, 805, 912, 48, 42, 912)
+    this.addFurniture('representative-sofa', 17, 895, 775, 82, 48, 775)
+    this.addFurniture('representative-lamp', 18, 842, 775, 32, 62, 775)
+    this.addFurniture('representative-bookcase', 19, 912, 888, 48, 86, 888)
+    this.addFurniture('representative-desk', 10, 835, 835, 100, 58, 835)
+    this.addFurniture('representative-chair', 12, 835, 815, 38, 42, 797)
   }
 
   // Idempotent so it doubles as both the initial build and, after a layout
@@ -896,9 +913,9 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createRepresentativeActor(): void {
-    const sprite = this.add.sprite(835, 491, 'ceo-animation-sheet', 'ceo-idle-0').setDisplaySize(104, 120).setDepth(490)
+    const sprite = this.add.sprite(835, 811, 'ceo-animation-sheet', 'ceo-idle-0').setDisplaySize(104, 120).setDepth(810)
     sprite.play('ceo-idle')
-    this.add.text(835, 428, '김태호 대표', {
+    this.add.text(835, 748, '김태호 대표', {
       fontFamily: 'monospace', fontSize: '8px', color: '#17362e', backgroundColor: '#e7f3ef'
     }).setOrigin(0.5, 0).setPadding(2, 1).setDepth(700)
   }

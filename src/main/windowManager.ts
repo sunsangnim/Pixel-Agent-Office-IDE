@@ -24,10 +24,10 @@ function loadRendererView(win: BrowserWindow, view?: string): void {
 
 export function createMainWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
+    width: 1680,
+    height: 1050,
+    minWidth: 1100,
+    minHeight: 720,
     show: false,
     autoHideMenuBar: true,
     webPreferences: baseWebPreferences()
