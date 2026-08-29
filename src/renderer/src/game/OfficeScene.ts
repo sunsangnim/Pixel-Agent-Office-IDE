@@ -183,6 +183,13 @@ export class OfficeScene extends Phaser.Scene {
   private layoutEditing = false
   private selectedFurniture: FurnitureView | null = null
   private selectionOutline?: Phaser.GameObjects.Rectangle
+  // Shift+drag rectangle select - a separate set from the single-piece
+  // selection above so bulk delete works without disturbing the normal
+  // click/drag/rotate flow for a single piece.
+  private multiSelectedIds = new Set<string>()
+  private multiSelectOutlines = new Map<string, Phaser.GameObjects.Rectangle>()
+  private marqueeRect?: Phaser.GameObjects.Rectangle
+  private marqueeStart: WorldPoint | null = null
   private nextFurnitureId = 1
   // Team-lead nameplates (desk-T-0 only), tracked so they follow the desk if
   // it's later dragged instead of staying behind at its original spot.
@@ -224,7 +231,10 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private editorState(): EditorState {
-    return { hasSelection: Boolean(this.selectedFurniture), floor: this.selectedFloor }
+    return {
+      hasSelection: Boolean(this.selectedFurniture) || this.multiSelectedIds.size > 0,
+      floor: this.selectedFloor
+    }
   }
 
   private notifyEditorState(): void {
@@ -382,6 +392,10 @@ export class OfficeScene extends Phaser.Scene {
         if (this.selectedFurniture?.id === id) this.rotateSelectedFurniture(90)
         return
       }
+      // Shift+click/drag is claimed by the scene-level marquee-select
+      // handlers below (createLayoutEditor) - toggle-select on click,
+      // rectangle-select on drag - so it must not also single-select here.
+      if (this.layoutEditing && pointer.event.shiftKey) return
       this.selectFurniture(id)
     })
     image.on('dragstart', () => {
@@ -424,6 +438,57 @@ export class OfficeScene extends Phaser.Scene {
   private createLayoutEditor(): void {
     this.input.mouse?.disableContextMenu()
     this.input.keyboard?.on('keydown-DELETE', () => this.deleteSelectedFurniture())
+    this.createMarqueeSelect()
+  }
+
+  // Shift + drag draws a rectangle and multi-selects every piece whose
+  // anchor point falls inside it (for bulk "선택 삭제"); a shift+click with
+  // no real drag instead toggles just the one piece under the pointer, so
+  // shift can build up a selection one click at a time too.
+  private createMarqueeSelect(): void {
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (!this.layoutEditing || !pointer.event.shiftKey || pointer.rightButtonDown()) return
+      this.marqueeStart = { x: pointer.worldX, y: pointer.worldY }
+      this.marqueeRect?.destroy()
+      this.marqueeRect = this.add.rectangle(pointer.worldX, pointer.worldY, 1, 1)
+        .setOrigin(0, 0)
+        .setStrokeStyle(2, 0x6ea8fe)
+        .setFillStyle(0x6ea8fe, 0.12)
+        .setDepth(2500)
+    })
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (!this.marqueeStart || !this.marqueeRect) return
+      const x0 = Math.min(this.marqueeStart.x, pointer.worldX)
+      const y0 = Math.min(this.marqueeStart.y, pointer.worldY)
+      const width = Math.abs(pointer.worldX - this.marqueeStart.x)
+      const height = Math.abs(pointer.worldY - this.marqueeStart.y)
+      this.marqueeRect.setPosition(x0, y0).setSize(width, height)
+    })
+    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (!this.marqueeStart) return
+      const start = this.marqueeStart
+      this.marqueeStart = null
+      this.marqueeRect?.destroy()
+      this.marqueeRect = undefined
+
+      const x0 = Math.min(start.x, pointer.worldX)
+      const y0 = Math.min(start.y, pointer.worldY)
+      const x1 = Math.max(start.x, pointer.worldX)
+      const y1 = Math.max(start.y, pointer.worldY)
+      if (x1 - x0 < 4 && y1 - y0 < 4) {
+        // Barely moved - treat it as a shift+click toggle on whatever
+        // furniture (if any) is directly under the pointer.
+        const hit = this.input.hitTestPointer(pointer)
+        const clicked = hit.find((obj) => typeof (obj as Phaser.GameObjects.Image).getData === 'function' && (obj as Phaser.GameObjects.Image).getData('furnitureId'))
+        const id = clicked ? ((clicked as Phaser.GameObjects.Image).getData('furnitureId') as string) : null
+        if (id) this.toggleFurnitureSelection(id)
+        return
+      }
+      const ids = [...this.furniture.values()]
+        .filter(({ image }) => image.x >= x0 && image.x <= x1 && image.y >= y0 && image.y <= y1)
+        .map(({ id }) => id)
+      this.setMultiSelection(ids)
+    })
   }
 
   private createFloorLayers(): void {
@@ -470,6 +535,7 @@ export class OfficeScene extends Phaser.Scene {
 
   private selectFurniture(id: string | null): void {
     if (!this.layoutEditing && id) return
+    this.clearMultiSelection()
     this.selectedFurniture = id ? this.furniture.get(id) ?? null : null
     this.selectionOutline?.destroy()
     this.selectionOutline = undefined
@@ -507,6 +573,56 @@ export class OfficeScene extends Phaser.Scene {
     }
   }
 
+  private clearMultiSelection(): void {
+    this.multiSelectOutlines.forEach((rect) => rect.destroy())
+    this.multiSelectOutlines.clear()
+    this.multiSelectedIds.clear()
+  }
+
+  private addToMultiSelection(id: string): void {
+    if (this.multiSelectedIds.has(id)) return
+    const view = this.furniture.get(id)
+    if (!view) return
+    this.multiSelectedIds.add(id)
+    const outline = this.add.rectangle(
+      view.image.x, view.image.y, view.image.displayWidth + 6, view.image.displayHeight + 6
+    ).setStrokeStyle(3, 0x6ea8fe).setDepth(1990)
+    this.multiSelectOutlines.set(id, outline)
+  }
+
+  private removeFromMultiSelection(id: string): void {
+    this.multiSelectedIds.delete(id)
+    this.multiSelectOutlines.get(id)?.destroy()
+    this.multiSelectOutlines.delete(id)
+  }
+
+  private setMultiSelection(ids: string[]): void {
+    // Also drops any active single-piece selection - only one selection mode
+    // is active at a time.
+    this.selectFurniture(null)
+    ids.forEach((id) => this.addToMultiSelection(id))
+    this.notifyEditorState()
+  }
+
+  private toggleFurnitureSelection(id: string): void {
+    if (this.selectedFurniture) {
+      // Promote the existing single selection into the multi-select set
+      // first, so shift+clicking a second piece builds up a selection
+      // instead of discarding what was already picked.
+      const previousId = this.selectedFurniture.id
+      this.selectedFurniture = null
+      this.selectionOutline?.destroy()
+      this.selectionOutline = undefined
+      if (previousId !== id) this.addToMultiSelection(previousId)
+    }
+    if (this.multiSelectedIds.has(id)) {
+      this.removeFromMultiSelection(id)
+    } else {
+      this.addToMultiSelection(id)
+    }
+    this.notifyEditorState()
+  }
+
   addFurnitureFromPalette(frame: number): void {
     if (!this.layoutEditing) return
     const id = `custom-${Date.now()}-${this.nextFurnitureId++}`
@@ -520,15 +636,39 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   async deleteSelectedFurniture(): Promise<void> {
-    if (!this.layoutEditing || !this.selectedFurniture) return
-    const { id, frame, image } = this.selectedFurniture
+    if (!this.layoutEditing) return
+    if (this.multiSelectedIds.size > 0) {
+      // Snapshot the ids up front - deleting a desk also removes its paired
+      // chair mid-loop, so a later id in this same batch may already be gone
+      // by the time its turn comes (handled by the has() check below).
+      for (const id of [...this.multiSelectedIds]) {
+        const view = this.furniture.get(id)
+        if (!view) continue
+        await this.deleteFurnitureView(view)
+      }
+      this.clearMultiSelection()
+      this.saveFurnitureLayout()
+      this.notifyEditorState()
+      return
+    }
+    if (!this.selectedFurniture) return
+    await this.deleteFurnitureView(this.selectedFurniture)
+    this.selectedFurniture = null
+    this.selectionOutline?.destroy()
+    this.selectionOutline = undefined
+    this.saveFurnitureLayout()
+    this.notifyEditorState()
+  }
+
+  private async deleteFurnitureView(view: FurnitureView): Promise<void> {
+    const { id, frame, image } = view
 
     if (frame === DESK_FURNITURE_FRAME) {
       const templateId = this.teamTemplateIds[this.deskZone(id, image.x)]
       const allowed = templateId ? await window.api.teamCapacity.canRemoveDesk(templateId) : true
-      // The selection can change while we were awaiting the IPC round trip;
-      // bail rather than delete whatever happens to be selected by then.
-      if (this.selectedFurniture?.id !== id) return
+      // The piece can be gone by the time the IPC round trip resolves (e.g.
+      // already removed as another desk's paired chair in the same batch).
+      if (!this.furniture.has(id)) return
       if (!allowed) {
         this.showEditorNotice('이미 실행 중인 세션이 있어 이 데스크는 뺄 수 없습니다.')
         return
@@ -539,6 +679,7 @@ export class OfficeScene extends Phaser.Scene {
     this.furniture.delete(id)
     delete this.layoutSave[id]
     this.zOrderById.delete(id)
+    this.removeFromMultiSelection(id)
     if (!id.startsWith('custom-')) {
       this.removedDeskIds.add(id)
       const paired = pairedFurnitureId(id)
@@ -549,14 +690,10 @@ export class OfficeScene extends Phaser.Scene {
         delete this.layoutSave[paired]
         this.zOrderById.delete(paired)
         this.removedDeskIds.add(paired)
+        this.removeFromMultiSelection(paired)
       }
       localStorage.setItem(OFFICE_REMOVED_DESKS_KEY, JSON.stringify([...this.removedDeskIds]))
     }
-    this.selectedFurniture = null
-    this.selectionOutline?.destroy()
-    this.selectionOutline = undefined
-    this.saveFurnitureLayout()
-    this.notifyEditorState()
   }
 
   private rotateSelectedFurniture(delta: number): void {
