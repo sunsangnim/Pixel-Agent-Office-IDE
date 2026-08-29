@@ -18,3 +18,18 @@ export function parseOfficeLayout(raw: string | null): OfficeLayoutSave {
     return {}
   }
 }
+
+/** Default desk/chair pairs the user has deleted in the interior editor.
+ *  createDesks() must skip these on every reload, or the deletion never sticks. */
+export const OFFICE_REMOVED_DESKS_KEY = 'pixel-office-removed-desks-v1'
+
+export function parseRemovedIds(raw: string | null): Set<string> {
+  if (!raw) return new Set()
+  try {
+    const value = JSON.parse(raw) as unknown
+    if (!Array.isArray(value)) return new Set()
+    return new Set(value.filter((entry): entry is string => typeof entry === 'string'))
+  } catch {
+    return new Set()
+  }
+}

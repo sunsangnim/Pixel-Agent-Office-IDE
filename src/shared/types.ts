@@ -101,7 +101,12 @@ export interface OrchestrationPolicy {
 
 export interface TeamCapacityApi {
   list(): Promise<Record<string, number>>
-  set(templateId: string, capacity: number): Promise<Record<string, number>>
+  /** Pushes live desk-per-team counts from the office interior editor - this
+   *  is the actual source of truth for seat capacity, not a manual setting. */
+  report(counts: Record<string, number>): void
+  /** Whether removing one more desk from this team would still leave enough
+   *  seats for its currently running sessions. */
+  canRemoveDesk(templateId: string): Promise<boolean>
   onChanged(callback: () => void): () => void
 }
 

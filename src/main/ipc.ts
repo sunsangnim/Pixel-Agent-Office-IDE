@@ -118,13 +118,28 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('runs:list', () => instanceManager.listRuns())
 
   ipcMain.handle('team-capacity:list', () => teamCapacityStore.getAll())
-  ipcMain.handle('team-capacity:set', (_event, templateId: string, capacity: number) => {
-    const activeCount = instanceManager
-      .listRuns()
-      .filter((run) => run.templateId === templateId).length
-    const result = teamCapacityStore.set(templateId, capacity, activeCount)
-    broadcastTeamCapacityChanged()
-    return result
+
+  function activeCountFor(templateId: string): number {
+    return instanceManager.listRuns().filter((run) => run.templateId === templateId).length
+  }
+
+  ipcMain.on('team-capacity:report', (_event, counts: Record<string, number>) => {
+    // Never let a report drop a team's capacity below sessions already running
+    // in it - the interior editor already blocks the desk deletion that would
+    // cause this, but a stale/racing report shouldn't orphan a live session's
+    // card regardless.
+    const clamped = Object.fromEntries(
+      Object.entries(counts).map(([templateId, count]) => [
+        templateId,
+        Math.max(count, activeCountFor(templateId))
+      ])
+    )
+    if (teamCapacityStore.merge(clamped)) broadcastTeamCapacityChanged()
+  })
+
+  ipcMain.handle('team-capacity:can-remove-desk', (_event, templateId: string) => {
+    const currentCapacity = teamCapacityStore.get(templateId)
+    return currentCapacity - 1 >= activeCountFor(templateId)
   })
 
   ipcMain.handle('instances:create', (event, templateId: string) => {

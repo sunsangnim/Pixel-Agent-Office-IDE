@@ -39,6 +39,7 @@ import {
   TEAM_DESKS,
   WAYPOINTS,
   routeFor,
+  teamIndexForX,
   type OfficeGameActor,
   type OfficeWorldSnapshot,
   type WorldPoint
@@ -48,7 +49,13 @@ import {
   furnitureCollision, OFFICE_FLOOR_REGION, OFFICE_WALL_COLLISIONS, rotatedFootprint, snapFurniturePoint
 } from './officeGrid'
 import { intersectsAabb, pushApart, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
-import { OFFICE_LAYOUT_SAVE_KEY, parseOfficeLayout, type OfficeLayoutSave } from './layoutPersistence'
+import {
+  OFFICE_LAYOUT_SAVE_KEY,
+  OFFICE_REMOVED_DESKS_KEY,
+  parseOfficeLayout,
+  parseRemovedIds,
+  type OfficeLayoutSave
+} from './layoutPersistence'
 import { ActorStateMachine } from './actorStateMachine'
 import { OFFICE_WORLD_SAVE_KEY, parseOfficeWorldSave, upsertSavedActor, type OfficeWorldSave } from './worldPersistence'
 
@@ -134,6 +141,9 @@ export class OfficeScene extends Phaser.Scene {
   private actorSelectHandler: ((profileId: string) => void) | null = null
   private furniture = new Map<string, FurnitureView>()
   private layoutSave: OfficeLayoutSave = {}
+  private removedDeskIds = new Set<string>()
+  private deskCountsHandler: ((counts: number[]) => void) | null = null
+  private teamTemplateIds: string[] = []
   private layoutEditing = false
   private selectedFurniture: FurnitureView | null = null
   private selectionOutline?: Phaser.GameObjects.Rectangle
@@ -149,6 +159,19 @@ export class OfficeScene extends Phaser.Scene {
 
   setActorSelectHandler(handler: ((profileId: string) => void) | null): void {
     this.actorSelectHandler = handler
+  }
+
+  /** Reports live desk-per-zone counts (indexed by team column 0/1/2) so the
+   *  caller can push them to the main process as each team's seat capacity. */
+  setDeskCountsHandler(handler: ((counts: number[]) => void) | null): void {
+    this.deskCountsHandler = handler
+    if (handler && this.sys?.isActive()) handler(this.computeDeskCounts())
+  }
+
+  /** templateId for each team column (0/1/2), needed to validate desk removal
+   *  against that team's currently running session count. */
+  setTeamTemplateIds(ids: string[]): void {
+    this.teamTemplateIds = ids
   }
 
   setLayoutEditing(editing: boolean): void {
@@ -197,6 +220,7 @@ export class OfficeScene extends Phaser.Scene {
   create(): void {
     this.worldSave = parseOfficeWorldSave(localStorage.getItem(OFFICE_WORLD_SAVE_KEY))
     this.layoutSave = parseOfficeLayout(localStorage.getItem(OFFICE_LAYOUT_SAVE_KEY))
+    this.removedDeskIds = parseRemovedIds(localStorage.getItem(OFFICE_REMOVED_DESKS_KEY))
     const savedFloor = localStorage.getItem(OFFICE_FLOOR_SAVE_KEY)
     this.selectedFloor = FLOOR_TEXTURES.includes(savedFloor as typeof FLOOR_TEXTURES[number])
       ? savedFloor as typeof FLOOR_TEXTURES[number]
@@ -209,6 +233,7 @@ export class OfficeScene extends Phaser.Scene {
     this.createCeoAnimations()
     this.createRepresentativeActor()
     if (this.pendingSnapshot) this.applySnapshot(this.pendingSnapshot)
+    this.reportDeskCounts()
   }
 
   update(_time: number, delta: number): void {
@@ -234,10 +259,13 @@ export class OfficeScene extends Phaser.Scene {
     this.createRoom(674, 8, 278, 205, '출입구')
     this.createRoom(709, 405, 243, 227, '대표실')
 
-    this.createPantry()
-    this.createMeetingRoom()
+    // Pantry/meeting/representative-room decoration stays stripped per
+    // request. Desks are back: capacity is now driven by how many are
+    // actually placed in each team's zone, so they have to exist to count.
+    // this.createPantry()
+    // this.createMeetingRoom()
     this.createEntrance()
-    this.createRepresentativeRoom()
+    // this.createRepresentativeRoom()
     this.createDesks()
     this.restoreCustomFurniture()
   }
@@ -425,17 +453,42 @@ export class OfficeScene extends Phaser.Scene {
     this.selectFurniture(id)
   }
 
-  private deleteSelectedFurniture(): void {
+  private async deleteSelectedFurniture(): Promise<void> {
     if (!this.layoutEditing || !this.selectedFurniture) return
-    const { id, image } = this.selectedFurniture
+    const { id, frame, image } = this.selectedFurniture
+
+    if (frame === DESK_FURNITURE_FRAME) {
+      const templateId = this.teamTemplateIds[this.deskZone(id, image.x)]
+      const allowed = templateId ? await window.api.teamCapacity.canRemoveDesk(templateId) : true
+      // The selection can change while we were awaiting the IPC round trip;
+      // bail rather than delete whatever happens to be selected by then.
+      if (this.selectedFurniture?.id !== id) return
+      if (!allowed) {
+        this.showEditorNotice('이미 실행 중인 세션이 있어 이 데스크는 뺄 수 없습니다.')
+        return
+      }
+    }
+
     image.destroy()
     this.furniture.delete(id)
     delete this.layoutSave[id]
+    if (!id.startsWith('custom-')) {
+      this.removedDeskIds.add(id)
+      const paired = pairedFurnitureId(id)
+      const pairedView = paired ? this.furniture.get(paired) : undefined
+      if (paired && pairedView) {
+        pairedView.image.destroy()
+        this.furniture.delete(paired)
+        delete this.layoutSave[paired]
+        this.removedDeskIds.add(paired)
+      }
+      localStorage.setItem(OFFICE_REMOVED_DESKS_KEY, JSON.stringify([...this.removedDeskIds]))
+    }
     if (this.frontmostFurnitureId === id) this.frontmostFurnitureId = null
     this.selectedFurniture = null
     this.selectionOutline?.destroy()
     this.selectionOutline = undefined
-    localStorage.setItem(OFFICE_LAYOUT_SAVE_KEY, JSON.stringify(this.layoutSave))
+    this.saveFurnitureLayout()
   }
 
   private rotateSelectedFurniture(delta: number): void {
@@ -465,6 +518,7 @@ export class OfficeScene extends Phaser.Scene {
       }
     })
     localStorage.setItem(OFFICE_LAYOUT_SAVE_KEY, JSON.stringify(this.layoutSave))
+    this.reportDeskCounts()
   }
 
   private restoreCustomFurniture(): void {
@@ -478,6 +532,8 @@ export class OfficeScene extends Phaser.Scene {
     this.layoutSave = {}
     this.frontmostFurnitureId = null
     localStorage.removeItem(OFFICE_LAYOUT_SAVE_KEY)
+    this.removedDeskIds.clear()
+    localStorage.removeItem(OFFICE_REMOVED_DESKS_KEY)
     for (const [id, furniture] of this.furniture) {
       if (id.startsWith('custom-')) {
         furniture.image.destroy()
@@ -493,6 +549,10 @@ export class OfficeScene extends Phaser.Scene {
           .setDepth(furniture.defaultPoint.y + this.furnitureDepthOffset(furniture.image))
       }
     }
+    // Recreate any default desk/chair pairs that were previously deleted -
+    // ensureDeskPair is a no-op for pairs that are still present.
+    this.createDesks()
+    this.reportDeskCounts()
     this.selectFurniture(null)
   }
 
@@ -647,8 +707,8 @@ export class OfficeScene extends Phaser.Scene {
     // 94-150 box, which hung well below the wall and floated in the open
     // room like a freestanding crate rather than a door in the wall.
     this.createDoor('elevator', WAYPOINTS.elevatorInside.x, 58, 84, 64)
-    this.addFurniture('entrance-plant-left', 15, 735, 125, 45, 70, 40)
-    this.addFurniture('entrance-plant-right', 15, 905, 125, 45, 70, 40)
+    // this.addFurniture('entrance-plant-left', 15, 735, 125, 45, 70, 40)
+    // this.addFurniture('entrance-plant-right', 15, 905, 125, 45, 70, 40)
   }
 
   private createRepresentativeRoom(): void {
@@ -661,20 +721,68 @@ export class OfficeScene extends Phaser.Scene {
     this.addFurniture('representative-chair', 12, 835, 495, 38, 42, 477)
   }
 
+  // Idempotent so it doubles as both the initial build and, after a layout
+  // reset clears removedDeskIds, a way to recreate whichever default pairs
+  // the user had previously deleted - without duplicating ones still present.
+  private ensureDeskPair(teamIndex: number, slotIndex: number): void {
+    const point = TEAM_DESKS[teamIndex][slotIndex]
+    const deskId = `desk-${teamIndex}-${slotIndex}`
+    const chairId = `chair-${teamIndex}-${slotIndex}`
+    if (!this.removedDeskIds.has(deskId) && !this.furniture.has(deskId)) {
+      this.addFurniture(deskId, DESK_FURNITURE_FRAME, point.x, point.y + 12, 92, 58, point.y + 5)
+      if (slotIndex === 0) {
+        this.add.text(point.x - 36, point.y - 45, ['Claude', 'Codex', 'Antigravity'][teamIndex], {
+          fontFamily: 'monospace', fontSize: '10px', color: '#24473e'
+        }).setDepth(700)
+      }
+    }
+    // The chair itself uses its own plain y-based depth, so an empty seat
+    // stays fully visible in front of the desk (matching the reference
+    // look). It's only pushed behind the desk while someone is actually
+    // seated there - see syncDeskChairDepths, applied from applySnapshot -
+    // so the desk front edge convincingly occludes the seated actor
+    // without also swallowing the chair when nobody's sitting in it.
+    if (!this.removedDeskIds.has(chairId) && !this.furniture.has(chairId)) {
+      this.addFurniture(chairId, 12 + teamIndex, point.x, point.y + 54, 38, 42)
+    }
+  }
+
   private createDesks(): void {
-    TEAM_DESKS.forEach((team, teamIndex) => team.forEach((point, slotIndex) => {
-      this.addFurniture(`desk-${teamIndex}-${slotIndex}`, 10, point.x, point.y + 12, 92, 58, point.y + 5)
-      // The chair itself uses its own plain y-based depth, so an empty seat
-      // stays fully visible in front of the desk (matching the reference
-      // look). It's only pushed behind the desk while someone is actually
-      // seated there - see syncDeskChairDepths, applied from applySnapshot -
-      // so the desk front edge convincingly occludes the seated actor
-      // without also swallowing the chair when nobody's sitting in it.
-      this.addFurniture(`chair-${teamIndex}-${slotIndex}`, 12 + teamIndex, point.x, point.y + 54, 38, 42)
-      if (slotIndex === 0) this.add.text(point.x - 36, point.y - 45, ['Claude', 'Codex', 'Antigravity'][teamIndex], {
-        fontFamily: 'monospace', fontSize: '10px', color: '#24473e'
-      }).setDepth(700)
+    TEAM_DESKS.forEach((team, teamIndex) => team.forEach((_point, slotIndex) => {
+      this.ensureDeskPair(teamIndex, slotIndex)
     }))
+  }
+
+  /** Default desks keep their teamIndex in the id (collision avoidance can
+   *  nudge one off its column, which would misclassify it under pure
+   *  position lookup); only custom-added desks - which carry no team of
+   *  their own - go by which column their x position currently falls in. */
+  private deskZone(id: string, x: number): number {
+    const defaultMatch = /^desk-(\d+)-\d+$/.exec(id)
+    return defaultMatch ? Number(defaultMatch[1]) : teamIndexForX(x)
+  }
+
+  /** Every desk-frame piece (default or custom-added), grouped by team -
+   *  this *is* the team's seat capacity. */
+  private computeDeskCounts(): number[] {
+    const counts = [0, 0, 0]
+    this.furniture.forEach(({ id, frame, image }) => {
+      if (frame !== DESK_FURNITURE_FRAME || id === 'representative-desk') return
+      const zone = this.deskZone(id, image.x)
+      if (zone >= 0 && zone < counts.length) counts[zone] += 1
+    })
+    return counts
+  }
+
+  private reportDeskCounts(): void {
+    this.deskCountsHandler?.(this.computeDeskCounts())
+  }
+
+  private showEditorNotice(text: string): void {
+    const notice = this.add.text(480, 30, text, {
+      fontFamily: 'monospace', fontSize: '11px', color: '#ffffff', backgroundColor: '#7a2222'
+    }).setOrigin(0.5, 0).setPadding(6, 4).setDepth(3000)
+    this.time.delayedCall(2200, () => notice.destroy())
   }
 
   private createRosterFrames(): void {

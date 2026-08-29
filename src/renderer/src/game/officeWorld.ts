@@ -37,6 +37,15 @@ export const TEAM_DESKS: WorldPoint[][] = [0, 1, 2].map((team) => {
   ]
 })
 
+/** Team columns have no drawn boundary, so desk-count reporting infers which
+ *  team a desk belongs to from its x position, split at the midpoints between
+ *  the three TEAM_DESKS column centers (130, 375, 620). */
+export function teamIndexForX(x: number): number {
+  if (x < 252.5) return 0
+  if (x < 497.5) return 1
+  return 2
+}
+
 export const MEETING_SEATS: WorldPoint[] = [
   { x: 360, y: 92 }, { x: 430, y: 92 }, { x: 500, y: 92 }, { x: 570, y: 92 },
   { x: 360, y: 166 }, { x: 430, y: 166 }, { x: 500, y: 166 }, { x: 570, y: 166 }

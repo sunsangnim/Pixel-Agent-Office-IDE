@@ -3,7 +3,7 @@ import type { AgentTemplate } from '@shared/types'
 import TerminalModal from './components/TerminalModal'
 import CorporateCharacterSprite from './components/CorporateCharacterSprite'
 import { CORPORATE_ROSTER_SIZE } from './lib/corporateRoster'
-import { DEFAULT_TEAM_CAPACITY, MAX_TEAM_CAPACITY, MIN_TEAM_CAPACITY } from '@shared/orchestrationPolicy'
+import { DEFAULT_TEAM_CAPACITY } from '@shared/orchestrationPolicy'
 
 interface FormState {
   name: string
@@ -60,8 +60,6 @@ function SettingsWindow() {
   const [loading, setLoading] = useState(true)
   const [loginSession, setLoginSession] = useState<{ ptyId: string; title: string } | null>(null)
   const [capacities, setCapacities] = useState<Record<string, number>>({})
-  const [capacityDrafts, setCapacityDrafts] = useState<Record<string, string>>({})
-  const [capacityErrors, setCapacityErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     window.api.templates.list().then((list) => {
@@ -80,32 +78,6 @@ function SettingsWindow() {
       unsubscribeCapacity()
     }
   }, [])
-
-  const capacityFor = (templateId: string): string =>
-    capacityDrafts[templateId] ?? String(capacities[templateId] ?? DEFAULT_TEAM_CAPACITY)
-
-  const saveCapacity = async (templateId: string): Promise<void> => {
-    const value = Number(capacityFor(templateId))
-    try {
-      const updated = await window.api.teamCapacity.set(templateId, value)
-      setCapacities(updated)
-      setCapacityDrafts((prev) => {
-        const next = { ...prev }
-        delete next[templateId]
-        return next
-      })
-      setCapacityErrors((prev) => {
-        const next = { ...prev }
-        delete next[templateId]
-        return next
-      })
-    } catch (e) {
-      setCapacityErrors((prev) => ({
-        ...prev,
-        [templateId]: e instanceof Error ? e.message : String(e)
-      }))
-    }
-  }
 
   const resetForm = (): void => {
     setEditingId(null)
@@ -185,22 +157,8 @@ function SettingsWindow() {
                 )}
                 <div className="settings-capacity-row">
                   <span>영역 할당 (데스크 수)</span>
-                  <input
-                    type="number"
-                    min={MIN_TEAM_CAPACITY}
-                    max={MAX_TEAM_CAPACITY}
-                    className="settings-capacity-input"
-                    value={capacityFor(t.id)}
-                    onChange={(e) =>
-                      setCapacityDrafts((prev) => ({ ...prev, [t.id]: e.target.value }))
-                    }
-                  />
-                  <button type="button" className="pill-btn" onClick={() => saveCapacity(t.id)}>
-                    저장
-                  </button>
-                  {capacityErrors[t.id] && (
-                    <span className="settings-capacity-error">{capacityErrors[t.id]}</span>
-                  )}
+                  <strong>{capacities[t.id] ?? DEFAULT_TEAM_CAPACITY}개</strong>
+                  <span className="settings-capacity-hint">오피스 인테리어 편집에서 데스크를 놓거나 빼서 조절하세요</span>
                 </div>
               </div>
               <div className="settings-card-actions">

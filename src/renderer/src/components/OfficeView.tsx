@@ -54,9 +54,22 @@ function OfficeView(props: OfficeViewProps) {
     if (instance) props.onSelect(instance.instanceId)
   }
 
+  const reportDeskCounts = (counts: number[]): void => {
+    const report: Record<string, number> = {}
+    teamIds.slice(0, counts.length).forEach((templateId, index) => {
+      report[templateId] = counts[index] ?? 0
+    })
+    window.api.teamCapacity.report(report)
+  }
+
   return (
     <div className="office-room phaser-office-room">
-      <PhaserOffice snapshot={snapshot} onActorSelect={selectActor} />
+      <PhaserOffice
+        snapshot={snapshot}
+        teamTemplateIds={teamIds}
+        onActorSelect={selectActor}
+        onDeskCountsChange={reportDeskCounts}
+      />
     </div>
   )
 }

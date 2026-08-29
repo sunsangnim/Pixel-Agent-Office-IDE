@@ -5,21 +5,26 @@ import { OFFICE_WORLD_HEIGHT, OFFICE_WORLD_WIDTH, type OfficeWorldSnapshot } fro
 
 interface PhaserOfficeProps {
   snapshot: OfficeWorldSnapshot
+  teamTemplateIds: string[]
   onActorSelect: (profileId: string) => void
+  onDeskCountsChange: (counts: number[]) => void
 }
 
-function PhaserOffice({ snapshot, onActorSelect }: PhaserOfficeProps) {
+function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsChange }: PhaserOfficeProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const gameRef = useRef<Phaser.Game | null>(null)
   const sceneRef = useRef<OfficeScene | null>(null)
   const selectRef = useRef(onActorSelect)
   selectRef.current = onActorSelect
+  const deskCountsRef = useRef(onDeskCountsChange)
+  deskCountsRef.current = onDeskCountsChange
 
   useEffect(() => {
     if (!hostRef.current || gameRef.current) return
     const scene = new OfficeScene()
     sceneRef.current = scene
     scene.setActorSelectHandler((profileId: string) => selectRef.current(profileId))
+    scene.setDeskCountsHandler((counts: number[]) => deskCountsRef.current(counts))
     const game = new Phaser.Game({
       type: Phaser.CANVAS,
       parent: hostRef.current,
@@ -42,6 +47,7 @@ function PhaserOffice({ snapshot, onActorSelect }: PhaserOfficeProps) {
     return () => {
       window.removeEventListener('office:layout-edit', handleLayoutEditing)
       scene.setActorSelectHandler(null)
+      scene.setDeskCountsHandler(null)
       game.destroy(true)
       gameRef.current = null
       sceneRef.current = null
@@ -53,6 +59,10 @@ function PhaserOffice({ snapshot, onActorSelect }: PhaserOfficeProps) {
     if (!scene) return
     scene.updateSnapshot(snapshot)
   }, [snapshot])
+
+  useEffect(() => {
+    sceneRef.current?.setTeamTemplateIds(teamTemplateIds)
+  }, [teamTemplateIds])
 
   return <div className="phaser-office-host" ref={hostRef} aria-label="Phaser 생활형 에이전트 오피스" />
 }

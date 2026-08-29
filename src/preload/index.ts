@@ -99,8 +99,11 @@ const api: PreloadApi = {
   },
   teamCapacity: {
     list: (): Promise<Record<string, number>> => ipcRenderer.invoke('team-capacity:list'),
-    set: (templateId: string, capacity: number): Promise<Record<string, number>> =>
-      ipcRenderer.invoke('team-capacity:set', templateId, capacity),
+    report: (counts: Record<string, number>): void => {
+      ipcRenderer.send('team-capacity:report', counts)
+    },
+    canRemoveDesk: (templateId: string): Promise<boolean> =>
+      ipcRenderer.invoke('team-capacity:can-remove-desk', templateId),
     onChanged: (callback: () => void): (() => void) => {
       const listener = (): void => callback()
       ipcRenderer.on('team-capacity:changed', listener)
