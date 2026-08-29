@@ -1311,11 +1311,30 @@ export class OfficeScene extends Phaser.Scene {
     view.actor = actor
     view.route = route
     view.routeIndex = 0
+    // startActionAnimation shrinks/lowers the sprite for a seated pose
+    // (working/sitting) on arrival, but nothing undid that when the actor
+    // heads off somewhere else again - a route starting here means they're
+    // about to walk, so put the sprite back to its standing size/offset now
+    // rather than leaving it squashed for the whole walk.
+    view.sprite.setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setY(ACTOR_SPRITE_Y_OFFSET)
   }
 
   private updateActorMovement(deltaSeconds: number): void {
     if (this.layoutEditing) return
     const collisions = this.collisionRects()
+    // Furniture depth is y + zOrder*20000 (furnitureDepthBonus) - once a
+    // piece has been placed/edited even once, that alone puts it at a depth
+    // in the millions, which swallows a plain y-based actor depth whether
+    // the actor is actually in front of it or not (this is also why a
+    // meeting-seated actor's head used to read as buried in the table -
+    // see startActionAnimation's 'sitting' branch for the same fix). Floor
+    // every walking/idle actor's depth at "in front of all furniture" so
+    // desks, plants, decor, etc. never clip a character's legs/feet as they
+    // walk past. A desk still convincingly hides its own seated actor's
+    // legs - that's a separate, relative "desk.depth - 1" override applied
+    // once the actor arrives (startActionAnimation), not the plain
+    // container.y this floor replaces.
+    const inFrontOfFurniture = this.maxFurnitureDepth() + 1
     for (const view of this.actors.values()) {
       const target = view.route[view.routeIndex]
       if (!target) continue
@@ -1340,7 +1359,7 @@ export class OfficeScene extends Phaser.Scene {
         { x: view.container.x, y: view.container.y }, desired, movementCollisions,
         ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT
       )
-      view.container.setPosition(resolved.x, resolved.y).setDepth(resolved.y)
+      view.container.setPosition(resolved.x, resolved.y).setDepth(Math.max(resolved.y, inFrontOfFurniture))
       view.stateMachine.startWalking(dx, dy)
       view.sprite.setFlipX(dx < 0)
       if (this.animationAtlasFor(view.actor.teamIndex)) {
@@ -1358,6 +1377,7 @@ export class OfficeScene extends Phaser.Scene {
     if (this.layoutEditing) return
     const entries = [...this.actors.entries()]
     const collisions = this.collisionRects()
+    const inFrontOfFurniture = this.maxFurnitureDepth() + 1
     for (let pass = 0; pass < 2; pass += 1) {
       for (let i = 0; i < entries.length; i += 1) for (let j = i + 1; j < entries.length; j += 1) {
         const [idA, a] = entries[i]
@@ -1374,8 +1394,8 @@ export class OfficeScene extends Phaser.Scene {
           { x: b.container.x, y: b.container.y }, nextB, collisions,
           ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT
         )
-        a.container.setPosition(safeA.x, safeA.y).setDepth(safeA.y)
-        b.container.setPosition(safeB.x, safeB.y).setDepth(safeB.y)
+        a.container.setPosition(safeA.x, safeA.y).setDepth(Math.max(safeA.y, inFrontOfFurniture))
+        b.container.setPosition(safeB.x, safeB.y).setDepth(Math.max(safeB.y, inFrontOfFurniture))
       }
     }
   }
