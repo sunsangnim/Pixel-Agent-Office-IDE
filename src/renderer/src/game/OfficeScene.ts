@@ -147,6 +147,12 @@ export interface EditorState {
   floor: FloorTexture
 }
 const OFFICE_FLOOR_SAVE_KEY = 'pixel-office-floor-v4'
+// The CEO sprite's drawn art isn't centered within its animation-sheet cell
+// (measured: opaque-pixel bbox center sits ~26px right of the cell's own
+// center, at the sheet's native 202x161 frame size) - scaled to the sprite's
+// 104px display width, that's this many world-space px, so the nameplate
+// text lines up with the actual character instead of the empty cell center.
+const CEO_SPRITE_ART_X_OFFSET = 13
 const ACTOR_SCALE = 2
 const ACTOR_COLLISION_RADIUS = 11 * ACTOR_SCALE
 const ACTOR_COLLISION_HALF_WIDTH = 7 * ACTOR_SCALE
@@ -332,7 +338,9 @@ export class OfficeScene extends Phaser.Scene {
     // Keep the nameplate centered above the CEO sprite's head, whatever
     // moves it - it's static today, but this doesn't assume that.
     if (this.representativeSprite && this.representativeLabel) {
-      this.representativeLabel.setPosition(this.representativeSprite.x, this.representativeSprite.y - 63)
+      this.representativeLabel.setPosition(
+        this.representativeSprite.x + CEO_SPRITE_ART_X_OFFSET, this.representativeSprite.y - 63
+      )
     }
   }
 
@@ -1103,7 +1111,7 @@ export class OfficeScene extends Phaser.Scene {
     // looping a breathing animation nobody asked for.
     this.representativeSprite = this.add.sprite(835, 811, 'ceo-animation-sheet', 'ceo-idle-0')
       .setDisplaySize(104, 120).setDepth(810)
-    this.representativeLabel = this.add.text(835, 748, '김태호 대표', {
+    this.representativeLabel = this.add.text(835 + CEO_SPRITE_ART_X_OFFSET, 748, '김태호 대표', {
       fontFamily: '"Malgun Gothic", sans-serif', fontSize: '13px', color: '#111111', align: 'center'
     }).setOrigin(0.5, 0).setDepth(700)
   }
