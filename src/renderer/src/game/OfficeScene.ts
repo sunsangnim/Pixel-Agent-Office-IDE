@@ -430,11 +430,12 @@ export class OfficeScene extends Phaser.Scene {
         y: Phaser.Math.Clamp(dragY, footprint.rows * 8, OFFICE_WORLD_HEIGHT - footprint.rows * 8)
       }, footprint)
       image.setPosition(snapped.x, snapped.y).setDepth(snapped.y + this.furnitureDepthBonus(id))
-      this.teamLabels.get(id)?.setPosition(snapped.x - 36, snapped.y - 45)
       this.updateSelectionOutline()
       // Carry the rest of the multi-selected group along by the same delta -
       // each piece keeps its own offset from the dragged (leader) piece, and
-      // is independently clamped to the world bounds.
+      // is independently clamped to the world bounds. The "Team X" label is
+      // a fixed floor marker, not tied to any one desk's position, so it is
+      // deliberately left alone here even if its desk is part of the drag.
       this.groupDragOffsets.forEach((offset, otherId) => {
         const otherView = this.furniture.get(otherId)
         if (!otherView) return
@@ -443,7 +444,6 @@ export class OfficeScene extends Phaser.Scene {
         const nx = Phaser.Math.Clamp(snapped.x + offset.x, otherFootprint.columns * 8, OFFICE_WORLD_WIDTH - otherFootprint.columns * 8)
         const ny = Phaser.Math.Clamp(snapped.y + offset.y, otherFootprint.rows * 8, OFFICE_WORLD_HEIGHT - otherFootprint.rows * 8)
         otherImage.setPosition(nx, ny).setDepth(ny + this.furnitureDepthBonus(otherId))
-        this.teamLabels.get(otherId)?.setPosition(nx - 36, ny - 45)
         this.multiSelectOutlines.get(otherId)?.setPosition(nx, ny)
       })
     })
@@ -452,7 +452,6 @@ export class OfficeScene extends Phaser.Scene {
       const snapped = snapFurniturePoint({ x: image.x, y: image.y }, rotatedFootprint(frame, this.furnitureRotation(image)))
       image.setPosition(snapped.x, snapped.y)
       image.setDepth(image.y + this.furnitureDepthBonus(id))
-      this.teamLabels.get(id)?.setPosition(snapped.x - 36, snapped.y - 45)
       this.updateSelectionOutline()
       this.groupDragOffsets.forEach((_offset, otherId) => {
         const otherView = this.furniture.get(otherId)
@@ -462,7 +461,6 @@ export class OfficeScene extends Phaser.Scene {
           { x: otherImage.x, y: otherImage.y }, rotatedFootprint(otherView.frame, this.furnitureRotation(otherImage))
         )
         otherImage.setPosition(otherSnapped.x, otherSnapped.y).setDepth(otherSnapped.y + this.furnitureDepthBonus(otherId))
-        this.teamLabels.get(otherId)?.setPosition(otherSnapped.x - 36, otherSnapped.y - 45)
         this.multiSelectOutlines.get(otherId)?.setPosition(otherSnapped.x, otherSnapped.y)
       })
       this.groupDragOffsets.clear()
@@ -959,13 +957,14 @@ export class OfficeScene extends Phaser.Scene {
     const deskId = `desk-${teamIndex}-${slotIndex}`
     const chairId = `chair-${teamIndex}-${slotIndex}`
     if (!this.removedDeskIds.has(deskId) && !this.furniture.has(deskId)) {
-      const desk = this.addFurniture(deskId, DESK_FURNITURE_FRAME, point.x, point.y + 12, 92, 58)
+      this.addFurniture(deskId, DESK_FURNITURE_FRAME, point.x, point.y + 12, 92, 58)
       if (slotIndex === 0) {
-        // Anchored to the desk's actual (possibly dragged-elsewhere) position,
-        // not the static TEAM_DESKS fallback point - otherwise the label stays
-        // wherever the desk originally spawned even after it's moved.
+        // A fixed floor marker for the zone, anchored to the static
+        // TEAM_DESKS point - not the desk's own (possibly dragged-elsewhere)
+        // position, so it stays put as its own zone label instead of
+        // tagging along whenever the desk itself gets moved around.
         const teamNames = ['Claude', 'Codex', 'Antigravity']
-        const label = this.add.text(desk.x - 36, desk.y - 45, `Team ${teamNames[teamIndex]}`, {
+        const label = this.add.text(point.x - 36, point.y - 33, `Team ${teamNames[teamIndex]}`, {
           fontFamily: 'monospace', fontSize: '10px', color: '#24473e'
         }).setDepth(700)
         this.teamLabels.set(deskId, label)
