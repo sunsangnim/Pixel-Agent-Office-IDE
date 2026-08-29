@@ -922,7 +922,7 @@ export class OfficeScene extends Phaser.Scene {
   private createRoom(x: number, y: number, width: number, height: number, label: string): void {
     this.add.text(x + 10, y + 8, label, {
       fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '12px', color: '#17362e', backgroundColor: '#dff3ed'
-    }).setPadding(4, 2).setDepth(800)
+    }).setPadding(4, 4).setDepth(800)
   }
 
   private createDoor(id: string, x: number, y: number, width: number, height: number): void {
@@ -1003,7 +1003,7 @@ export class OfficeScene extends Phaser.Scene {
         const teamNames = ['Claude', 'Codex', 'Antigravity']
         const label = this.add.text(point.x - 36, point.y - 33, `Team ${teamNames[teamIndex]}`, {
           fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '10px', color: '#111111'
-        }).setDepth(700)
+        }).setPadding(4, 4).setDepth(700)
         this.teamLabels.set(deskId, label)
       }
     }
@@ -1053,7 +1053,7 @@ export class OfficeScene extends Phaser.Scene {
   private showEditorNotice(text: string): void {
     const notice = this.add.text(480, 30, text, {
       fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '11px', color: '#ffffff', backgroundColor: '#7a2222'
-    }).setOrigin(0.5, 0).setPadding(6, 4).setDepth(3000)
+    }).setOrigin(0.5, 0).setPadding(6, 6).setDepth(3000)
     this.time.delayedCall(2200, () => notice.destroy())
   }
 
@@ -1150,7 +1150,7 @@ export class OfficeScene extends Phaser.Scene {
       .setDisplaySize(104, 120).setDepth(810)
     this.representativeLabel = this.add.text(835 + CEO_SPRITE_ART_X_OFFSET, 748, '김태호 대표', {
       fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '13px', color: '#111111', align: 'center'
-    }).setOrigin(0.5, 0).setDepth(700)
+    }).setOrigin(0.5, 0).setPadding(4, 4).setDepth(700)
   }
 
   private createCeoAnimations(): void {
@@ -1256,10 +1256,10 @@ export class OfficeScene extends Phaser.Scene {
     // feet rather than above its head.
     const label = this.add.text(0, ACTOR_SPRITE_Y_OFFSET - ACTOR_SPRITE_HEIGHT / 2 - 3, actor.displayName, {
       fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '13px', color: '#111111', align: 'center'
-    }).setOrigin(0.5, 0)
+    }).setOrigin(0.5, 0).setPadding(4, 4)
     const bubble = this.add.text(36, -136, '', {
       fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '8px', color: '#26332f', backgroundColor: '#fff7df'
-    }).setPadding(3, 2).setVisible(false)
+    }).setPadding(4, 4).setVisible(false)
     const prop = this.add.rectangle(24, -40, 14, 18, 0x6eb6d9)
       .setStrokeStyle(2, 0x294a5a).setVisible(false)
     const saved = this.worldSave.actors.find((candidate) => candidate.profileId === actor.profileId)
