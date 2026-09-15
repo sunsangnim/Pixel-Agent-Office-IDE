@@ -270,6 +270,7 @@ export class OfficeScene extends Phaser.Scene {
     }
     this.layoutEditing = editing
     this.setEditorUiVisible(editing)
+    if (this.snapshot) this.syncDeskChairDepths(this.snapshot)
     if (!editing) this.selectFurniture(null)
     return true
   }
@@ -426,17 +427,15 @@ export class OfficeScene extends Phaser.Scene {
       // active multi-selection must NOT collapse it down to just this one -
       // otherwise dragging any multi-selected piece would silently drop the
       // rest of the group right before the drag even starts.
-      if (this.layoutEditing && this.multiSelectedIds.has(id) && this.multiSelectedIds.size > 1) return
+      if (this.layoutEditing && this.multiSelectedIds.has(id) && this.multiSelectedIds.size > 1) {
+        this.bringFurnitureToFront(id)
+        this.saveFurnitureLayout()
+        return
+      }
       this.selectFurniture(id)
     })
     image.on('dragstart', () => {
-      // draggable was set unconditionally above (so drag works the instant
-      // edit mode turns on, no re-binding needed) - but that also means a
-      // plain click outside edit mode fires a dragstart Phaser considers a
-      // (zero-distance) drag. Without this guard, that alone bumped the
-      // clicked piece to the front even though drag/dragend both already
-      // refuse to run outside edit mode - the exact z-order-on-click bug
-      // this was supposed to have stayed fixed.
+      // Input remains bound outside editing; that must not change layer order.
       if (!this.layoutEditing) return
       image.setData({ dragStartX: image.x, dragStartY: image.y })
       // Bring the piece being moved to the front immediately, before it's
@@ -508,6 +507,8 @@ export class OfficeScene extends Phaser.Scene {
   // wires the one interaction that has to stay at the Phaser/input level.
   private createLayoutEditor(): void {
     this.input.mouse?.disableContextMenu()
+    // A plain click selects and raises; movement starts a drag separately.
+    this.input.dragDistanceThreshold = 4
     this.input.keyboard?.on('keydown-DELETE', () => this.deleteSelectedFurniture())
     this.createMarqueeSelect()
   }
@@ -525,7 +526,7 @@ export class OfficeScene extends Phaser.Scene {
         .setOrigin(0, 0)
         .setStrokeStyle(2, 0x6ea8fe)
         .setFillStyle(0x6ea8fe, 0.12)
-        .setDepth(2500)
+        .setDepth(this.editorOverlayDepth())
     })
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       if (!this.marqueeStart || !this.marqueeRect) return
@@ -614,19 +615,15 @@ export class OfficeScene extends Phaser.Scene {
       this.notifyEditorState()
       return
     }
-    // Selecting (clicking) a piece is just inspection - it must NOT bump the
-    // z-order on its own, or clicking something to look at/delete it quietly
-    // reorders it in front of whatever it overlaps. Only an actual
-    // reposition (dragstart), rotation, or new placement calls
-    // bringFurnitureToFront.
     if (!this.selectedFurniture) {
       this.notifyEditorState()
       return
     }
     const { image } = this.selectedFurniture
-    image.setDepth(image.y + this.furnitureDepthBonus(id))
+    this.bringFurnitureToFront(id)
+    this.saveFurnitureLayout()
     this.selectionOutline = this.add.rectangle(image.x, image.y, image.displayWidth + 6, image.displayHeight + 6)
-      .setDepth(1990)
+      .setDepth(this.editorOverlayDepth())
     this.updateSelectionOutline()
     this.notifyEditorState()
   }
@@ -640,6 +637,7 @@ export class OfficeScene extends Phaser.Scene {
       this.selectionOutline
         .setPosition(image.x, image.y)
         .setSize(image.displayWidth + 6, image.displayHeight + 6)
+        .setDepth(this.editorOverlayDepth())
         .setStrokeStyle(3, collides ? 0xff4d4d : 0xffdd55)
     }
   }
@@ -655,9 +653,10 @@ export class OfficeScene extends Phaser.Scene {
     const view = this.furniture.get(id)
     if (!view) return
     this.multiSelectedIds.add(id)
+    this.bringFurnitureToFront(id)
     const outline = this.add.rectangle(
       view.image.x, view.image.y, view.image.displayWidth + 6, view.image.displayHeight + 6
-    ).setStrokeStyle(3, 0x6ea8fe).setDepth(1990)
+    ).setStrokeStyle(3, 0x6ea8fe).setDepth(this.editorOverlayDepth())
     this.multiSelectOutlines.set(id, outline)
   }
 
@@ -668,14 +667,20 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private setMultiSelection(ids: string[]): void {
+    if (!this.layoutEditing) return
+    // A marquee selects a group simultaneously, preserving its internal order.
+    const orderedIds = [...ids].sort((a, b) =>
+      (this.furniture.get(a)?.image.depth ?? 0) - (this.furniture.get(b)?.image.depth ?? 0))
     // Also drops any active single-piece selection - only one selection mode
     // is active at a time.
     this.selectFurniture(null)
-    ids.forEach((id) => this.addToMultiSelection(id))
+    orderedIds.forEach((id) => this.addToMultiSelection(id))
+    if (orderedIds.length > 0) this.saveFurnitureLayout()
     this.notifyEditorState()
   }
 
   private toggleFurnitureSelection(id: string): void {
+    if (!this.layoutEditing) return
     if (this.selectedFurniture) {
       // Promote the existing single selection into the multi-select set
       // first, so shift+clicking a second piece builds up a selection
@@ -684,12 +689,17 @@ export class OfficeScene extends Phaser.Scene {
       this.selectedFurniture = null
       this.selectionOutline?.destroy()
       this.selectionOutline = undefined
-      if (previousId !== id) this.addToMultiSelection(previousId)
+      if (previousId === id) {
+        this.notifyEditorState()
+        return
+      }
+      this.addToMultiSelection(previousId)
     }
     if (this.multiSelectedIds.has(id)) {
       this.removeFromMultiSelection(id)
     } else {
       this.addToMultiSelection(id)
+      this.saveFurnitureLayout()
     }
     this.notifyEditorState()
   }
@@ -873,14 +883,17 @@ export class OfficeScene extends Phaser.Scene {
     return origin
   }
 
-  // Whichever piece was placed or edited most recently renders above every
-  // other piece it overlaps - no furniture type gets a hardcoded bias (a
-  // desk isn't hardcoded behind a chair, a table isn't hardcoded behind a
-  // laptop). A deliberate reorder (drag, rotate, a fresh placement - never
-  // just clicking to select) always jumps to the very front, persists via
-  // saveFurnitureLayout, and applies whether or not the editor is open.
+  // The most recently selected, placed, moved, or rotated piece goes on top.
+  // Callers persist the order with the rest of their editor operation.
   private bringFurnitureToFront(id: string): void {
+    const view = this.furniture.get(id)
+    if (!view) return
     this.zOrderById.set(id, this.nextZOrder++)
+    view.image.setDepth(view.image.y + this.furnitureDepthBonus(id))
+    const overlayDepth = this.editorOverlayDepth()
+    this.selectionOutline?.setDepth(overlayDepth)
+    this.multiSelectOutlines.forEach((outline) => outline.setDepth(overlayDepth))
+    this.marqueeRect?.setDepth(overlayDepth)
   }
 
   private furnitureDepthBonus(id: string): number {
@@ -892,6 +905,10 @@ export class OfficeScene extends Phaser.Scene {
     let max = 0
     this.furniture.forEach(({ image }) => { if (image.depth > max) max = image.depth })
     return max
+  }
+
+  private editorOverlayDepth(): number {
+    return this.maxFurnitureDepth() + OFFICE_WORLD_HEIGHT + 2
   }
 
   private hasCollidingFurniture(): boolean {
@@ -1053,7 +1070,7 @@ export class OfficeScene extends Phaser.Scene {
   private showEditorNotice(text: string): void {
     const notice = this.add.text(480, 30, text, {
       fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '11px', color: '#ffffff', backgroundColor: '#7a2222'
-    }).setOrigin(0.5, 0).setPadding(6, 6).setDepth(3000)
+    }).setOrigin(0.5, 0).setPadding(6, 6).setDepth(this.editorOverlayDepth())
     this.time.delayedCall(2200, () => notice.destroy())
   }
 
@@ -1255,10 +1272,9 @@ export class OfficeScene extends Phaser.Scene {
       if (!match) return
       const desk = this.furniture.get(`desk-${match[1]}`)
       if (!desk) return
-      // An actually-seated character always wins the desk-occludes-chair
-      // look, overriding whatever the ordinary zOrder-based stacking says -
-      // only an *empty* seat goes by that.
-      if (occupiedSeats.has(match[1])) {
+      // Editing uses the saved selection order, including occupied chairs.
+      // Outside editing, resume the seated desk/chair composition.
+      if (!this.layoutEditing && occupiedSeats.has(match[1])) {
         chair.image.setDepth(desk.image.depth - 2)
         return
       }

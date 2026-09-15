@@ -16,7 +16,7 @@ function LayoutEditorPanel({ scene }: LayoutEditorPanelProps) {
 
   return (
     <div className="layout-editor-panel">
-      <p className="layout-editor-help">드래그: 이동 · 우클릭: 방향 전환 · 빨간 테두리: 충돌</p>
+      <p className="layout-editor-help">클릭: 맨 앞으로 · 드래그: 이동 · 우클릭: 방향 전환 · 빨간 테두리: 충돌</p>
 
       <div className="layout-editor-row">
         <span className="layout-editor-row-label">바닥</span>
