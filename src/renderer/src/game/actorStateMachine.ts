@@ -24,15 +24,24 @@ export class ActorStateMachine {
 
   requestPresence(presence: OfficePresence): boolean {
     if (this.state.actionLocked && presence !== this.state.presence) {
-      this.queuedPresence = presence
-      return false
+      if (['working', 'meeting', 'error', 'requestingHelp', 'offDuty'].includes(presence)) {
+        this.cancelAction()
+      } else {
+        this.queuedPresence = presence
+        return false
+      }
     }
+    this.queuedPresence = null
     this.state = { ...this.state, presence }
     return true
   }
 
   startWalking(dx: number, dy: number): void {
     if (this.state.actionLocked) return
+    if (Math.hypot(dx, dy) < 0.01) {
+      this.stopWalking()
+      return
+    }
     this.state = {
       ...this.state,
       action: 'walking',
@@ -46,11 +55,20 @@ export class ActorStateMachine {
   }
 
   completeAction(): OfficePresence | null {
-    this.state = { ...this.state, actionLocked: false }
+    this.state = { ...this.state, action: 'idle', actionLocked: false }
     const queued = this.queuedPresence
     this.queuedPresence = null
     if (queued) this.requestPresence(queued)
     return queued
+  }
+
+  stopWalking(): void {
+    if (this.state.action === 'walking') this.state = { ...this.state, action: 'idle' }
+  }
+
+  cancelAction(): void {
+    this.queuedPresence = null
+    this.state = { ...this.state, action: 'idle', actionLocked: false }
   }
 }
 
@@ -60,6 +78,5 @@ export function actionForPresence(presence: OfficePresence, actorIndex: number):
   if (presence === 'meeting') return 'sitting'
   if (presence === 'requestingHelp') return 'help'
   if (presence === 'error') return 'error'
-  if (presence === 'arriving' || presence === 'pantryDoor' || presence === 'meetingDoor') return 'walking'
   return 'idle'
 }

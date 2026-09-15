@@ -12,7 +12,8 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test:integration": "node scripts/run-integration-tests.cjs",
-    "test:editor-layering": "node scripts/run-editor-layering-tests.cjs"
+    "test:editor-layering": "node scripts/run-editor-layering-tests.cjs",
+    "test:movement": "node scripts/run-movement-tests.cjs"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",

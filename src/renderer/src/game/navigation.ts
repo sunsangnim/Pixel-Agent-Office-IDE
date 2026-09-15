@@ -1,172 +1,145 @@
 import { OFFICE_WORLD_HEIGHT, OFFICE_WORLD_WIDTH, TEAM_DESKS, type WorldPoint } from './officeWorld'
+import { intersectsAabb, type CollisionRect } from './collisionResolution'
 
 export const NAV_TILE_SIZE = 16
+export const ACTOR_NAV_HALF_WIDTH = 14
+export const ACTOR_NAV_HALF_HEIGHT = 10
 const COLS = OFFICE_WORLD_WIDTH / NAV_TILE_SIZE
 const ROWS = OFFICE_WORLD_HEIGHT / NAV_TILE_SIZE
-// Mirrors OfficeScene's ACTOR_COLLISION_HALF_WIDTH/HEIGHT so line-of-sight
-// smoothing rejects exactly the routes real movement would also reject.
-const ACTOR_NAV_HALF_WIDTH = 14
-const ACTOR_NAV_HALF_HEIGHT = 10
-
-interface TilePoint { col: number; row: number }
-import type { CollisionRect } from './collisionResolution'
-import { intersectsAabb } from './collisionResolution'
-
-const DESK_COLLISIONS: CollisionRect[] = TEAM_DESKS.flat().map((point) => ({
-  x: point.x - 48, y: point.y - 18, width: 96, height: 45
-}))
 
 export const OFFICE_COLLISIONS: CollisionRect[] = [
-  ...DESK_COLLISIONS,
-  { x: 25, y: 64, width: 80, height: 78 },
-  { x: 122, y: 28, width: 50, height: 112 },
-  { x: 185, y: 78, width: 78, height: 65 },
-  { x: 355, y: 98, width: 250, height: 62 },
-  { x: 712, y: 72, width: 42, height: 92 },
-  { x: 885, y: 72, width: 42, height: 92 },
-  { x: 815, y: 490, width: 104, height: 58 },
-  { x: 738, y: 540, width: 75, height: 86 },
+  ...TEAM_DESKS.flat().map((point) => ({ x: point.x - 48, y: point.y - 18, width: 96, height: 45 })),
+  { x: 25, y: 64, width: 80, height: 78 }, { x: 122, y: 28, width: 50, height: 112 },
+  { x: 185, y: 78, width: 78, height: 65 }, { x: 355, y: 98, width: 250, height: 62 },
+  { x: 712, y: 72, width: 42, height: 92 }, { x: 885, y: 72, width: 42, height: 92 },
+  { x: 815, y: 490, width: 104, height: 58 }, { x: 738, y: 540, width: 75, height: 86 },
   { x: 882, y: 520, width: 65, height: 108 }
 ]
 
-function toTile(point: WorldPoint): TilePoint {
+export function actorCollisionRect(point: WorldPoint): CollisionRect {
   return {
-    col: PhaserMathClamp(Math.round(point.x / NAV_TILE_SIZE), 1, COLS - 2),
-    row: PhaserMathClamp(Math.round(point.y / NAV_TILE_SIZE), 1, ROWS - 2)
+    x: point.x - ACTOR_NAV_HALF_WIDTH, y: point.y - ACTOR_NAV_HALF_HEIGHT,
+    width: ACTOR_NAV_HALF_WIDTH * 2, height: ACTOR_NAV_HALF_HEIGHT * 2
   }
 }
 
-function toWorld(tile: TilePoint): WorldPoint {
-  return { x: tile.col * NAV_TILE_SIZE, y: tile.row * NAV_TILE_SIZE }
+export function isOfficePositionWalkable(point: WorldPoint, collisions: CollisionRect[]): boolean {
+  const body = actorCollisionRect(point)
+  return body.x >= 0 && body.y >= 0 && body.x + body.width <= OFFICE_WORLD_WIDTH && body.y + body.height <= OFFICE_WORLD_HEIGHT &&
+    !collisions.some((rect) => intersectsAabb(body, rect))
 }
 
-function PhaserMathClamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value))
-}
-
-function tileKey(tile: TilePoint): string {
-  return `${tile.col}:${tile.row}`
-}
-
-function containsPoint(rect: CollisionRect, point: WorldPoint): boolean {
-  return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height
-}
-
-function isBlocked(tile: TilePoint, exceptions: Set<string>, collisions: CollisionRect[]): boolean {
-  if (exceptions.has(tileKey(tile))) return false
-  const point = toWorld(tile)
-  return collisions.some((rect) =>
-    point.x >= rect.x && point.x <= rect.x + rect.width &&
-    point.y >= rect.y && point.y <= rect.y + rect.height
-  )
-}
-
-function nearestWalkable(tile: TilePoint, exceptions: Set<string>, collisions: CollisionRect[]): TilePoint {
-  if (!isBlocked(tile, exceptions, collisions)) return tile
-  for (let radius = 1; radius <= 4; radius += 1) {
-    for (let dx = -radius; dx <= radius; dx += 1) {
-      for (let dy = -radius; dy <= radius; dy += 1) {
-        const candidate = { col: tile.col + dx, row: tile.row + dy }
-        if (candidate.col > 0 && candidate.row > 0 && candidate.col < COLS - 1 && candidate.row < ROWS - 1 && !isBlocked(candidate, exceptions, collisions)) return candidate
-      }
-    }
-  }
-  return tile
-}
-
-export function findOfficePath(from: WorldPoint, to: WorldPoint, collisions: CollisionRect[] = OFFICE_COLLISIONS): WorldPoint[] {
-  // A destination is routinely inside its own furniture footprint (a chair's
-  // snap point sits inside the chair's collision rect). Treat only the rect
-  // that owns the destination as passable, same as the runtime movement step
-  // already does - otherwise A* can never reach the goal tile and silently
-  // falls back to a straight line that ignores every obstacle in between.
-  const relevantCollisions = collisions.filter((rect) => !containsPoint(rect, to))
-  const rawStart = toTile(from)
-  const rawGoal = toTile(to)
-  const exceptions = new Set([tileKey(rawStart), tileKey(rawGoal)])
-  const start = nearestWalkable(rawStart, exceptions, relevantCollisions)
-  const goal = nearestWalkable(rawGoal, exceptions, relevantCollisions)
-  const open: TilePoint[] = [start]
-  const cameFrom = new Map<string, TilePoint>()
-  const gScore = new Map<string, number>([[tileKey(start), 0]])
-  const fScore = new Map<string, number>([[tileKey(start), distance(start, goal)]])
-  const closed = new Set<string>()
-
-  while (open.length > 0) {
-    open.sort((a, b) => (fScore.get(tileKey(a)) ?? Infinity) - (fScore.get(tileKey(b)) ?? Infinity))
-    const current = open.shift()!
-    const currentKey = tileKey(current)
-    if (current.col === goal.col && current.row === goal.row) {
-      return simplify(reconstruct(cameFrom, current).map(toWorld), to, relevantCollisions)
-    }
-    closed.add(currentKey)
-
-    for (const neighbor of neighbors(current)) {
-      const key = tileKey(neighbor)
-      if (closed.has(key) || isBlocked(neighbor, exceptions, relevantCollisions)) continue
-      const tentative = (gScore.get(currentKey) ?? Infinity) + 1
-      if (tentative >= (gScore.get(key) ?? Infinity)) continue
-      cameFrom.set(key, current)
-      gScore.set(key, tentative)
-      fScore.set(key, tentative + distance(neighbor, goal))
-      if (!open.some((item) => item.col === neighbor.col && item.row === neighbor.row)) open.push(neighbor)
-    }
-  }
-  return [to]
-}
-
-function neighbors(tile: TilePoint): TilePoint[] {
-  return [
-    { col: tile.col + 1, row: tile.row }, { col: tile.col - 1, row: tile.row },
-    { col: tile.col, row: tile.row + 1 }, { col: tile.col, row: tile.row - 1 }
-  ].filter((candidate) => candidate.col > 0 && candidate.row > 0 && candidate.col < COLS - 1 && candidate.row < ROWS - 1)
-}
-
-function distance(a: TilePoint, b: TilePoint): number {
-  return Math.abs(a.col - b.col) + Math.abs(a.row - b.row)
-}
-
-function reconstruct(cameFrom: Map<string, TilePoint>, end: TilePoint): TilePoint[] {
-  const path = [end]
-  let current = end
-  while (cameFrom.has(tileKey(current))) {
-    current = cameFrom.get(tileKey(current))!
-    path.unshift(current)
-  }
-  return path
-}
-
-function hasLineOfSight(a: WorldPoint, b: WorldPoint, collisions: CollisionRect[]): boolean {
-  const relevant = collisions.filter((rect) => !containsPoint(rect, a) && !containsPoint(rect, b))
-  const distanceWorld = Math.hypot(b.x - a.x, b.y - a.y)
-  const steps = Math.max(1, Math.ceil(distanceWorld / 8))
+export function hasOfficeLineOfSight(from: WorldPoint, to: WorldPoint, collisions: CollisionRect[]): boolean {
+  const steps = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / 4))
   for (let step = 0; step <= steps; step += 1) {
     const t = step / steps
-    const point = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
-    const probe: CollisionRect = {
-      x: point.x - ACTOR_NAV_HALF_WIDTH, y: point.y - ACTOR_NAV_HALF_HEIGHT,
-      width: ACTOR_NAV_HALF_WIDTH * 2, height: ACTOR_NAV_HALF_HEIGHT * 2
-    }
-    if (relevant.some((rect) => intersectsAabb(probe, rect))) return false
+    if (!isOfficePositionWalkable({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }, collisions)) return false
   }
   return true
 }
 
-// String-pulling: walk the raw tile path and only keep a waypoint when the
-// straight line to the next point would actually cross an obstacle. Grid A*
-// alone tends to stair-step (right, down, right, down, ...) even on an open
-// diagonal, which reads as the character shaking left-right while walking.
-function simplify(path: WorldPoint[], exactTarget: WorldPoint, collisions: CollisionRect[]): WorldPoint[] {
-  if (path.length < 2) return [exactTarget]
-  const points = [...path.slice(0, -1), exactTarget]
-  const result: WorldPoint[] = [points[0]]
-  let anchor = 0
-  for (let index = 1; index < points.length - 1; index += 1) {
-    if (!hasLineOfSight(points[anchor], points[index + 1], collisions)) {
-      result.push(points[index])
-      anchor = index
+function gridPoint(index: number): WorldPoint {
+  return { x: (index % COLS) * NAV_TILE_SIZE, y: Math.floor(index / COLS) * NAV_TILE_SIZE }
+}
+
+function distanceSquared(a: WorldPoint, b: WorldPoint): number {
+  return (a.x - b.x) ** 2 + (a.y - b.y) ** 2
+}
+
+export function nearestOfficePosition(point: WorldPoint, collisions: CollisionRect[], radius = 128): WorldPoint | null {
+  if (isOfficePositionWalkable(point, collisions)) return { x: point.x, y: point.y }
+  let best: WorldPoint | null = null
+  let bestDistance = radius ** 2
+  for (let index = 0; index < COLS * ROWS; index += 1) {
+    const candidate = gridPoint(index)
+    const distance = distanceSquared(point, candidate)
+    if (distance <= bestDistance && isOfficePositionWalkable(candidate, collisions)) {
+      best = candidate
+      bestDistance = distance
     }
   }
-  result.push(points[points.length - 1])
-  return result
+  return best
+}
+
+export interface OfficePathOptions {
+  // Furniture interactions may approach a seat from nearby free floor. Walls
+  // still block that final seating segment via goalCollisions.
+  goalRadius?: number
+  goalCollisions?: CollisionRect[]
+}
+
+export function findOfficePath(
+  from: WorldPoint, to: WorldPoint, collisions: CollisionRect[] = OFFICE_COLLISIONS, options: OfficePathOptions = {}
+): WorldPoint[] {
+  if (!isOfficePositionWalkable(from, collisions)) return []
+  if (hasOfficeLineOfSight(from, to, collisions)) return distanceSquared(from, to) < 0.01 ? [] : [{ ...to }]
+
+  const walkable = new Int8Array(COLS * ROWS).fill(-1)
+  const canVisit = (index: number): boolean => {
+    if (walkable[index] < 0) walkable[index] = isOfficePositionWalkable(gridPoint(index), collisions) ? 1 : 0
+    return walkable[index] === 1
+  }
+  let start = -1
+  let startDistance = (NAV_TILE_SIZE * 2) ** 2
+  for (let index = 0; index < walkable.length; index += 1) {
+    const point = gridPoint(index)
+    const distance = distanceSquared(from, point)
+    if (distance <= startDistance && canVisit(index) && hasOfficeLineOfSight(from, point, collisions)) {
+      start = index
+      startDistance = distance
+    }
+  }
+  if (start < 0) return []
+
+  const parents = new Int32Array(walkable.length).fill(-2)
+  parents[start] = -1
+  const queue = [start]
+  let goal = -1
+  let exactGoal = false
+  let closestDistance = (options.goalRadius ?? 0) ** 2
+  // A bounded breadth-first search makes every traversed tile safe for the
+  // same body used by movement. Failed searches return no route, never a line
+  // through the obstacle that made the search fail.
+  for (let head = 0; head < queue.length; head += 1) {
+    const current = queue[head]
+    const point = gridPoint(current)
+    const distance = distanceSquared(point, to)
+    if (distance <= NAV_TILE_SIZE ** 2 * 2 && hasOfficeLineOfSight(point, to, collisions)) {
+      goal = current
+      exactGoal = true
+      break
+    }
+    if ((options.goalRadius ?? 0) > 0 && distance <= closestDistance &&
+      hasOfficeLineOfSight(point, to, options.goalCollisions ?? collisions)) {
+      if (distance < closestDistance || goal < 0) {
+        goal = current
+        closestDistance = distance
+      }
+    }
+    const column = current % COLS
+    const row = Math.floor(current / COLS)
+    const adjacent = [
+      ...(column > 0 ? [current - 1] : []), ...(column + 1 < COLS ? [current + 1] : []),
+      ...(row > 0 ? [current - COLS] : []), ...(row + 1 < ROWS ? [current + COLS] : [])
+    ]
+    for (const next of adjacent) {
+      if (parents[next] !== -2 || !canVisit(next)) continue
+      if (!hasOfficeLineOfSight(point, gridPoint(next), collisions)) continue
+      parents[next] = current
+      queue.push(next)
+    }
+  }
+  if (goal < 0) return []
+  const reversed: WorldPoint[] = []
+  for (let index = goal; index >= 0; index = parents[index]) reversed.push(gridPoint(index))
+  const points = [{ ...from }, ...reversed.reverse(), ...(exactGoal ? [{ ...to }] : [])]
+  const result: WorldPoint[] = []
+  let anchor = 0
+  while (anchor < points.length - 1) {
+    let next = points.length - 1
+    while (next > anchor + 1 && !hasOfficeLineOfSight(points[anchor], points[next], collisions)) next -= 1
+    if (distanceSquared(points[anchor], points[next]) > 0.01) result.push(points[next])
+    anchor = next
+  }
+  return result.length > 0 ? result : [gridPoint(goal)]
 }

@@ -6,7 +6,7 @@ import type { WebContents } from 'electron'
 import { getCliAdapter, adapterIdForTemplate } from '../src/main/cliAdapters'
 import { ptyManager } from '../src/main/ptyManager'
 import { BUILT_IN_AGENT_PROFILES } from '../src/shared/agentProfiles'
-import { ORCHESTRATION_POLICY } from '../src/shared/orchestrationPolicy'
+import { MAX_TEAM_CAPACITY, ORCHESTRATION_POLICY } from '../src/shared/orchestrationPolicy'
 import type { AgentRuntimeState, AgentStatePayload, CliAdapterId } from '../src/shared/types'
 import { planTask } from '../src/renderer/src/lib/taskRouter'
 import { isMeetingEndCommand, isMeetingStartCommand } from '../src/renderer/src/lib/meetingCommands'
@@ -65,7 +65,9 @@ async function waitForState(
 }
 
 async function stopPty(events: RecordedEvent[], ptyId: string): Promise<void> {
-  ptyManager.write(ptyId, 'exit\r')
+  // Dispose the fixture PTY as well as its child. On Windows a child exiting
+  // alone can leave ConPTY worker sockets alive during Node shutdown.
+  ptyManager.kill(ptyId)
   try {
     await waitFor(
       () =>
@@ -84,7 +86,7 @@ function verifyRoutingAndProfiles(): void {
   assert.equal(new Set(BUILT_IN_AGENT_PROFILES.map((profile) => profile.profileId)).size, 15)
   assert.equal(BUILT_IN_AGENT_PROFILES.filter((profile) => profile.rank === 'teamLead').length, 3)
   assert.equal(BUILT_IN_AGENT_PROFILES.filter((profile) => profile.rank === 'subAgent').length, 12)
-  assert.equal(ORCHESTRATION_POLICY.maxChildrenPerLead, 4)
+  assert.equal(MAX_TEAM_CAPACITY - 1, 4)
 
   assert.deepEqual(planTask('간단한 버그 고쳐').templateIds, ['claude-code'])
   assert.deepEqual(planTask('@코덱스 애니메이션 고쳐').templateIds, ['codex-cli'])
@@ -148,16 +150,16 @@ function verifyLivingOfficeAndRoster(): void {
   assert.ok(rows.every((row) => row.width > 0 && row.height > 0))
 
   assert.equal(TEAM_DESKS.length, 3)
-  assert.ok(TEAM_DESKS.every((team) => team.length === 5))
-  assert.equal(new Set(TEAM_DESKS.flat().map((point) => `${point.x}:${point.y}`)).size, 15)
+  assert.deepEqual(TEAM_DESKS.map((team) => team.length), [1, 1, 2])
+  assert.equal(new Set(TEAM_DESKS.flat().map((point) => `${point.x}:${point.y}`)).size, 4)
   assert.equal(new Set(MEETING_SEATS.map((point) => `${point.x}:${point.y}`)).size, 8)
   const arrivingActor: OfficeGameActor = {
     profileId: 'test', instanceId: null, displayName: 'test', color: '#fff', rosterIndex: 1,
     slotIndex: 0, teamIndex: 0, presence: 'arriving'
   }
-  assert.equal(routeFor(arrivingActor, 0).length, 3)
+  assert.equal(routeFor(arrivingActor, 0).length, 2)
   assert.deepEqual(routeFor({ ...arrivingActor, presence: 'meeting' }, 0).at(-1), MEETING_SEATS[0])
-  assert.deepEqual(routeFor({ ...arrivingActor, presence: 'pantry' }, 0).at(-1), { x: 220, y: 155 })
+  assert.deepEqual(routeFor({ ...arrivingActor, presence: 'pantry' }, 0).at(-1), { x: 220, y: 175 })
   assert.deepEqual(routeFor({ ...arrivingActor, presence: 'pantry' }, 1).at(-1), { x: 65, y: 150 })
   const navigationPath = findOfficePath({ x: 50, y: 350 }, { x: 700, y: 350 })
   assert.ok(navigationPath.length >= 1)
@@ -174,12 +176,12 @@ function verifyLivingOfficeAndRoster(): void {
   assert.deepEqual(parseOfficeLayout('{"desk":{"x":10,"y":20},"bad":{"x":"x"}}'), { desk: { x: 10, y: 20 } })
   assert.deepEqual(parseOfficeLayout('{"sofa":{"x":30,"y":40,"rotation":90}}'), { sofa: { x: 30, y: 40, rotation: 90 } })
   assert.equal(OFFICE_GRID_COLUMNS, 60)
-  assert.equal(OFFICE_GRID_ROWS, 40)
+  assert.equal(OFFICE_GRID_ROWS, 60)
   assert.deepEqual(FURNITURE_FOOTPRINTS[15], { columns: 2, rows: 4 })
   assert.deepEqual(rotatedFootprint(15, 90), { columns: 4, rows: 2 })
   assert.deepEqual(snapFurniturePoint({ x: 103, y: 99 }, FURNITURE_FOOTPRINTS[15]), { x: 96, y: 96 })
   assert.deepEqual(furnitureCollision({ x: 96, y: 96 }, FURNITURE_FOOTPRINTS[15]), { x: 80, y: 64, width: 32, height: 64 })
-  assert.deepEqual(OFFICE_FLOOR_REGION, { x: 480, y: 320, width: 928, height: 608 })
+  assert.deepEqual(OFFICE_FLOOR_REGION, { x: 480, y: 480, width: 928, height: 928 })
   const throughPantryDoor = findOfficePath({ x: 240, y: 240 }, { x: 240, y: 160 }, OFFICE_WALL_COLLISIONS)
   assert.ok(throughPantryDoor.every((point) => !OFFICE_WALL_COLLISIONS.some((wall) =>
     point.x > wall.x && point.x < wall.x + wall.width && point.y > wall.y && point.y < wall.y + wall.height
@@ -187,9 +189,9 @@ function verifyLivingOfficeAndRoster(): void {
   const architectureBlocks = (x: number, y: number): boolean => OFFICE_WALL_COLLISIONS.some((wall) =>
     x >= wall.x && x < wall.x + wall.width && y >= wall.y && y < wall.y + wall.height)
   assert.equal(architectureBlocks(816, 208), false, 'elevator lower corridor must stay fully open')
-  assert.equal(architectureBlocks(704, 464), true, 'representative room left opening must be closed')
-  assert.equal(architectureBlocks(720, 464), false, 'representative room must include its widened interior')
-  assert.equal(architectureBlocks(832, 400), false, 'representative room top opening must stay open')
+  assert.equal(architectureBlocks(704, 704), true, 'representative room left wall must block movement')
+  assert.equal(architectureBlocks(720, 704), false, 'representative room must include its widened interior')
+  assert.equal(architectureBlocks(832, 640), false, 'representative room top opening must stay open')
   const stateMachine = new ActorStateMachine('deskIdle')
   stateMachine.startWalking(20, 2)
   assert.equal(stateMachine.current.facing, 'right')
@@ -197,12 +199,16 @@ function verifyLivingOfficeAndRoster(): void {
   stateMachine.arrive(0)
   assert.equal(stateMachine.current.action, 'eating')
   assert.equal(stateMachine.current.actionLocked, true)
-  assert.equal(stateMachine.requestPresence('working'), false)
-  assert.equal(stateMachine.completeAction(), 'working')
+  assert.equal(stateMachine.requestPresence('working'), true)
+  assert.equal(stateMachine.current.actionLocked, false)
+  stateMachine.requestPresence('pantry')
+  stateMachine.arrive(0)
+  assert.equal(stateMachine.requestPresence('deskIdle'), false)
+  assert.equal(stateMachine.completeAction(), 'deskIdle')
   assert.equal(actionForPresence('meeting', 0), 'sitting')
   assert.equal(actionForPresence('pantry', 0), 'eating')
   assert.equal(actionForPresence('pantry', 1), 'drinking')
-  assert.equal(OFFICE_OBJECTS.filter((object) => object.type === 'desk').length, 15)
+  assert.equal(OFFICE_OBJECTS.filter((object) => object.type === 'desk').length, 4)
   assert.equal(OFFICE_OBJECTS.filter((object) => object.id.startsWith('meeting-chair-')).length, 8)
   assert.deepEqual(objectById('representative-sofa')?.snapPoint, { x: 895, y: 458 })
   const savedWorld = upsertSavedActor(parseOfficeWorldSave(null), {
@@ -380,9 +386,9 @@ async function main(): Promise<void> {
 }
 
 main()
-  .then(() => setTimeout(() => process.exit(0), 250))
+  .then(() => { process.exitCode = 0 })
   .catch((error) => {
     console.error(error)
     ptyManager.killAll()
-    setTimeout(() => process.exit(1), 250)
+    process.exitCode = 1
   })

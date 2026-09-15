@@ -103,6 +103,14 @@ console.log('PASS Shift selection, group member reselection, deselection, and ma
 
 const occupied = { actors: [{ presence: 'deskIdle', teamIndex: 0, slotIndex: 0 }] }
 scene.snapshot = occupied
+scene.actors.set('seated-test', {
+  actor: occupied.actors[0], settled: true, seatedGoal: true,
+  sprite: { anims: { pause() {} } }
+})
+// Movement is exercised by test:movement; this fixture represents an actor
+// that has physically arrived at its chair for the layering assertions.
+scene.effectiveActor = (view) => view.actor
+scene.updateActor = () => {}
 click(scene, 'chair-0-0')
 scene.syncDeskChairDepths(occupied)
 assert.ok(depth(scene, 'chair-0-0') > depth(scene, 'desk-0-0'), 'presence updates cannot lower an editing chair')
