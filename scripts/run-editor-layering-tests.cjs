@@ -29,6 +29,8 @@ function imageDouble(x, y, width = 64, height = 64) {
   return {
     x, y, depth: 0, displayWidth: width, displayHeight: height, events,
     setDepth(value) { this.depth = value; return this },
+    setCrop(...crop) { this.crop = crop; return this },
+    setVisible(value) { this.visible = value; return this },
     setPosition(nextX, nextY) { this.x = nextX; this.y = nextY; return this },
     setDisplaySize(w, h) { this.displayWidth = w; this.displayHeight = h; return this },
     setSize(w, h) { return this.setDisplaySize(w, h) },
@@ -105,8 +107,11 @@ const occupied = { actors: [{ profileId: 'seated-test', presence: 'deskIdle', te
 scene.snapshot = occupied
 scene.actors.set('seated-test', {
   actor: occupied.actors[0], settled: true, seatedGoal: true,
-  sprite: { anims: { pause() {} } },
+  chairId: 'chair-0-0',
+  sprite: Object.assign(imageDouble(0, -38, 104, 120), { anims: { pause() {} } }),
+  seatedForeground: imageDouble(128, 534, 104, 120),
   container: imageDouble(128, 512),
+  overlay: imageDouble(128, 512),
   stateMachine: { current: { action: 'sitting' } }
 })
 // Movement is exercised by test:movement; this fixture represents an actor

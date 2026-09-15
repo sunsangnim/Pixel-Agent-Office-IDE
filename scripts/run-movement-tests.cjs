@@ -56,6 +56,7 @@ function objectDouble(x = 0, y = 0) {
     setText(text) { this.text = text; return this },
     setFrame(frame) { this.frame = frame; return this },
     setTexture(key, frame) { this.textureKey = key; this.frame = frame; return this },
+    setCrop(x, y, width, height) { this.crop = x === undefined ? null : { x, y, width, height }; return this },
     on(event, handler) { this.events.set(event, handler); return this },
     setFlipX(flipX) { this.flipX = flipX; return this },
     setData(key, value) {
@@ -220,9 +221,9 @@ for (const frontId of ['chair-0-0', 'desk-0-0']) {
       'finish, reload, arrival, and starting work preserve the exact furniture depths')
     const deskDepth = candidate.furniture.get('desk-0-0').image.depth
     const chairDepth = candidate.furniture.get('chair-0-0').image.depth
-    assert.ok(seated.container.depth < deskDepth, 'a seated actor stays behind its desk after reordering')
-    assert.equal(seated.container.depth > chairDepth, frontId === 'desk-0-0',
-      'the chair uses its chosen layer relative to the seated actor')
+    assert.ok(seated.container.depth < chairDepth, 'the lower body stays behind the backrest after reordering')
+    const headDepth = seated.seatedForeground.visible ? seated.seatedForeground.depth : seated.container.depth
+    assert.ok(headDepth > deskDepth, 'the seated head remains visible above the monitor after reordering')
   }
 }
 console.log('PASS selected layers after edit completion, reload, real seat arrival, and starting work')
@@ -259,6 +260,8 @@ snapshot(traffic, [actor('traveler'), actor('parked', 1, 'offDuty')])
 advance(traffic, 5)
 assert.equal(traveler.settled, true, 'a cleared passage resumes movement without a new command')
 assert.equal(parkedActor.container.destroyed, true)
+assert.equal(parkedActor.overlay.destroyed, true, 'leaving employees also remove names and status overlays')
+assert.equal(parkedActor.seatedForeground.destroyed, true, 'leaving employees cannot leave a floating head')
 console.log('PASS traffic waiting, stationary actors, off-duty cleanup, and clear-passage retry')
 
 const editing = createScene()
@@ -457,6 +460,44 @@ for (const [rotation, direction] of [[0, 'front'], [90, 'right'], [180, 'back'],
 }
 console.log('PASS chair clicks, real approach, all chair rotations/types, static seated poses, standing, and safe reload position')
 
+// Reproduce the reported composition: an edited desk in front of a back-facing
+// chair used to hide the seated CEO's head behind its monitor.
+for (const rotation of [0, 90, 180, 270]) {
+  const composition = seatingScene(rotation)
+  composition.addFurniture('desk-0-0', 10, 400, 432, 144, 72)
+  composition.setLayoutEditing(true)
+  composition.selectFurniture('desk-0-0')
+  const layout = JSON.parse(storage.get('pixel-office-layout-v1'))
+  composition.setLayoutEditing(false)
+  for (const candidate of [composition, createScene(layout)]) {
+    if (!candidate.representativeSprite) candidate.createRepresentativeActor()
+    const depths = [...candidate.furniture.values()].map(({ id, image }) => [id, image.depth])
+    assert.equal(candidate.sitRepresentativeOn('chair-0-0'), true)
+    advance(candidate, 10)
+    const body = candidate.representativeSprite
+    const head = candidate.representativeSeatedForeground
+    const chair = candidate.furniture.get('chair-0-0').image
+    const desk = candidate.furniture.get('desk-0-0').image
+    assert.equal(head.visible, true, 'the seated head needs a visible pass above the foreground desk')
+    assert.ok(head.depth > desk.depth, 'the monitor cannot cover the head')
+    assert.equal(body.depth < chair.depth, rotation === 180, 'backrest still covers the lower body in the back pose')
+    assert.deepEqual(position(head), position(body), 'the two parts retain identical placement')
+    assert.equal(head.frame, body.frame, 'the parts show the same facing')
+    assert.equal(head.crop.y, 0)
+    assert.equal(head.crop.height, body.crop.y, 'crop regions meet without a missing or doubled strip')
+    assert.equal(head.crop.height + body.crop.height, 360, 'all source pixels remain represented')
+    assert.ok(Math.abs((body.y - body.displayHeight + head.crop.height / 3) -
+      (chair.y - chair.displayHeight / 2)) < 0.5, 'the head pass ends above the backrest')
+    assert.deepEqual([...candidate.furniture.values()].map(({ id, image }) => [id, image.depth]), depths)
+    assert.ok(candidate.representativeLabel.depth > head.depth)
+    assert.equal(candidate.moveRepresentativeTo({ x: 480, y: 600 }), true)
+    assert.equal(head.visible, false, 'standing removes the seated foreground pass')
+    assert.equal(body.crop, null, 'walking renders the entire character again')
+    advance(candidate, 5)
+  }
+}
+console.log('PASS seated head visibility above edited desks, backrest occlusion, all facings, reload, and uncropped walking')
+
 const seats = seatingScene()
 for (const options of [{ button: 'right' }, { event: { shiftKey: true } }, { event: { ctrlKey: true } }]) {
   chairClick(seats, 'chair-0-0', options)
@@ -606,3 +647,73 @@ for (let team = 0; team < 3; team += 1) {
   }
 }
 console.log('PASS all 15 employee slots: four-phase walks, four directions, editor pause/resume, and blocked idle')
+
+for (let team = 0; team < 3; team++) {
+  for (let slot = 0; slot < 5; slot++) {
+    const chairId = `chair-${team}-${slot}`
+    const deskId = `desk-${team}-${slot}`
+    const seated = createScene({
+      [chairId]: { frame: 12, x: 400, y: 480, rotation: 180, zOrder: 1 },
+      [deskId]: { frame: 10, x: 400, y: 432, zOrder: 2 }
+    })
+    const employee = actor(`sitter-${team}-${slot}`, team, 'deskIdle', slot)
+    seated.worldSave.actors = [{ profileId: employee.profileId, x: 480, y: 600 }]
+    snapshot(seated, [employee])
+    const view = seated.actors.get(employee.profileId)
+    advance(seated, 8)
+    assert.equal(view.settled, true)
+    assert.equal(view.sprite.textureKey, `staff-seated-${team}-frames`)
+    const prefix = `actor-${team}-${team === 0 && slot === 0 ? 4 : slot}-sit-`
+    const approach = { ...view.approachPoint }
+    const depths = [...seated.furniture.values()].map(({ image }) => image.depth)
+    for (const presence of ['working', 'requestingHelp', 'error', 'deskIdle']) {
+      snapshot(seated, [{ ...employee, presence }])
+      assert.equal(view.sprite.frame, prefix + 'back')
+      assert.deepEqual(position(view.container), { x: 400, y: 480 }, 'work/help/error remain in the same seat')
+      assert.deepEqual(view.approachPoint, approach, 'presence updates preserve the safe exit tile')
+      assert.equal(view.seatedForeground.visible, true)
+      assert.ok(view.seatedForeground.depth > seated.furniture.get(deskId).image.depth)
+      assert.ok(view.overlay.depth > view.seatedForeground.depth)
+    }
+    for (const [rotation, direction] of [[0, 'front'], [90, 'left'], [180, 'back'], [270, 'left']]) {
+      seated.setLayoutEditing(true)
+      seated.furniture.get(chairId).image.setData('furnitureRotation', rotation)
+      seated.refreshNavigationLayout()
+      seated.setLayoutEditing(false)
+      assert.equal(view.sprite.frame, prefix + direction)
+      assert.equal(view.sprite.flipX, rotation === 90)
+      assert.equal(view.seatedForeground.frame, view.sprite.frame)
+      assert.equal(view.seatedForeground.flipX, view.sprite.flipX)
+      assert.equal(view.container.depth < seated.furniture.get(chairId).image.depth, rotation === 180)
+    }
+    assert.deepEqual([...seated.furniture.values()].map(({ image }) => image.depth), depths)
+    let selected = null
+    seated.actorSelectHandler = (id) => { selected = id }
+    view.seatedForeground.events.get('pointerdown')()
+    assert.equal(selected, employee.profileId, 'clicking the visible seated head still selects its agent')
+    snapshot(seated, [{ ...employee, presence: 'pantry' }])
+    assert.equal(view.seatedForeground.visible, false)
+    assert.equal(view.sprite.crop, null)
+    assert.match(view.sprite.textureKey, /^staff-walk-/)
+    assert.ok(isOfficePositionWalkable(view.container, seated.collisionRects()))
+    advance(seated, 0.1)
+    assert.deepEqual(position(view.overlay), position(view.container), 'names follow the moving agent')
+    snapshot(seated, [{ ...employee, presence: 'offDuty' }])
+    assert.equal(view.seatedForeground.destroyed, true)
+    assert.equal(view.overlay.destroyed, true)
+  }
+}
+console.log('PASS all 15 employees: actual sitting, four chair directions, work/help/error, safe standing, selection, and cleanup')
+
+const meeting = createScene()
+const attendees = Array.from({ length: 5 }, (_, index) => actor(`meeting-${index}`, index % 3, 'meeting', index))
+snapshot(meeting, attendees)
+advance(meeting, 25)
+for (const view of meeting.actors.values()) {
+  assert.equal(view.settled, true)
+  assert.equal(view.seatedGoal, true, 'every real meeting chair supports the shared seat approach')
+  assert.match(view.sprite.frame, /-sit-(front|back|left)$/)
+  assert.deepEqual(position(view.container), position(meeting.furniture.get(view.chairId).image))
+}
+assert.equal(new Set([...meeting.actors.values()].map((view) => view.chairId)).size, 5)
+console.log('PASS five simultaneous meeting attendees use distinct real chairs and seated poses')

@@ -115,6 +115,15 @@ export function measureCharacterSheet(pixels: ArrayLike<number>, imageWidth: num
 // Employee sheets each contain one person: four phases in each facing row.
 // Keep the PNG's alpha as authored; color-keying white also erases white shirts.
 export function measureWalkSheet(pixels: ArrayLike<number>, imageWidth: number, imageHeight: number) {
+  return measureGridSheet(pixels, imageWidth, imageHeight, 4, 4)
+}
+
+export function measureSeatedSheet(pixels: ArrayLike<number>, imageWidth: number, imageHeight: number) {
+  return measureGridSheet(pixels, imageWidth, imageHeight, 5, 3, true)
+}
+
+function measureGridSheet(pixels: ArrayLike<number>, imageWidth: number, imageHeight: number,
+  columns: number, rows: number, personPerColumn = false) {
   // Generated sheets can shift rows by a few pixels. Split at the actual
   // transparent gutters so equal-height slicing cannot shave off shoes.
   const occupied = new Uint8Array(imageHeight)
@@ -124,11 +133,11 @@ export function measureWalkSheet(pixels: ArrayLike<number>, imageWidth: number, 
     }
   }
   const boundaries = [0]
-  for (let row = 1; row < 4; row += 1) {
-    const nominal = row * imageHeight / 4
-    const end = Math.ceil((row + 0.35) * imageHeight / 4)
+  for (let row = 1; row < rows; row += 1) {
+    const nominal = row * imageHeight / rows
+    const end = Math.ceil((row + 0.35) * imageHeight / rows)
     let best: number | undefined
-    for (let y = Math.floor((row - 0.35) * imageHeight / 4); y < end; y += 1) {
+    for (let y = Math.floor((row - 0.35) * imageHeight / rows); y < end; y += 1) {
       if (occupied[y]) continue
       const start = y
       while (y < end && !occupied[y]) y += 1
@@ -136,24 +145,27 @@ export function measureWalkSheet(pixels: ArrayLike<number>, imageWidth: number, 
       const middle = Math.floor((start + y) / 2)
       if (best === undefined || Math.abs(middle - nominal) < Math.abs(best - nominal)) best = middle
     }
-    if (best === undefined) throw new Error(`Employee walk sheet has no gutter at row ${row}`)
+    if (best === undefined) throw new Error(`Employee sheet has no gutter at row ${row}`)
     boundaries.push(best)
   }
   boundaries.push(imageHeight)
-  const frames = Array.from({ length: 4 }, (_, row) => Array.from({ length: 4 }, (_, column) => {
-    const x = Math.floor(column * imageWidth / 4)
+  const frames = Array.from({ length: rows }, (_, row) => Array.from({ length: columns }, (_, column) => {
+    const x = Math.floor(column * imageWidth / columns)
     const y = boundaries[row]
     const region = {
-      rect: { x, y, width: Math.floor((column + 1) * imageWidth / 4) - x,
+      rect: { x, y, width: Math.floor((column + 1) * imageWidth / columns) - x,
         height: boundaries[row + 1] - y },
       exclusions: [] as FrameRect[]
     }
     return { row, column, region: region.rect, exclusions: region.exclusions, ...measureCharacterFrame(pixels, imageWidth, region) }
   })).flat()
-  const scale = Math.min(...frames.flatMap(({ source }) => [
-    (CHARACTER_FRAME_WIDTH - CHARACTER_FRAME_PADDING * 2) / source.width,
-    (CHARACTER_FRAME_HEIGHT - CHARACTER_FRAME_PADDING * 2) / source.height
-  ]))
-  for (const frame of frames) frame.destination = fitCharacterFrame(frame.source, scale)
+  const groups = personPerColumn ? Array.from({ length: columns }, (_, column) => frames.filter((frame) => frame.column === column)) : [frames]
+  for (const group of groups) {
+    const scale = Math.min(...group.flatMap(({ source }) => [
+      (CHARACTER_FRAME_WIDTH - CHARACTER_FRAME_PADDING * 2) / source.width,
+      (CHARACTER_FRAME_HEIGHT - CHARACTER_FRAME_PADDING * 2) / source.height
+    ]))
+    for (const frame of group) frame.destination = fitCharacterFrame(frame.source, scale)
+  }
   return frames
 }

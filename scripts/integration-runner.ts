@@ -27,8 +27,9 @@ import { OFFICE_OBJECTS, objectById } from '../src/renderer/src/game/officeObjec
 import { parseOfficeWorldSave, upsertSavedActor } from '../src/renderer/src/game/worldPersistence'
 import {
   CHARACTER_FRAME_HEIGHT, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_PADDING,
-  measureCharacterSheet, type CharacterSheetKey
+  measureCharacterSheet, measureSeatedSheet, type CharacterSheetKey
 } from '../src/renderer/src/game/characterFrames'
+import { STAFF_SEATED_SHEETS } from '../src/renderer/src/game/staffWalkSheets'
 
 interface RecordedEvent {
   channel: string
@@ -367,9 +368,38 @@ function verifyCharacterFeet(): void {
   console.log('PASS complete character shoes, stable alignment (65 poses including seated CEO), and alternating representative arms')
 }
 
+function verifyStaffSeatedSheets(): void {
+  for (const { team, file } of STAFF_SEATED_SHEETS) {
+    const png = PNG.sync.read(fs.readFileSync(path.join(process.cwd(), 'src/renderer/src/assets/pixel-office/characters/seated-v1', file)))
+    const frames = measureSeatedSheet(png.data, png.width, png.height)
+    assert.equal(frames.length, 15)
+    for (const { row, column, source, destination } of frames) {
+      const label = `team ${team}, person ${column}, seated row ${row}`
+      assert.ok(source.width > 100 && source.height > 200, `${label}: complete body, not a stray fragment`)
+      assert.equal(destination.y + destination.height, CHARACTER_FRAME_HEIGHT - CHARACTER_FRAME_PADDING)
+      if (row < 2) {
+        let samples = 0, opaque = 0
+        for (let y = Math.floor(source.y + source.height * 0.53); y < source.y + source.height * 0.67; y++) {
+          for (let x = Math.floor(source.x + source.width * 0.44); x < source.x + source.width * 0.56; x++) {
+            samples++
+            if (png.data[(y * png.width + x) * 4 + 3] > 225) opaque++
+          }
+        }
+        assert.ok(opaque / samples > 0.98, `${label}: torso must not become transparent`)
+      }
+    }
+    for (let column = 0; column < 5; column++) {
+      const scales = frames.filter((frame) => frame.column === column).map(({ source, destination }) => destination.height / source.height)
+      assert.ok(Math.max(...scales) - Math.min(...scales) < 0.01, 'all facings of one person share a scale')
+    }
+  }
+  console.log('PASS all 15 employee seated skins: 45 complete poses, opaque torsos, and consistent directional scale')
+}
+
 async function main(): Promise<void> {
   verifyCharacterFeet()
   verifyStaffWalkSheets()
+  verifyStaffSeatedSheets()
   if (process.argv.includes('--character-frames')) return
   const events: RecordedEvent[] = []
   const sender = {
