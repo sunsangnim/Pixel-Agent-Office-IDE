@@ -132,7 +132,9 @@ const FURNITURE_ASSET_NAMES: Record<number, string> = {
 const FURNITURE_DIRECTIONS = ['front', 'right', 'back', 'left'] as const
 const STACKABLE_FURNITURE_FRAMES = new Set([7])
 const DESK_FURNITURE_FRAME = 10
-const DESK_ASSET_SCALE = 0.75
+// Keep the monitor wider than a seated character's head so its edges remain visible.
+const DESK_ASSET_SCALE = 1
+const CHAIR_ASSET_SCALE = 1.33
 type FurnitureDirection = typeof FURNITURE_DIRECTIONS[number]
 const directionalFurnitureAssets = import.meta.glob('../assets/pixel-office/furniture/directional/*.png', {
   eager: true, query: '?url', import: 'default'
@@ -196,7 +198,8 @@ const SEAT_FOOT_OFFSET = 22
 const SEAT_ACCESS_RADIUS = 144
 
 function furnitureDisplaySize(frame: number, columns: number, rows: number): { width: number; height: number } {
-  const scale = frame === DESK_FURNITURE_FRAME ? DESK_ASSET_SCALE : 1
+  const scale = frame === DESK_FURNITURE_FRAME ? DESK_ASSET_SCALE
+    : [12, 13, 14].includes(frame) ? CHAIR_ASSET_SCALE : 1
   return { width: columns * 16 * scale, height: rows * 16 * scale }
 }
 
