@@ -13,6 +13,8 @@ buildSync({
       "export * from './src/renderer/src/game/layoutPersistence'",
       "export * from './src/renderer/src/game/idleActivity'",
       "export * from './src/renderer/src/game/actorStateMachine'",
+      "export * from './src/renderer/src/game/worldPersistence'",
+      "export * from './src/renderer/src/game/characterGait'",
       "export * from './src/renderer/src/lib/officePresence'"
     ].join('\n'), resolveDir: process.cwd(), loader: 'ts'
   },
@@ -22,9 +24,10 @@ buildSync({
   banner: { js: 'function emptyAssetGlob() { return {} }' }, logLevel: 'silent'
 })
 const {
-  OfficeScene, IdleActivity, ActorStateMachine, actionForPresence, resolveOfficePresence,
+  OfficeScene, IdleActivity, ActorStateMachine, CharacterGait, actionForPresence, resolveOfficePresence,
   findOfficePath, hasOfficeLineOfSight, isOfficePositionWalkable, routeFor, WAYPOINTS,
-  DEFAULT_LAYOUT_SEED
+  DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS,
+  OFFICE_REPRESENTATIVE_SAVE_KEY, parseRepresentativePosition
 } = require(outputFile)
 
 const storage = new Map()
@@ -36,7 +39,8 @@ global.localStorage = {
 function objectDouble(x = 0, y = 0) {
   const data = new Map()
   const object = {
-    x, y, depth: 0, scaleX: 1, scaleY: 1, visible: true, playCount: 0,
+    x, y, depth: 0, scaleX: 1, scaleY: 1, originX: 0.5, originY: 0.5, visible: true, playCount: 0,
+    texture: { setFilter() {} },
     anims: {
       isPlaying: false, paused: false,
       pause() { this.paused = true }, resume() { this.paused = false }
@@ -44,6 +48,7 @@ function objectDouble(x = 0, y = 0) {
     setPosition(x, y) { this.x = x; this.y = y; return this },
     setY(y) { this.y = y; return this },
     setScale(x, y = x) { this.scaleX = x; this.scaleY = y; return this },
+    setOrigin(x, y = x) { this.originX = x; this.originY = y; return this },
     setDepth(depth) { this.depth = depth; return this },
     setDisplaySize(width, height) { this.displayWidth = width; this.displayHeight = height; return this },
     setSize(width, height) { return this.setDisplaySize(width, height) },
@@ -64,16 +69,16 @@ function objectDouble(x = 0, y = 0) {
     stop() { this.anims.isPlaying = false; return this },
     destroy() { this.destroyed = true }
   }
-  for (const name of ['setOrigin', 'setPadding', 'setTint', 'setStrokeStyle', 'setFillStyle', 'setInteractive', 'setAlpha', 'on']) {
+  for (const name of ['setPadding', 'setTint', 'setStrokeStyle', 'setFillStyle', 'setInteractive', 'setAlpha', 'on']) {
     object[name] = function () { return this }
   }
   return object
 }
 
-function createScene() {
+function createScene(saved = DEFAULT_LAYOUT_SEED) {
   const scene = new OfficeScene()
-  scene.add = { sprite: objectDouble, image: objectDouble, rectangle: objectDouble, text: objectDouble, container: objectDouble }
-  scene.input = { setDraggable() {} }
+  scene.add = { sprite: objectDouble, image: objectDouble, circle: objectDouble, rectangle: objectDouble, text: objectDouble, container: objectDouble }
+  scene.input = { events: new Map(), setDraggable() {}, on(event, handler) { this.events.set(event, handler) } }
   scene.sys = { isActive: () => true }
   scene.reportDeskCounts = () => {}
   scene.mockTweens = []
@@ -88,7 +93,7 @@ function createScene() {
       return tween
     }
   }
-  scene.layoutSave = JSON.parse(JSON.stringify(DEFAULT_LAYOUT_SEED))
+  scene.layoutSave = JSON.parse(JSON.stringify(saved))
   scene.zOrderById = new Map(Object.entries(scene.layoutSave).map(([id, value]) => [id, value.zOrder]))
   scene.nextZOrder = Math.max(...scene.zOrderById.values()) + 1
   for (const [id, saved] of Object.entries(scene.layoutSave)) {
@@ -190,6 +195,36 @@ advance(stable, 10)
 assert.deepEqual([view.container.x, view.container.y, view.container.depth, view.sprite.y, view.sprite.playCount, stable.mockTweens.length], parked)
 console.log('PASS uninterrupted routes, exact arrival, static idle pose, and stable seated depth')
 
+// Exercise real actor updates: finishing an edit can reuse the existing route,
+// while a fresh scene must compose its actor after physically reaching the seat.
+for (const frontId of ['chair-0-0', 'desk-0-0']) {
+  stable.setLayoutEditing(true)
+  stable.selectFurniture(frontId)
+  const depths = [...stable.furniture.values()].map(({ id, image }) => [id, image.depth])
+  const saved = JSON.parse(storage.get('pixel-office-layout-v1'))
+  const beforeFinish = [view.route, view.container.x, view.container.y, view.sprite.playCount]
+  stable.setLayoutEditing(false)
+  assert.deepEqual([view.route, view.container.x, view.container.y, view.sprite.playCount], beforeFinish,
+    'a layer-only edit must not restart movement or animation')
+  const restored = createScene(saved)
+  snapshot(restored, [lead])
+  advance(restored, 35)
+  for (const candidate of [stable, restored]) {
+    const seated = candidate.actors.get(lead.profileId)
+    assert.equal(seated.settled, true)
+    snapshot(candidate, [{ ...lead, presence: 'working' }])
+    advance(candidate, 1)
+    assert.deepEqual([...candidate.furniture.values()].map(({ id, image }) => [id, image.depth]), depths,
+      'finish, reload, arrival, and starting work preserve the exact furniture depths')
+    const deskDepth = candidate.furniture.get('desk-0-0').image.depth
+    const chairDepth = candidate.furniture.get('chair-0-0').image.depth
+    assert.ok(seated.container.depth < deskDepth, 'a seated actor stays behind its desk after reordering')
+    assert.equal(seated.container.depth > chairDepth, frontId === 'desk-0-0',
+      'the chair uses its chosen layer relative to the seated actor')
+  }
+}
+console.log('PASS selected layers after edit completion, reload, real seat arrival, and starting work')
+
 const blocked = createScene()
 blocked.collisionRects = () => [{ x: 600, y: 0, width: 16, height: 960 }]
 snapshot(blocked, [actor('blocked')])
@@ -271,3 +306,172 @@ for (const member of crowd.actors.values()) {
   assert.equal(member.sprite.anims.isPlaying, false)
 }
 console.log('PASS four-person arrivals, occasional pantry visits/returns, and an explicit meeting')
+
+function representativeScene(position) {
+  storage.delete(OFFICE_REPRESENTATIVE_SAVE_KEY)
+  if (position) storage.set(OFFICE_REPRESENTATIVE_SAVE_KEY, JSON.stringify(position))
+  const scene = createScene()
+  scene.createRepresentativeActor()
+  return scene
+}
+function floorClick(scene, point, { button = 'left', over = [], event = {} } = {}) {
+  scene.input.events.get('pointerdown')({ worldX: point.x, worldY: point.y, event,
+    leftButtonDown: () => button === 'left' }, over)
+}
+const position = (sprite) => ({ x: sprite.x, y: sprite.y })
+const player = representativeScene()
+const ceo = player.representativeSprite
+assert.ok(isOfficePositionWalkable(ceo, player.collisionRects()), 'the representative starts on free floor, outside its desk')
+assert.equal(ceo.originY, 1, 'clicks and collisions use the feet')
+const initialPosition = position(ceo)
+const officeGoal = { x: 480, y: 600 }
+floorClick(player, officeGoal)
+assert.deepEqual(position(ceo), initialPosition, 'a click plans a route without teleporting')
+assert.ok(player.representativeRoute.length > 1, 'leaving the room requires a route through its doorway')
+let lastPosition = position(ceo)
+advance(player, 12, () => {
+  assert.ok(isOfficePositionWalkable(ceo, player.collisionRects()), 'every step avoids walls and furniture')
+  assert.ok(Math.hypot(ceo.x - lastPosition.x, ceo.y - lastPosition.y) <= 2.01, 'movement remains speed limited')
+  assert.ok(player.representativeLabel.y < ceo.y - ceo.displayHeight, 'the nameplate follows above the head')
+  lastPosition = position(ceo)
+})
+assert.deepEqual(position(ceo), officeGoal)
+assert.equal(ceo.anims.isPlaying, false)
+assert.equal(player.representativeDestination.visible, false)
+assert.ok(ceo.depth > player.maxFurnitureDepth())
+const restoredPlayer = createScene()
+restoredPlayer.createRepresentativeActor()
+assert.deepEqual(position(restoredPlayer.representativeSprite), officeGoal, 'arrival survives a scene reload')
+assert.equal(parseRepresentativePosition('{bad'), null)
+assert.equal(parseRepresentativePosition('{"x":"bad","y":12}'), null)
+console.log('PASS representative floor click, doorway routing, body collisions, arrival, nameplate, and saved position')
+
+const controls = representativeScene({ x: 480, y: 600 })
+const controlled = controls.representativeSprite
+floorClick(controls, { x: 400, y: 600 })
+advance(controls, 0.1)
+assert.match(controlled.frame, /^ceo-walk-left-/)
+assert.equal(controlled.flipX, false)
+floorClick(controls, { x: 640, y: 600 })
+advance(controls, 0.1)
+assert.match(controlled.frame, /^ceo-walk-left-/)
+assert.equal(controlled.flipX, true, 'rightward motion mirrors the left-facing walk')
+const destination = { ...controls.representativeGoal }
+for (const options of [{ button: 'right' }, { over: [{}] }, { event: { shiftKey: true } }]) {
+  floorClick(controls, { x: 600, y: 560 }, options)
+  assert.deepEqual(controls.representativeGoal, destination, 'selection and modified clicks do not move the representative')
+}
+floorClick(controls, { x: 4, y: 4 })
+assert.deepEqual(controls.representativeGoal, destination, 'a wall click leaves the valid destination unchanged')
+controls.setLayoutEditing(true)
+const pausedPosition = position(controlled)
+const pausedPose = controlled.frame
+floorClick(controls, { x: 600, y: 560 })
+advance(controls, 2)
+assert.deepEqual(position(controlled), pausedPosition)
+assert.equal(controlled.frame, pausedPose, 'editing freezes the exact step pose')
+assert.deepEqual(controls.representativeGoal, destination)
+assert.equal(controlled.anims.paused, true)
+controls.setLayoutEditing(false)
+advance(controls, 3)
+assert.deepEqual(position(controlled), destination, 'finishing editing resumes the pending destination')
+floorClick(controls, { x: 640, y: 560 })
+advance(controls, 0.1)
+assert.match(controlled.frame, /^ceo-walk-up-/)
+floorClick(controls, { x: 640, y: 600 })
+advance(controls, 0.05)
+assert.match(controlled.frame, /^ceo-walk-down-/)
+advance(controls, 0.1)
+assert.equal(controlled.frame, 'ceo-idle-0', 'arrival switches from walking to a standing pose')
+controls.stopRepresentativeMovement()
+controls.collisionRects = () => [{ x: 500, y: 0, width: 16, height: 960 }]
+assert.equal(controls.moveRepresentativeTo({ x: 400, y: 600 }), false, 'disconnected destinations are rejected')
+console.log('PASS representative retargeting, four directions, ignored clicks, editor pause/resume, and unreachable goals')
+
+const playerTraffic = representativeScene({ x: 200, y: 400 })
+playerTraffic.collisionRects = () => [
+  { x: 300, y: 0, width: 16, height: 380 }, { x: 300, y: 420, width: 16, height: 540 }
+]
+playerTraffic.actorDestination = () => ({ point: { x: 316, y: 400 }, seated: false })
+playerTraffic.worldSave.actors = [{ profileId: 'blocker', x: 316, y: 400 }]
+snapshot(playerTraffic, [actor('blocker')])
+floorClick(playerTraffic, { x: 420, y: 400 })
+const walkingPlayer = playerTraffic.representativeSprite
+advance(playerTraffic, 4, () => {
+  assert.ok(isOfficePositionWalkable(walkingPlayer, [actorCollisionRect({ x: 316, y: 400 })]), 'the representative cannot cross a stationary employee')
+})
+assert.equal(walkingPlayer.anims.isPlaying, false, 'a blocked representative does not walk in place')
+assert.deepEqual(playerTraffic.representativeGoal, { x: 420, y: 400 })
+snapshot(playerTraffic, [actor('blocker', 0, 'offDuty')])
+advance(playerTraffic, 5)
+assert.deepEqual(position(walkingPlayer), { x: 420, y: 400 }, 'movement resumes when the employee clears the passage')
+console.log('PASS representative waits for employees and resumes after the passage clears')
+
+const gait = new CharacterGait('ceo')
+assert.equal(gait.advance(-1, 0).frame, 'ceo-walk-left-0')
+const stridePoses = Array.from({ length: 4 }, () => gait.advance(-16, 0).frame)
+assert.equal(new Set(stridePoses).size, 4, 'one stride uses four alternating poses without repeated holds')
+for (let index = 0; index < 40; index += 1) {
+  const pose = gait.advance(-2, 2 + (index % 2 ? 1e-10 : -1e-10))
+  assert.match(pose.frame, /^ceo-walk-left-/, 'a diagonal cannot flicker between facing rows')
+}
+assert.match(gait.advance(0, -3).frame, /^ceo-walk-up-/, 'a clear turn changes facing')
+const settledPose = gait.stop()
+assert.match(settledPose.frame, /^ceo-walk-up-/, 'stopping retains the last facing instead of snapping to the camera')
+assert.deepEqual(gait.advance(0, 0), settledPose, 'standing still never cycles walking poses')
+const posesByFrameRate = [30, 60, 144].map((fps) => {
+  const gait = new CharacterGait('ceo')
+  let pose
+  for (let frame = 0; frame < fps; frame += 1) pose = gait.advance(96 / fps, 0)
+  return pose
+})
+assert.deepEqual(posesByFrameRate[0], posesByFrameRate[1])
+assert.deepEqual(posesByFrameRate[1], posesByFrameRate[2], 'equal travel distances produce the same step at different frame rates')
+console.log('PASS distance-driven strides, diagonal facing stability, and stopped orientation')
+
+// Every employee skin uses the same distance-driven four-phase gait as the
+// representative, including side views, waiting, and resuming after editing.
+for (let team = 0; team < 3; team += 1) {
+  for (let slot = 0; slot < 5; slot += 1) {
+    const walking = createScene()
+    walking.collisionRects = () => []
+    walking.actorDestination = () => ({ point: { x: 500, y: 700 }, seated: false })
+    const employee = actor(`walk-${team}-${slot}`, team, 'deskIdle', slot)
+    walking.worldSave.actors = [{ profileId: employee.profileId, x: 500, y: 400 }]
+    snapshot(walking, [employee])
+    const view = walking.actors.get(employee.profileId)
+    const variant = team === 0 && slot === 0 ? 4 : slot
+    const prefix = `actor-${team}-${variant}`
+    const poses = new Set()
+    for (let step = 0; step < 4; step += 1) {
+      advance(walking, 16 / 120)
+      poses.add(view.sprite.frame)
+      assert.match(view.sprite.frame, new RegExp(`^${prefix}-walk-down-[0-3]$`))
+      assert.equal(view.sprite.flipX, false, 'front arms alternate without mirroring the head')
+    }
+    assert.equal(poses.size, 4, 'employees need both opposite contact poses and passing poses')
+    walking.setLayoutEditing(true)
+    const paused = { point: position(view.container), frame: view.sprite.frame }
+    advance(walking, 0.2)
+    assert.deepEqual({ point: position(view.container), frame: view.sprite.frame }, paused)
+    walking.setLayoutEditing(false)
+    advance(walking, 0.1)
+    assert.notDeepEqual(position(view.container), paused.point)
+    view.route = [{ x: view.container.x - 200, y: view.container.y }]
+    view.routeIndex = 0
+    advance(walking, 0.1)
+    assert.match(view.sprite.frame, new RegExp(`^${prefix}-walk-left-[0-3]$`))
+    assert.equal(view.sprite.flipX, false)
+    view.route = [{ x: view.container.x + 200, y: view.container.y }]
+    advance(walking, 0.1)
+    assert.equal(view.sprite.flipX, true, 'rightward motion mirrors only the side-facing sheet')
+    view.route = [{ x: view.container.x, y: view.container.y - 200 }]
+    advance(walking, 0.1)
+    assert.match(view.sprite.frame, new RegExp(`^${prefix}-walk-up-[0-3]$`))
+    walking.blockActor(view, true)
+    const stopped = view.sprite.frame
+    advance(walking, 0.2)
+    assert.equal(view.sprite.frame, stopped, 'waiting never cycles walking poses')
+  }
+}
+console.log('PASS all 15 employee slots: four-phase walks, four directions, editor pause/resume, and blocked idle')

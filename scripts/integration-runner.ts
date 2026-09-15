@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert'
 import path from 'node:path'
 import fs from 'node:fs'
 import { PNG } from 'pngjs'
+import { verifyStaffWalkSheets } from './verify-staff-walk-sheets'
 import type { WebContents } from 'electron'
 import { getCliAdapter, adapterIdForTemplate } from '../src/main/cliAdapters'
 import { ptyManager } from '../src/main/ptyManager'
@@ -26,7 +27,7 @@ import { OFFICE_OBJECTS, objectById } from '../src/renderer/src/game/officeObjec
 import { parseOfficeWorldSave, upsertSavedActor } from '../src/renderer/src/game/worldPersistence'
 import {
   CHARACTER_FRAME_HEIGHT, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_PADDING,
-  characterFrameRegion, measureCharacterFrame, type CharacterSheetKey
+  measureCharacterSheet, type CharacterSheetKey
 } from '../src/renderer/src/game/characterFrames'
 
 interface RecordedEvent {
@@ -216,10 +217,10 @@ function verifyLivingOfficeAndRoster(): void {
   })
   assert.equal(parseOfficeWorldSave(JSON.stringify(savedWorld)).actors[0].x, 32)
   assert.deepEqual(parseOfficeWorldSave('broken'), { version: 1, actors: [] })
-  const ceoSheet = fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'characters', 'ceo-animation-sheet-v2.png'))
+  const ceoSheet = fs.readFileSync(path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'characters', 'ceo-walk-cycle-v3.png'))
   assert.equal(ceoSheet.toString('ascii', 1, 4), 'PNG')
-  assert.ok(ceoSheet.readUInt32BE(16) / 8 >= 48)
-  assert.ok(ceoSheet.readUInt32BE(20) / 6 >= 64)
+  assert.ok(ceoSheet.readUInt32BE(16) / 4 >= 48)
+  assert.ok(ceoSheet.readUInt32BE(20) / 4 >= 64)
   assert.ok(ceoSheet[25] === 4 || ceoSheet[25] === 6 || ceoSheet.includes(Buffer.from('tRNS')))
   for (const atlasName of [
     'claude-team-animation-atlas-v1.png',
@@ -312,16 +313,41 @@ function verifyCharacterFeet(): void {
     { key: 'antigravity-team-animation-atlas', file: 'antigravity-team-animation-atlas-v1.png', feet: [
       [310, 309, 309, 309, 309], [583, 583, 583, 582, 583], [833, 833, 833, 833, 833]
     ] },
-    { key: 'ceo-animation-sheet', file: 'ceo-animation-sheet-v2.png', feet: [
-      [162, 163, 163, 163, 163, 163, 163, 163], [329, 329, 328, 329, 329, 329, 329, 329],
-      [479, 479, 480, 479, 480, 480, 479, 480], [628, 628, 627, 628, 627, 627, 627, 627]
+    { key: 'ceo-animation-sheet', file: 'ceo-walk-cycle-v3.png', feet: [
+      [312, 312, 312, 312], [616, 616, 616, 616],
+      [919, 919, 919, 919], [1215, 1215, 1215, 1215]
     ] }
   ]
   for (const { key, file, feet } of sheets) {
     const png = PNG.sync.read(fs.readFileSync(path.join(process.cwd(), 'src/renderer/src/assets/pixel-office/characters', file)))
+    const frames = measureCharacterSheet(png.data, png.width, key)
+    if (key === 'ceo-animation-sheet') {
+      const scales = frames.filter(({ row }) => row < 4).map(({ source, destination }) => destination.height / source.height)
+      assert.ok(Math.max(...scales) - Math.min(...scales) < 0.007,
+        'representative idle/walking poses must share one scale without resizing the body between steps')
+      // Inspect the actual front-walk artwork, not just frame names. The old
+      // sheet always raised the viewer-left hand even as its frame advanced.
+      const handHeightDifference = (column: number): number => {
+        const { source } = frames.find((frame) => frame.row === 1 && frame.column === column)!
+        const hands = [{ y: 0, count: 0 }, { y: 0, count: 0 }]
+        for (let y = Math.floor(source.y + source.height * 0.53); y < source.y + source.height * 0.82; y += 1) {
+          for (let x = source.x; x < source.x + source.width; x += 1) {
+            const index = (y * png.width + x) * 4
+            const [r, g, b, a] = png.data.subarray(index, index + 4)
+            if (a <= 127 || r <= 140 || g <= 70 || g >= 220 || b >= 180 || r <= g * 1.1) continue
+            const hand = hands[x < source.x + source.width / 2 ? 0 : 1]
+            hand.y += y
+            hand.count += 1
+          }
+        }
+        assert.ok(hands.every((hand) => hand.count > 100), 'both hands must remain visible')
+        return hands[0].y / hands[0].count - hands[1].y / hands[1].count
+      }
+      assert.ok(handHeightDifference(0) < -8, 'first contact brings the viewer-left hand forward')
+      assert.ok(handHeightDifference(2) > 8, 'opposite contact brings the viewer-right hand forward')
+    }
     feet.forEach((columns, row) => columns.forEach((footY, column) => {
-      const region = characterFrameRegion(key, png.width, column, row)
-      const { source, destination } = measureCharacterFrame(png.data, png.width, region)
+      const { source, destination } = frames.find((frame) => frame.row === row && frame.column === column)!
       const label = `${key} column ${column} row ${row}`
       assert.ok(source.y <= footY && source.y + source.height > footY, `${label}: missing shoes`)
       let shoePixels = 0
@@ -335,11 +361,12 @@ function verifyCharacterFeet(): void {
       assert.ok(Math.abs(destination.width / source.width - destination.height / source.height) < 0.02, `${label}: preserve proportions`)
     }))
   }
-  console.log('PASS complete character shoes and stable frame alignment (77 poses)')
+  console.log('PASS complete character shoes, stable alignment (61 poses), and alternating representative arms')
 }
 
 async function main(): Promise<void> {
   verifyCharacterFeet()
+  verifyStaffWalkSheets()
   if (process.argv.includes('--character-frames')) return
   const events: RecordedEvent[] = []
   const sender = {

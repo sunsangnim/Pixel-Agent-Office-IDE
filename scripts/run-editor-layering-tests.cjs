@@ -101,24 +101,41 @@ scene.setMultiSelection(['desk-0-0', 'chair-0-0'])
 assert.ok(depth(scene, 'desk-0-0') > depth(scene, 'chair-0-0'), 'marquee preserves internal group order')
 console.log('PASS Shift selection, group member reselection, deselection, and marquee ordering')
 
-const occupied = { actors: [{ presence: 'deskIdle', teamIndex: 0, slotIndex: 0 }] }
+const occupied = { actors: [{ profileId: 'seated-test', presence: 'deskIdle', teamIndex: 0, slotIndex: 0 }] }
 scene.snapshot = occupied
 scene.actors.set('seated-test', {
   actor: occupied.actors[0], settled: true, seatedGoal: true,
-  sprite: { anims: { pause() {} } }
+  sprite: { anims: { pause() {} } },
+  container: imageDouble(128, 512),
+  stateMachine: { current: { action: 'sitting' } }
 })
 // Movement is exercised by test:movement; this fixture represents an actor
 // that has physically arrived at its chair for the layering assertions.
 scene.effectiveActor = (view) => view.actor
 scene.updateActor = () => {}
 click(scene, 'chair-0-0')
-scene.syncDeskChairDepths(occupied)
+scene.applySnapshot(occupied)
 assert.ok(depth(scene, 'chair-0-0') > depth(scene, 'desk-0-0'), 'presence updates cannot lower an editing chair')
+const selectedDepths = [...scene.furniture.values()].map(({ id, image }) => [id, image.depth])
+const selectedOrder = [...scene.zOrderById]
 scene.setLayoutEditing(false)
-assert.ok(depth(scene, 'chair-0-0') < depth(scene, 'desk-0-0'), 'normal seated composition resumes outside editing')
+assert.ok(depth(scene, 'chair-0-0') > depth(scene, 'desk-0-0'), 'finishing editing preserves the selected chair order even when occupied')
+assert.equal(scene.selectedFurniture, null, 'finishing editing clears selection')
+assert.equal(scene.multiSelectedIds.size, 0, 'finishing editing clears group selection')
+for (const presence of ['working', 'deskIdle', 'pantry', 'deskIdle']) {
+  scene.actors.get('seated-test').actor.presence = presence
+  scene.applySnapshot(occupied)
+  assert.deepEqual([...scene.furniture.values()].map(({ id, image }) => [id, image.depth]), selectedDepths,
+    'presence updates outside editing preserve every furniture depth')
+}
+assert.deepEqual([...scene.zOrderById], selectedOrder, 'presence updates preserve saved ordering')
+const finishedReload = createScene(savedLayout())
+finishedReload.setLayoutEditing(false)
+assert.deepEqual([...finishedReload.furniture.values()].map(({ id, image }) => [id, image.depth]), selectedDepths,
+  'the finished layout restores the same depths after a reload')
 const outsideOrder = [...scene.zOrderById]
 click(scene, 'desk-0-0')
 assert.deepEqual([...scene.zOrderById], outsideOrder, 'outside-editor clicks leave saved order unchanged')
 scene.setLayoutEditing(true)
 assert.ok(depth(scene, 'chair-0-0') > depth(scene, 'desk-0-0'), 'entering editing restores chosen chair order immediately')
-console.log('PASS presence updates and entering/leaving edit mode')
+console.log('PASS finished layout order, presence updates, reload, and entering/leaving edit mode')

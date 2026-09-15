@@ -15,7 +15,7 @@ export const CHARACTER_SHEET_LAYOUTS = {
   'claude-team-animation-atlas': { columns: 5, rows: [[5, 346], [346, 614], [609, 869], [869, 1108]] },
   'codex-team-animation-atlas': { columns: 5, rows: [[32, 373], [375, 679], [682, 958], [959, 1236]] },
   'antigravity-team-animation-atlas': { columns: 5, rows: [[10, 314], [315, 587], [588, 838], [840, 1103]] },
-  'ceo-animation-sheet': { columns: 8, rows: [[16, 169], [178, 332], [333, 484], [486, 632], [634, 807], [810, 961]] }
+  'ceo-animation-sheet': { columns: 4, rows: [[0, 330], [330, 635], [635, 938], [938, 1254]] }
 } as const satisfies Record<string, CharacterSheetLayout>
 
 export type CharacterSheetKey = keyof typeof CHARACTER_SHEET_LAYOUTS
@@ -75,19 +75,84 @@ export function measureCharacterFrame(
   right = Math.min(rect.x + rect.width - 1, right + 1)
   bottom = Math.min(rect.y + rect.height - 1, bottom + 1)
   const source = { x: left, y: top, width: right - left + 1, height: bottom - top + 1 }
-  const scale = Math.min(
+  return { source, destination: fitCharacterFrame(source) }
+}
+
+function fitCharacterFrame(source: FrameRect, scale = Math.min(
     (CHARACTER_FRAME_WIDTH - CHARACTER_FRAME_PADDING * 2) / source.width,
     (CHARACTER_FRAME_HEIGHT - CHARACTER_FRAME_PADDING * 2) / source.height
-  )
+  )): FrameRect {
   const width = Math.round(source.width * scale)
   const height = Math.round(source.height * scale)
   return {
-    source,
-    destination: {
-      x: Math.floor((CHARACTER_FRAME_WIDTH - width) / 2),
-      y: CHARACTER_FRAME_HEIGHT - CHARACTER_FRAME_PADDING - height,
-      width,
-      height
+    x: Math.floor((CHARACTER_FRAME_WIDTH - width) / 2),
+    y: CHARACTER_FRAME_HEIGHT - CHARACTER_FRAME_PADDING - height,
+    width,
+    height
+  }
+}
+
+export function measureCharacterSheet(pixels: ArrayLike<number>, imageWidth: number, key: CharacterSheetKey) {
+  const layout = CHARACTER_SHEET_LAYOUTS[key]
+  const frames = layout.rows.flatMap((_, row) => Array.from({ length: layout.columns }, (_, column) => {
+    const region = characterFrameRegion(key, imageWidth, column, row)
+    return { row, column, exclusions: region.exclusions, ...measureCharacterFrame(pixels, imageWidth, region) }
+  }))
+  if (key === 'ceo-animation-sheet') {
+    const locomotion = frames.filter(({ row }) => row < 4)
+    const scale = Math.min(...locomotion.flatMap(({ source }) => [
+      (CHARACTER_FRAME_WIDTH - CHARACTER_FRAME_PADDING * 2) / source.width,
+      (CHARACTER_FRAME_HEIGHT - CHARACTER_FRAME_PADDING * 2) / source.height
+    ]))
+    // Use one scale across idle and all walking directions. Fitting each pose
+    // independently makes the head and torso pulse as the feet change position.
+    for (const frame of locomotion) frame.destination = fitCharacterFrame(frame.source, scale)
+  }
+  return frames
+}
+
+// Employee sheets each contain one person: four phases in each facing row.
+// Keep the PNG's alpha as authored; color-keying white also erases white shirts.
+export function measureWalkSheet(pixels: ArrayLike<number>, imageWidth: number, imageHeight: number) {
+  // Generated sheets can shift rows by a few pixels. Split at the actual
+  // transparent gutters so equal-height slicing cannot shave off shoes.
+  const occupied = new Uint8Array(imageHeight)
+  for (let y = 0; y < imageHeight; y += 1) {
+    for (let x = 0; x < imageWidth; x += 1) {
+      if (pixels[(y * imageWidth + x) * 4 + 3] > 127) { occupied[y] = 1; break }
     }
   }
+  const boundaries = [0]
+  for (let row = 1; row < 4; row += 1) {
+    const nominal = row * imageHeight / 4
+    const end = Math.ceil((row + 0.35) * imageHeight / 4)
+    let best: number | undefined
+    for (let y = Math.floor((row - 0.35) * imageHeight / 4); y < end; y += 1) {
+      if (occupied[y]) continue
+      const start = y
+      while (y < end && !occupied[y]) y += 1
+      if (y - start < 2) continue
+      const middle = Math.floor((start + y) / 2)
+      if (best === undefined || Math.abs(middle - nominal) < Math.abs(best - nominal)) best = middle
+    }
+    if (best === undefined) throw new Error(`Employee walk sheet has no gutter at row ${row}`)
+    boundaries.push(best)
+  }
+  boundaries.push(imageHeight)
+  const frames = Array.from({ length: 4 }, (_, row) => Array.from({ length: 4 }, (_, column) => {
+    const x = Math.floor(column * imageWidth / 4)
+    const y = boundaries[row]
+    const region = {
+      rect: { x, y, width: Math.floor((column + 1) * imageWidth / 4) - x,
+        height: boundaries[row + 1] - y },
+      exclusions: [] as FrameRect[]
+    }
+    return { row, column, region: region.rect, exclusions: region.exclusions, ...measureCharacterFrame(pixels, imageWidth, region) }
+  })).flat()
+  const scale = Math.min(...frames.flatMap(({ source }) => [
+    (CHARACTER_FRAME_WIDTH - CHARACTER_FRAME_PADDING * 2) / source.width,
+    (CHARACTER_FRAME_HEIGHT - CHARACTER_FRAME_PADDING * 2) / source.height
+  ]))
+  for (const frame of frames) frame.destination = fitCharacterFrame(frame.source, scale)
+  return frames
 }

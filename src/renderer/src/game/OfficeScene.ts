@@ -3,11 +3,7 @@ import row1 from '../assets/pixel-office/characters/corporate-roster-row-1-v1.pn
 import row2 from '../assets/pixel-office/characters/corporate-roster-row-2-v1.png'
 import row3 from '../assets/pixel-office/characters/corporate-roster-row-3-v1.png'
 import row4 from '../assets/pixel-office/characters/corporate-roster-row-4-v1.png'
-import ceoAnimationSheet from '../assets/pixel-office/characters/ceo-animation-sheet-v2.png'
-import codexTeamAnimationAtlas from '../assets/pixel-office/characters/codex-team-animation-atlas-v1.png'
-import antigravityTeamAnimationAtlas from '../assets/pixel-office/characters/antigravity-team-animation-atlas-v1.png'
-import rosterRow4AnimationAtlas from '../assets/pixel-office/characters/roster-row-4-animation-atlas-v1.png'
-import claudeTeamAnimationAtlas from '../assets/pixel-office/characters/claude-team-animation-atlas-v1.png'
+import ceoAnimationSheet from '../assets/pixel-office/characters/ceo-walk-cycle-v3.png'
 import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-v2.png'
 import refrigeratorAsset from '../assets/pixel-office/furniture/refrigerator-v2.png'
 import pantryCabinetAsset from '../assets/pixel-office/furniture/pantry-cabinet-v1.png'
@@ -62,20 +58,27 @@ import {
 } from './layoutPersistence'
 import { ActorStateMachine } from './actorStateMachine'
 import { IdleActivity } from './idleActivity'
+import { CharacterGait, type CharacterPose } from './characterGait'
+import { STAFF_WALK_SHEETS, WALK_ROW_NAMES } from './staffWalkSheets'
 import {
   CHARACTER_FRAME_HEIGHT, CHARACTER_FRAME_WIDTH, CHARACTER_SHEET_LAYOUTS,
-  characterFrameRegion, measureCharacterFrame, type CharacterSheetKey
+  measureCharacterSheet, measureWalkSheet, type CharacterSheetKey
 } from './characterFrames'
-import { OFFICE_WORLD_SAVE_KEY, parseOfficeWorldSave, upsertSavedActor, type OfficeWorldSave } from './worldPersistence'
+import {
+  OFFICE_REPRESENTATIVE_SAVE_KEY, OFFICE_WORLD_SAVE_KEY, parseOfficeWorldSave,
+  parseRepresentativePosition, upsertSavedActor, type OfficeWorldSave
+} from './worldPersistence'
 
 interface ActorView {
   container: Phaser.GameObjects.Container
   sprite: Phaser.GameObjects.Sprite
+  label: Phaser.GameObjects.Text
   bubble: Phaser.GameObjects.Text
   routeKey: string
   actionTween?: Phaser.Tweens.Tween
   prop: Phaser.GameObjects.Rectangle
   stateMachine: ActorStateMachine
+  gait: CharacterGait
   route: WorldPoint[]
   routeIndex: number
   actor: OfficeGameActor
@@ -106,6 +109,7 @@ interface DoorView {
 }
 
 export const OFFICE_SCENE_KEY = 'office-scene'
+export const OFFICE_RENDER_SCALE = 2
 export const OFFICE_ACTOR_SELECT_EVENT = 'office:actor-select'
 
 const FURNITURE_TEXTURES: Record<number, string> = {
@@ -127,6 +131,9 @@ const DESK_FURNITURE_FRAME = 10
 const DESK_ASSET_SCALE = 0.75
 type FurnitureDirection = typeof FURNITURE_DIRECTIONS[number]
 const directionalFurnitureAssets = import.meta.glob('../assets/pixel-office/furniture/directional/*.png', {
+  eager: true, query: '?url', import: 'default'
+}) as Record<string, string>
+const staffWalkAssets = import.meta.glob('../assets/pixel-office/characters/walk-v6/*.png', {
   eager: true, query: '?url', import: 'default'
 }) as Record<string, string>
 const FLOOR_TEXTURES = ['floor-mint', 'floor-oak', 'floor-stone', 'floor-carpet', 'floor-office-carpet', 'floor-plain-gray'] as const
@@ -165,8 +172,10 @@ export interface EditorState {
   floor: FloorTexture
 }
 const OFFICE_FLOOR_SAVE_KEY = 'pixel-office-floor-v4'
+const OFFICE_FONT_FAMILY = '"Malgun Gothic", "맑은 고딕", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif'
 // Normalized frames center the character art on the sprite and nameplate.
 const CEO_SPRITE_ART_X_OFFSET = 0
+const CEO_LABEL_GAP = 6
 const ACTOR_COLLISION_HALF_WIDTH = ACTOR_NAV_HALF_WIDTH
 const ACTOR_COLLISION_HALF_HEIGHT = ACTOR_NAV_HALF_HEIGHT
 // Same size as the CEO sprite (createRepresentativeActor) so every
@@ -224,6 +233,12 @@ export class OfficeScene extends Phaser.Scene {
   private teamLabels = new Map<string, Phaser.GameObjects.Text>()
   private representativeSprite?: Phaser.GameObjects.Sprite
   private representativeLabel?: Phaser.GameObjects.Text
+  private representativeDestination?: Phaser.GameObjects.Arc
+  private representativeRoute: WorldPoint[] = []
+  private representativeGoal: WorldPoint | null = null
+  private representativeStalledMs = 0
+  private representativeNavigationRevision = -1
+  private representativeGait = new CharacterGait('ceo')
   // Persisted (not just in-memory) so whichever piece was placed/edited most
   // recently keeps rendering on top of anything it overlaps even after a
   // reload, instead of only for the rest of the current session.
@@ -284,6 +299,12 @@ export class OfficeScene extends Phaser.Scene {
     }
     this.layoutEditing = editing
     this.setEditorUiVisible(editing)
+    if (editing) this.representativeSprite?.anims.pause()
+    else if (this.representativeSprite) {
+      this.repairRepresentativePosition()
+      if (this.representativeGoal) this.planRepresentativeRoute()
+      this.updateRepresentativeDepth()
+    }
     this.actors.forEach((view) => {
       if (editing) {
         view.sprite.anims.pause()
@@ -291,9 +312,9 @@ export class OfficeScene extends Phaser.Scene {
       } else {
         view.actionTween?.resume()
         this.updateActor(view, this.effectiveActor(view), view.actorIndex)
+        this.updateActorDepth(view)
       }
     })
-    if (this.snapshot) this.syncDeskChairDepths(this.snapshot)
     if (!editing) this.selectFurniture(null)
     return true
   }
@@ -305,10 +326,11 @@ export class OfficeScene extends Phaser.Scene {
   preload(): void {
     ;[row1, row2, row3, row4].forEach((url, index) => this.load.image(`roster-row-${index}`, url))
     this.load.image('ceo-animation-sheet', ceoAnimationSheet)
-    this.load.image('codex-team-animation-atlas', codexTeamAnimationAtlas)
-    this.load.image('antigravity-team-animation-atlas', antigravityTeamAnimationAtlas)
-    this.load.image('roster-row-4-animation-atlas', rosterRow4AnimationAtlas)
-    this.load.image('claude-team-animation-atlas', claudeTeamAnimationAtlas)
+    for (const { id, file } of STAFF_WALK_SHEETS) {
+      const url = staffWalkAssets[`../assets/pixel-office/characters/walk-v6/${file}`]
+      if (!url) throw new Error(`Missing employee walk sheet: ${file}`)
+      this.load.image(`staff-walk-${id}`, url)
+    }
     const furnitureAssets: Array<[string, string]> = [
       ['furniture-coffee-machine', coffeeMachineAsset], ['furniture-refrigerator', refrigeratorAsset],
       ['furniture-pantry-cabinet', pantryCabinetAsset], ['furniture-presentation-screen', presentationScreenAsset],
@@ -353,11 +375,13 @@ export class OfficeScene extends Phaser.Scene {
       ? savedFloor as typeof FLOOR_TEXTURES[number]
       : DEFAULT_FLOOR_TEXTURE
     this.cameras.main.setBackgroundColor('#17221f')
+      .setZoom(OFFICE_RENDER_SCALE)
+      .centerOn(OFFICE_WORLD_WIDTH / 2, OFFICE_WORLD_HEIGHT / 2)
     this.createWorld()
     this.createLayoutEditor()
     this.createRosterFrames()
-    this.createTeamAnimations()
-    this.createCeoAnimations()
+    this.createStaffWalkFrames()
+    this.createCeoFrames()
     this.createRepresentativeActor()
     this.navigationLayoutKey = this.furnitureNavigationKey()
     if (this.pendingSnapshot) this.applySnapshot(this.pendingSnapshot)
@@ -370,14 +394,9 @@ export class OfficeScene extends Phaser.Scene {
       this.simulationTimeMs += elapsed
       this.updateIdleActivities()
       this.updateActorMovement(elapsed / 1000)
+      this.updateRepresentativeMovement(elapsed / 1000)
     }
-    // Keep the nameplate centered above the CEO sprite's head, whatever
-    // moves it - it's static today, but this doesn't assume that.
-    if (this.representativeSprite && this.representativeLabel) {
-      this.representativeLabel.setPosition(
-        this.representativeSprite.x + CEO_SPRITE_ART_X_OFFSET, this.representativeSprite.y - 63
-      )
-    }
+    this.updateRepresentativeLabelPosition()
   }
 
   updateSnapshot(snapshot: OfficeWorldSnapshot): void {
@@ -980,8 +999,8 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createRoom(x: number, y: number, width: number, height: number, label: string): void {
-    this.add.text(x + 10, y + 8, label, {
-      fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '12px', color: '#17362e', backgroundColor: '#dff3ed'
+    this.addOfficeText(x + 10, y + 8, label, {
+      fontSize: '12px', color: '#17362e', backgroundColor: '#dff3ed'
     }).setPadding(4, 4).setDepth(800)
   }
 
@@ -1061,8 +1080,8 @@ export class OfficeScene extends Phaser.Scene {
         // position, so it stays put as its own zone label instead of
         // tagging along whenever the desk itself gets moved around.
         const teamNames = ['Claude', 'Codex', 'Antigravity']
-        const label = this.add.text(point.x - 36, point.y - 33, `Team ${teamNames[teamIndex]}`, {
-          fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '10px', color: '#111111'
+        const label = this.addOfficeText(point.x - 36, point.y - 33, `Team ${teamNames[teamIndex]}`, {
+          fontSize: '11px', color: '#111111'
         }).setPadding(4, 4).setDepth(700)
         this.teamLabels.set(deskId, label)
       }
@@ -1070,10 +1089,8 @@ export class OfficeScene extends Phaser.Scene {
     // Created right after its own desk, so on a fresh install (nothing in
     // zOrderById yet) it naturally gets the later zOrder and renders in
     // front - an empty seat stays visible instead of tucked out of sight.
-    // It's only pushed behind the desk while someone is actually seated
-    // there - see syncDeskChairDepths, applied from applySnapshot - so the
-    // desk front edge convincingly occludes the seated actor without also
-    // swallowing the chair when nobody's sitting in it.
+    // Occupancy never changes this order; seated actors use the saved
+    // desk/chair order when choosing their own depth.
     if (!this.removedDeskIds.has(chairId) && !this.furniture.has(chairId)) {
       this.addFurniture(chairId, 12 + teamIndex, point.x, point.y + 18, 38, 42)
     }
@@ -1111,8 +1128,8 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private showEditorNotice(text: string): void {
-    const notice = this.add.text(480, 30, text, {
-      fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '11px', color: '#ffffff', backgroundColor: '#7a2222'
+    const notice = this.addOfficeText(480, 30, text, {
+      fontSize: '12px', color: '#ffffff', backgroundColor: '#7a2222'
     }).setOrigin(0.5, 0).setPadding(6, 6).setDepth(this.editorOverlayDepth())
     this.time.delayedCall(2200, () => notice.destroy())
   }
@@ -1128,59 +1145,16 @@ export class OfficeScene extends Phaser.Scene {
     }
   }
 
-  private createTeamAnimations(): void {
-    const states = ['idle', 'walk-down', 'walk-up', 'work'] as const
-    // Keyed by team (0=Claude/1=Codex/2=Antigravity), not a global roster
-    // index - see animationAtlasFor for why: team capacity is desk-count
-    // driven now and usually well under 5, so a global 1-4/5-9/10-14 band
-    // scheme silently mismatched teams to atlases as soon as any team had
-    // fewer than 5 people ahead of it in the profile list.
-    const atlases = [
-      { key: 'claude-team-animation-atlas', teamIndex: 0 },
-      { key: 'codex-team-animation-atlas', teamIndex: 1 },
-      { key: 'antigravity-team-animation-atlas', teamIndex: 2 }
-    ] as const
-    atlases.forEach(({ key: sourceKey, teamIndex }) => {
-      const key = this.createCharacterFrames(sourceKey, (column, row) => `actor-${teamIndex}-${column}-${states[row]}`)
-      for (let column = 0; column < 5; column += 1) {
-        const actorKey = `${teamIndex}-${column}`
-      this.anims.create({
-        key: `actor-${actorKey}-idle`,
-        frames: [{ key, frame: `actor-${actorKey}-idle` }],
-        frameRate: 2,
-        repeat: -1
-      })
-      this.anims.create({
-        key: `actor-${actorKey}-walk-down`,
-        frames: [
-          { key, frame: `actor-${actorKey}-idle` },
-          { key, frame: `actor-${actorKey}-walk-down` }
-        ],
-        frameRate: 6,
-        repeat: -1,
-        yoyo: true
-      })
-      this.anims.create({
-        key: `actor-${actorKey}-walk-up`,
-        frames: [{ key, frame: `actor-${actorKey}-walk-up` }],
-        frameRate: 6,
-        repeat: -1
-      })
-      this.anims.create({
-        key: `actor-${actorKey}-work`,
-        frames: [{ key, frame: `actor-${actorKey}-work` }],
-        frameRate: 3,
-        repeat: -1
-      })
-      }
-    })
+  private createStaffWalkFrames(): void {
+    for (const { id } of STAFF_WALK_SHEETS) {
+      this.createCharacterFrames('staff-walk-' + id,
+        (column, row) => 'actor-' + id + '-' + WALK_ROW_NAMES[row] + '-' + column, true)
+    }
   }
 
-  private animationAtlasFor(teamIndex: number): string | null {
-    if (teamIndex === 0) return 'claude-team-animation-atlas-frames'
-    if (teamIndex === 1) return 'codex-team-animation-atlas-frames'
-    if (teamIndex === 2) return 'antigravity-team-animation-atlas-frames'
-    return null
+  private animationAtlasFor(actor: OfficeGameActor): string | null {
+    return actor.teamIndex >= 0 && actor.teamIndex <= 2
+      ? 'staff-walk-' + this.actorAnimationKey(actor) + '-frames' : null
   }
 
   /** Which of the 5 skin variants in the actor's team atlas to use - the
@@ -1196,40 +1170,173 @@ export class OfficeScene extends Phaser.Scene {
     return `${actor.teamIndex}-${actor.slotIndex % 5}`
   }
 
-  private createRepresentativeActor(): void {
-    // Static, not sprite.play('ceo-idle') - nothing drives this character's
-    // state (no actual agent behind it), so it should hold still instead of
-    // looping a breathing animation nobody asked for.
-    this.representativeSprite = this.add.sprite(835, 811, 'ceo-animation-sheet-frames', 'ceo-idle-0')
-      .setDisplaySize(104, 120).setDepth(810)
-    this.representativeLabel = this.add.text(835 + CEO_SPRITE_ART_X_OFFSET, 748, '김태호 대표', {
-      fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '13px', color: '#111111', align: 'center'
-    }).setOrigin(0.5, 0).setPadding(4, 4).setDepth(700)
-  }
-
-  private createCeoAnimations(): void {
-    const rowNames = ['idle', 'walk-down', 'walk-up', 'walk-left', 'work', 'interact']
-    const key = this.createCharacterFrames('ceo-animation-sheet', (column, row) => `ceo-${rowNames[row]}-${column}`)
-    rowNames.forEach((name, row) => {
-      const frames: string[] = []
-      for (let column = 0; column < 8; column += 1) {
-        const frameName = `ceo-${name}-${column}`
-        frames.push(frameName)
-      }
-      this.anims.create({
-        key: `ceo-${name}`,
-        frames: frames.map((frame) => ({ key, frame })),
-        frameRate: name === 'idle' ? 4 : 8,
-        repeat: name === 'interact' ? 0 : -1,
-        // Reverse through adjacent poses rather than jumping to frame zero.
-        yoyo: name === 'idle'
-      })
+  private addOfficeText(x: number, y: number, text: string, style: Phaser.Types.GameObjects.Text.TextStyle): Phaser.GameObjects.Text {
+    const label = this.add.text(x, y, text, {
+      fontFamily: OFFICE_FONT_FAMILY,
+      fontStyle: '600',
+      resolution: 3,
+      ...style
     })
+    // Text needs smooth sampling when its high-resolution canvas is scaled
+    // down; the scene's pixel-art texture filter would drop thin glyph strokes.
+    label.texture.setFilter(Phaser.Textures.FilterMode.LINEAR)
+    return label
   }
 
-  private createCharacterFrames(sourceKey: CharacterSheetKey, frameName: (column: number, row: number) => string): string {
+  private createRepresentativeActor(): void {
+    // Movement, collision, and click destinations all use the feet as the
+    // anchor. The old centered sprite's feet were at (835, 871).
+    const obstacles = [...this.collisionRects(), ...this.actorObstacles(undefined, false)]
+    const saved = parseRepresentativePosition(localStorage.getItem(OFFICE_REPRESENTATIVE_SAVE_KEY))
+    const initial = (saved && nearestOfficePosition(saved, obstacles))
+      || nearestOfficePosition({ x: 835, y: 871 }, obstacles)
+      || nearestOfficePosition({ x: 832, y: 736 }, obstacles)
+      || { x: 832, y: 736 }
+    this.representativeSprite = this.add.sprite(initial.x, initial.y, 'ceo-animation-sheet-frames', 'ceo-idle-0')
+      .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setOrigin(0.5, 1)
+    this.representativeLabel = this.addOfficeText(0, 0, '김태호 대표', {
+      fontSize: '13px', color: '#111111', align: 'center'
+    }).setOrigin(0.5, 1).setPadding(4, 4).setDepth(700)
+    this.representativeDestination = this.add.circle(0, 0, 7, 0x74c9f5, 0.2)
+      .setStrokeStyle(2, 0x74c9f5).setDepth(2).setVisible(false)
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
+      // Furniture editing and employee selection retain their own clicks.
+      if (this.layoutEditing || !pointer.leftButtonDown() || over.length > 0 ||
+        pointer.event.shiftKey || pointer.event.ctrlKey || pointer.event.metaKey || pointer.event.altKey) return
+      this.moveRepresentativeTo({ x: pointer.worldX, y: pointer.worldY })
+    })
+    this.updateRepresentativeDepth()
+    this.updateRepresentativeLabelPosition()
+  }
+
+  moveRepresentativeTo(point: WorldPoint): boolean {
+    const sprite = this.representativeSprite
+    if (this.layoutEditing || !sprite || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false
+    const collisions = this.collisionRects()
+    if (!isOfficePositionWalkable(point, collisions)) return false
+    const route = findOfficePath(sprite, point, collisions)
+    if (route.length === 0 && Math.hypot(sprite.x - point.x, sprite.y - point.y) >= 0.5) return false
+    this.representativeGoal = { ...point }
+    this.representativeStalledMs = 0
+    this.planRepresentativeRoute()
+    this.representativeDestination?.setPosition(point.x, point.y).setVisible(true)
+    if (Math.hypot(sprite.x - point.x, sprite.y - point.y) < 0.5) this.stopRepresentativeMovement()
+    return true
+  }
+
+  private planRepresentativeRoute(): void {
+    const sprite = this.representativeSprite
+    const goal = this.representativeGoal
+    if (!sprite || !goal) return
+    const collisions = this.collisionRects()
+    const route = findOfficePath(sprite, goal, [...collisions, ...this.actorObstacles(undefined, false)])
+    // A passing employee may temporarily block the only path. Keep the
+    // destination and wait at that obstruction, retrying without walking in place.
+    this.representativeRoute = route.length > 0 ? route : findOfficePath(sprite, goal, collisions)
+    this.representativeNavigationRevision = this.navigationRevision
+    if (this.representativeRoute.length === 0) this.stopRepresentativeMovement()
+  }
+
+  private repairRepresentativePosition(): void {
+    const sprite = this.representativeSprite
+    if (!sprite) return
+    const obstacles = [...this.collisionRects(), ...this.actorObstacles(undefined, false)]
+    if (isOfficePositionWalkable(sprite, obstacles)) return
+    const free = nearestOfficePosition(sprite, obstacles)
+    if (free && hasOfficeLineOfSight(sprite, free, OFFICE_WALL_COLLISIONS)) sprite.setPosition(free.x, free.y)
+    this.persistRepresentativePosition()
+  }
+
+  private updateRepresentativeMovement(deltaSeconds: number): void {
+    const sprite = this.representativeSprite
+    const goal = this.representativeGoal
+    if (this.layoutEditing || !sprite || !goal || deltaSeconds <= 0) return
+    if (this.representativeNavigationRevision !== this.navigationRevision) this.planRepresentativeRoute()
+    let target = this.representativeRoute[0]
+    while (target && Math.hypot(target.x - sprite.x, target.y - sprite.y) < 0.5) {
+      sprite.setPosition(target.x, target.y)
+      this.representativeRoute.shift()
+      target = this.representativeRoute[0]
+    }
+    if (!target) {
+      this.stopRepresentativeMovement()
+      return
+    }
+    const dx = target.x - sprite.x
+    const dy = target.y - sprite.y
+    const distance = Math.hypot(dx, dy)
+    const amount = Math.min(distance, 120 * deltaSeconds)
+    const resolved = resolveAxisSeparated(sprite,
+      { x: sprite.x + dx / distance * amount, y: sprite.y + dy / distance * amount },
+      [...this.collisionRects(), ...this.actorObstacles(undefined, false)],
+      ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT)
+    const movedX = resolved.x - sprite.x
+    const movedY = resolved.y - sprite.y
+    if (Math.hypot(movedX, movedY) < 0.01) {
+      this.applyRepresentativePose(this.representativeGait.stop())
+      this.representativeStalledMs += deltaSeconds * 1000
+      if (this.representativeStalledMs >= 500) {
+        this.representativeStalledMs = 0
+        this.planRepresentativeRoute()
+      }
+      return
+    }
+    this.representativeStalledMs = 0
+    sprite.setPosition(resolved.x, resolved.y)
+    this.applyRepresentativePose(this.representativeGait.advance(movedX, movedY))
+    this.updateRepresentativeDepth()
+    if (Math.hypot(goal.x - sprite.x, goal.y - sprite.y) < 0.5) {
+      sprite.setPosition(goal.x, goal.y)
+      this.stopRepresentativeMovement()
+    }
+  }
+
+  private stopRepresentativeMovement(): void {
+    this.representativeRoute = []
+    this.representativeGoal = null
+    this.representativeStalledMs = 0
+    this.applyRepresentativePose(this.representativeGait.stop())
+    this.representativeDestination?.setVisible(false)
+    this.updateRepresentativeDepth()
+    this.persistRepresentativePosition()
+  }
+
+  private updateRepresentativeDepth(): void {
+    if (!this.representativeSprite) return
+    this.representativeSprite.setDepth(this.maxFurnitureDepth() + 1 + this.representativeSprite.y)
+    this.representativeLabel?.setDepth(this.representativeSprite.depth + OFFICE_WORLD_HEIGHT)
+  }
+
+  private applyRepresentativePose(pose: CharacterPose): void {
+    this.representativeSprite?.stop().setFrame(pose.frame).setFlipX(pose.flipX)
+  }
+
+  private persistRepresentativePosition(): void {
+    if (!this.representativeSprite) return
+    localStorage.setItem(OFFICE_REPRESENTATIVE_SAVE_KEY, JSON.stringify({
+      x: this.representativeSprite.x, y: this.representativeSprite.y
+    }))
+  }
+
+  private updateRepresentativeLabelPosition(): void {
+    if (!this.representativeSprite || !this.representativeLabel) return
+    const sprite = this.representativeSprite
+    // Anchor the bottom of the label above the sprite, leaving the full text
+    // height outside the head even if the font or character size changes.
+    this.representativeLabel.setPosition(
+      sprite.x + CEO_SPRITE_ART_X_OFFSET,
+      sprite.y - sprite.displayHeight * sprite.originY - CEO_LABEL_GAP
+    )
+  }
+
+  private createCeoFrames(): void {
+    const rowNames = ['idle', 'walk-down', 'walk-up', 'walk-left']
+    this.createCharacterFrames('ceo-animation-sheet', (column, row) => `ceo-${rowNames[row]}-${column}`)
+  }
+
+  private createCharacterFrames(sourceKey: string, frameName: (column: number, row: number) => string, walkSheet = false): string {
     const source = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement
-    const layout = CHARACTER_SHEET_LAYOUTS[sourceKey]
+    const layout = walkSheet ? { columns: 4, rows: WALK_ROW_NAMES } : CHARACTER_SHEET_LAYOUTS[sourceKey as CharacterSheetKey]
     const key = `${sourceKey}-frames`
     const texture = this.textures.createCanvas(
       key, layout.columns * CHARACTER_FRAME_WIDTH, layout.rows.length * CHARACTER_FRAME_HEIGHT
@@ -1243,32 +1350,30 @@ export class OfficeScene extends Phaser.Scene {
     const pixels = inputContext.getImageData(0, 0, source.width, source.height).data
     const context = texture.getContext()
     context.imageSmoothingEnabled = false
-    layout.rows.forEach((_, row) => {
-      for (let column = 0; column < layout.columns; column += 1) {
-        const region = characterFrameRegion(sourceKey, source.width, column, row)
-        const { source: crop, destination } = measureCharacterFrame(pixels, source.width, region)
-        const x = column * CHARACTER_FRAME_WIDTH + destination.x
-        const y = row * CHARACTER_FRAME_HEIGHT + destination.y
-        context.drawImage(source, crop.x, crop.y, crop.width, crop.height, x, y, destination.width, destination.height)
-        // Separate the two poses that share scanlines in the Claude source.
-        context.save()
-        context.beginPath()
-        context.rect(x, y, destination.width, destination.height)
-        context.clip()
-        region.exclusions.forEach((excluded) => {
-          const scaleX = destination.width / crop.width
-          const scaleY = destination.height / crop.height
-          context.clearRect(
-            x + (excluded.x - crop.x) * scaleX, y + (excluded.y - crop.y) * scaleY,
-            excluded.width * scaleX, excluded.height * scaleY
-          )
-        })
-        context.restore()
-        texture.add(
-          frameName(column, row), 0, column * CHARACTER_FRAME_WIDTH, row * CHARACTER_FRAME_HEIGHT,
-          CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT
+    const frames = walkSheet ? measureWalkSheet(pixels, source.width, source.height)
+      : measureCharacterSheet(pixels, source.width, sourceKey as CharacterSheetKey)
+    frames.forEach(({ row, column, source: crop, destination, exclusions }) => {
+      const x = column * CHARACTER_FRAME_WIDTH + destination.x
+      const y = row * CHARACTER_FRAME_HEIGHT + destination.y
+      context.drawImage(source, crop.x, crop.y, crop.width, crop.height, x, y, destination.width, destination.height)
+      // Separate the two poses that share scanlines in the Claude source.
+      context.save()
+      context.beginPath()
+      context.rect(x, y, destination.width, destination.height)
+      context.clip()
+      exclusions.forEach((excluded) => {
+        const scaleX = destination.width / crop.width
+        const scaleY = destination.height / crop.height
+        context.clearRect(
+          x + (excluded.x - crop.x) * scaleX, y + (excluded.y - crop.y) * scaleY,
+          excluded.width * scaleX, excluded.height * scaleY
         )
-      }
+      })
+      context.restore()
+      texture.add(
+        frameName(column, row), 0, column * CHARACTER_FRAME_WIDTH, row * CHARACTER_FRAME_HEIGHT,
+        CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT
+      )
     })
     texture.refresh()
     return key
@@ -1299,58 +1404,30 @@ export class OfficeScene extends Phaser.Scene {
       view.actorIndex = index
       this.updateActor(view, this.effectiveActor(view), index)
     })
-    this.syncDeskChairDepths(snapshot)
-  }
-
-  // A chair's own depth stays in front of the desk (visible, natural) except
-  // while someone is actually seated there, where it drops behind both the
-  // desk and the seated actor (see startActionAnimation) so the desk front
-  // edge convincingly occludes the character without also hiding an empty
-  // chair the rest of the time.
-  private syncDeskChairDepths(snapshot: OfficeWorldSnapshot): void {
-    const occupiedSeats = new Set([...this.actors.values()]
-      .filter((view) => view.settled && view.seatedGoal && ['working', 'deskIdle'].includes(view.actor.presence))
-      .map(({ actor }) => `${actor.teamIndex}-${actor.slotIndex}`))
-    this.furniture.forEach((chair, id) => {
-      const match = /^chair-(\d+-\d+)$/.exec(id)
-      if (!match) return
-      const desk = this.furniture.get(`desk-${match[1]}`)
-      if (!desk) return
-      // Editing uses the saved selection order, including occupied chairs.
-      // Outside editing, resume the seated desk/chair composition.
-      if (!this.layoutEditing && occupiedSeats.has(match[1])) {
-        chair.image.setDepth(desk.image.depth - 2)
-        return
-      }
-      chair.image.setDepth(chair.image.y + this.furnitureDepthBonus(id))
-    })
   }
 
   private createActor(actor: OfficeGameActor): ActorView {
     const row = Math.floor(actor.rosterIndex / 5)
     const frame = String(actor.rosterIndex)
-    const animationAtlas = this.animationAtlasFor(actor.teamIndex)
+    const animationAtlas = this.animationAtlasFor(actor)
     const animKey = this.actorAnimationKey(actor)
     const sprite = this.add.sprite(
       0,
       -27,
       animationAtlas ?? `roster-row-${row}`,
-      animationAtlas ? `actor-${animKey}-idle` : frame
+      animationAtlas ? `actor-${animKey}-idle-0` : frame
     ).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
       .setY(ACTOR_SPRITE_Y_OFFSET)
     sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
       this.actorSelectHandler?.(actor.profileId)
     })
-    // Same style/placement as the CEO's own nameplate (createRepresentativeActor)
-    // - no background box, bigger/darker text, sitting just above the head
-    // (sprite top edge is ACTOR_SPRITE_Y_OFFSET - height/2 = -124). y:28 was
-    // below the container's own ground anchor, i.e. under the character's
-    // feet rather than above its head.
-    const label = this.add.text(0, ACTOR_SPRITE_Y_OFFSET - ACTOR_SPRITE_HEIGHT / 2 - 3, actor.displayName, {
-      fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '13px', color: '#111111', align: 'center'
-    }).setOrigin(0.5, 0).setPadding(4, 4)
-    const bubble = this.add.text(36, -136, '', {
-      fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '8px', color: '#26332f', backgroundColor: '#fff7df'
+    // Bottom-anchor the full label above the head, including Korean glyphs
+    // with taller font metrics, just like the representative's nameplate.
+    const label = this.addOfficeText(0, ACTOR_SPRITE_Y_OFFSET - ACTOR_SPRITE_HEIGHT / 2 - 6, actor.displayName, {
+      fontSize: '13px', color: '#111111', align: 'center'
+    }).setOrigin(0.5, 1).setPadding(4, 4)
+    const bubble = this.addOfficeText(36, -136, '', {
+      fontSize: '11px', color: '#26332f', backgroundColor: '#fff7df'
     }).setPadding(4, 4).setVisible(false)
     const prop = this.add.rectangle(24, -40, 14, 18, 0x6eb6d9)
       .setStrokeStyle(2, 0x294a5a).setVisible(false)
@@ -1359,7 +1436,8 @@ export class OfficeScene extends Phaser.Scene {
       [...this.collisionRects(), ...this.actorObstacles()]) ?? WAYPOINTS.elevatorExit
     const container = this.add.container(initial.x, initial.y, [sprite, label, bubble, prop]).setDepth(initial.y)
     const view: ActorView = {
-      container, sprite, bubble, prop, routeKey: '', stateMachine: new ActorStateMachine(actor.presence),
+      container, sprite, label, bubble, prop, routeKey: '', stateMachine: new ActorStateMachine(actor.presence),
+      gait: new CharacterGait(`actor-${animKey}`),
       route: [], routeIndex: 0, actor, requestedActor: actor, actorIndex: 0, idleActivity: new IdleActivity(),
       goal: null, seatedGoal: false, settled: false, blocked: false, stalledMs: 0, blockedOccupancy: null, retryAt: 0
     }
@@ -1399,16 +1477,21 @@ export class OfficeScene extends Phaser.Scene {
     return { point, seated }
   }
 
-  private actorObstacles(except?: ActorView): CollisionRect[] {
-    return [...this.actors.values()].filter((view) => view !== except)
+  private actorObstacles(except?: ActorView, includeRepresentative = true): CollisionRect[] {
+    const obstacles = [...this.actors.values()].filter((view) => view !== except)
       .map((view) => actorCollisionRect(view.container))
+    if (includeRepresentative && this.representativeSprite) obstacles.push(actorCollisionRect(this.representativeSprite))
+    return obstacles
   }
 
   private occupancyKey(view: ActorView): string {
-    return [...this.actors.values()].filter((other) => other !== view &&
+    const actors = [...this.actors.values()].filter((other) => other !== view &&
       Math.hypot(other.container.x - view.container.x, other.container.y - view.container.y) < 128)
       .map((other) => [other.actor.profileId, Math.round(other.container.x / 8), Math.round(other.container.y / 8)].join(':'))
       .join('|')
+    const representative = this.representativeSprite
+    return actors + (representative && Math.hypot(representative.x - view.container.x, representative.y - view.container.y) < 128
+      ? `|representative:${Math.round(representative.x / 8)}:${Math.round(representative.y / 8)}` : '')
   }
 
   private effectiveActor(view: ActorView): OfficeGameActor {
@@ -1474,9 +1557,10 @@ export class OfficeScene extends Phaser.Scene {
     view.approachPoint = undefined
     view.container.setScale(1)
     view.sprite.setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setY(ACTOR_SPRITE_Y_OFFSET).setFlipX(false)
+    view.label.setY(ACTOR_SPRITE_Y_OFFSET - ACTOR_SPRITE_HEIGHT / 2 - 6)
     view.sprite.stop()
-    const atlas = this.animationAtlasFor(actor.teamIndex)
-    if (atlas) view.sprite.setFrame('actor-' + this.actorAnimationKey(actor) + '-idle')
+    const atlas = this.animationAtlasFor(actor)
+    if (atlas) view.sprite.setFrame('actor-' + this.actorAnimationKey(actor) + '-idle-0')
     view.route = findOfficePath(view.container, view.goal, collisions, {
       goalRadius: view.seatedGoal ? 96 : 0, goalCollisions: OFFICE_WALL_COLLISIONS
     })
@@ -1497,13 +1581,15 @@ export class OfficeScene extends Phaser.Scene {
     view.actionTween = undefined
     view.prop.setVisible(false)
     view.sprite.stop()
+    view.gait.stop()
     view.stateMachine.cancelAction()
   }
 
   private stopActorWalking(view: ActorView): void {
     view.sprite.stop()
-    if (this.animationAtlasFor(view.actor.teamIndex)) {
-      view.sprite.setFrame('actor-' + this.actorAnimationKey(view.actor) + '-idle')
+    if (this.animationAtlasFor(view.actor)) {
+      const pose = view.gait.stop()
+      view.sprite.setFrame(pose.frame).setFlipX(pose.flipX)
     }
     view.stateMachine.stopWalking()
   }
@@ -1534,7 +1620,6 @@ export class OfficeScene extends Phaser.Scene {
     view.settled = true
     this.startActionAnimation(view, view.actor)
     this.persistActor(view.actor, view)
-    if (this.snapshot) this.syncDeskChairDepths(this.snapshot)
   }
 
   private updateActorMovement(deltaSeconds: number): void {
@@ -1583,11 +1668,9 @@ export class OfficeScene extends Phaser.Scene {
       view.container.setPosition(resolved.x, resolved.y).setDepth(inFrontOfFurniture + resolved.y)
       view.stateMachine.startWalking(movedX, movedY)
       // Facing follows actual displacement, not an unreachable target vector.
-      view.sprite.setFlipX(movedX < -0.01)
-      if (this.animationAtlasFor(view.actor.teamIndex)) {
-        const animation = Math.abs(movedY) > Math.abs(movedX) && movedY < 0 ? 'walk-up' : 'walk-down'
-        view.sprite.anims.resume()
-        view.sprite.play('actor-' + this.actorAnimationKey(view.actor) + '-' + animation, true)
+      if (this.animationAtlasFor(view.actor)) {
+        const pose = view.gait.advance(movedX, movedY)
+        view.sprite.stop().setFrame(pose.frame).setFlipX(pose.flipX)
       }
       if (Math.hypot(target.x - resolved.x, target.y - resolved.y) < 0.5) {
         view.container.setPosition(target.x, target.y)
@@ -1602,18 +1685,17 @@ export class OfficeScene extends Phaser.Scene {
     view.stateMachine.arrive(view.actorIndex)
     const action = view.stateMachine.current.action
     const sitting = view.seatedGoal && (action === 'working' || action === 'sitting' || actor.presence === 'deskIdle')
-    if (this.animationAtlasFor(actor.teamIndex)) {
+    if (this.animationAtlasFor(actor)) {
       // A static back-facing pose composes with the real desk; never play the
       // walking loop or an infinite body-bobbing tween after arrival.
-      view.sprite.setFrame('actor-' + this.actorAnimationKey(actor) + '-' + (action === 'working' ? 'walk-up' : 'idle'))
+      view.sprite.setFrame('actor-' + this.actorAnimationKey(actor) + '-' + (action === 'working' ? 'walk-up-1' : 'idle-0'))
     }
     view.sprite.setFlipX(false)
       .setDisplaySize(ACTOR_SPRITE_WIDTH, sitting ? ACTOR_SPRITE_SITTING_HEIGHT : ACTOR_SPRITE_HEIGHT)
       .setY(sitting ? ACTOR_SPRITE_Y_OFFSET + 8 : ACTOR_SPRITE_Y_OFFSET)
+    view.label.setY(view.sprite.y - view.sprite.displayHeight / 2 - 6)
     view.container.setScale(1)
-    const desk = this.furniture.get('desk-' + actor.teamIndex + '-' + actor.slotIndex)
-    view.container.setDepth(sitting && actor.presence !== 'meeting' && desk
-      ? desk.image.depth - 1 : this.maxFurnitureDepth() + 1 + view.container.y)
+    this.updateActorDepth(view)
 
     if (action !== 'eating' && action !== 'drinking') return
     const drinking = action === 'drinking'
@@ -1631,6 +1713,18 @@ export class OfficeScene extends Phaser.Scene {
         if (this.actors.get(actor.profileId) === view) this.updateActor(view, this.effectiveActor(view), view.actorIndex)
       }
     })
+  }
+
+  private updateActorDepth(view: ActorView): void {
+    const { actor } = view
+    const action = view.stateMachine.current.action
+    const sitting = view.settled && view.seatedGoal &&
+      (action === 'working' || action === 'sitting' || actor.presence === 'deskIdle')
+    const desk = this.furniture.get(`desk-${actor.teamIndex}-${actor.slotIndex}`)
+    // Seat the actor behind its desk without changing any furniture order.
+    // Recalculate after editing even when the actor's route is unchanged.
+    view.container.setDepth(sitting && actor.presence !== 'meeting' && desk
+      ? desk.image.depth - 1 : this.maxFurnitureDepth() + 1 + view.container.y)
   }
 
   private persistActor(actor: OfficeGameActor, view: ActorView): void {

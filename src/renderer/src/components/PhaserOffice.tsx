@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Phaser from 'phaser'
-import { OfficeScene } from '../game/OfficeScene'
+import { OFFICE_RENDER_SCALE, OfficeScene } from '../game/OfficeScene'
 import { OFFICE_WORLD_HEIGHT, OFFICE_WORLD_WIDTH, type OfficeWorldSnapshot } from '../game/officeWorld'
 import LayoutEditorPanel from './LayoutEditorPanel'
 
@@ -31,8 +31,10 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
     const game = new Phaser.Game({
       type: Phaser.CANVAS,
       parent: hostRef.current,
-      width: OFFICE_WORLD_WIDTH,
-      height: OFFICE_WORLD_HEIGHT,
+      // Draw at twice the logical world size so text remains sharp when the
+      // office fills a large window. The scene camera keeps world coordinates.
+      width: OFFICE_WORLD_WIDTH * OFFICE_RENDER_SCALE,
+      height: OFFICE_WORLD_HEIGHT * OFFICE_RENDER_SCALE,
       backgroundColor: '#17221f',
       pixelArt: true,
       antialias: false,

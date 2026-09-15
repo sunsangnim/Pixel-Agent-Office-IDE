@@ -1,6 +1,18 @@
 import type { OfficePresence } from '@shared/types'
+import type { WorldPoint } from './officeWorld'
 
 export const OFFICE_WORLD_SAVE_KEY = 'pixel-office:phaser-world-v1'
+export const OFFICE_REPRESENTATIVE_SAVE_KEY = 'pixel-office:representative-position-v1'
+
+export function parseRepresentativePosition(raw: string | null): WorldPoint | null {
+  try {
+    const point = JSON.parse(raw ?? 'null') as WorldPoint | null
+    return point && Number.isFinite(point.x) && Number.isFinite(point.y)
+      ? { x: point.x, y: point.y } : null
+  } catch {
+    return null
+  }
+}
 
 export interface SavedActorState {
   profileId: string

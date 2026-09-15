@@ -16,8 +16,10 @@ function TerminalPane({ ptyId }: TerminalPaneProps) {
 
     const term = new Terminal({
       convertEol: true,
-      fontFamily: 'Consolas, monospace',
+      fontFamily: 'Consolas, "Malgun Gothic", "맑은 고딕", "Noto Sans Mono CJK KR", monospace',
       fontSize: 13,
+      fontWeight: 600,
+      fontWeightBold: 700,
       theme: { background: '#111118', foreground: '#e4e4ef' }
     })
     const fitAddon = new FitAddon()
