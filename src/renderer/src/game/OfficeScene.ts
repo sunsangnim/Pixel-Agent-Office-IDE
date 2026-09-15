@@ -59,6 +59,10 @@ import {
   type SavedFurniture
 } from './layoutPersistence'
 import { ActorStateMachine } from './actorStateMachine'
+import {
+  CHARACTER_FRAME_HEIGHT, CHARACTER_FRAME_WIDTH, CHARACTER_SHEET_LAYOUTS,
+  characterFrameRegion, measureCharacterFrame, type CharacterSheetKey
+} from './characterFrames'
 import { OFFICE_WORLD_SAVE_KEY, parseOfficeWorldSave, upsertSavedActor, type OfficeWorldSave } from './worldPersistence'
 
 interface ActorView {
@@ -147,12 +151,8 @@ export interface EditorState {
   floor: FloorTexture
 }
 const OFFICE_FLOOR_SAVE_KEY = 'pixel-office-floor-v4'
-// The CEO sprite's drawn art isn't centered within its animation-sheet cell
-// (measured: opaque-pixel bbox center sits ~26px right of the cell's own
-// center, at the sheet's native 202x161 frame size) - scaled to the sprite's
-// 104px display width, that's this many world-space px, so the nameplate
-// text lines up with the actual character instead of the empty cell center.
-const CEO_SPRITE_ART_X_OFFSET = 13
+// Normalized frames center the character art on the sprite and nameplate.
+const CEO_SPRITE_ART_X_OFFSET = 0
 const ACTOR_SCALE = 2
 const ACTOR_COLLISION_RADIUS = 11 * ACTOR_SCALE
 const ACTOR_COLLISION_HALF_WIDTH = 7 * ACTOR_SCALE
@@ -1079,17 +1079,11 @@ export class OfficeScene extends Phaser.Scene {
       { key: 'claude-team-animation-atlas', teamIndex: 0 },
       { key: 'codex-team-animation-atlas', teamIndex: 1 },
       { key: 'antigravity-team-animation-atlas', teamIndex: 2 }
-    ]
-    atlases.forEach(({ key, teamIndex }) => {
-      const texture = this.textures.get(key)
-      const source = texture.getSourceImage() as HTMLImageElement
-      const frameWidth = Math.floor(source.width / 5)
-      const frameHeight = Math.floor(source.height / 4)
+    ] as const
+    atlases.forEach(({ key: sourceKey, teamIndex }) => {
+      const key = this.createCharacterFrames(sourceKey, (column, row) => `actor-${teamIndex}-${column}-${states[row]}`)
       for (let column = 0; column < 5; column += 1) {
         const actorKey = `${teamIndex}-${column}`
-      states.forEach((state, row) => {
-        texture.add(`actor-${actorKey}-${state}`, 0, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
-      })
       this.anims.create({
         key: `actor-${actorKey}-idle`,
         frames: [{ key, frame: `actor-${actorKey}-idle` }],
@@ -1123,9 +1117,9 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private animationAtlasFor(teamIndex: number): string | null {
-    if (teamIndex === 0) return 'claude-team-animation-atlas'
-    if (teamIndex === 1) return 'codex-team-animation-atlas'
-    if (teamIndex === 2) return 'antigravity-team-animation-atlas'
+    if (teamIndex === 0) return 'claude-team-animation-atlas-frames'
+    if (teamIndex === 1) return 'codex-team-animation-atlas-frames'
+    if (teamIndex === 2) return 'antigravity-team-animation-atlas-frames'
     return null
   }
 
@@ -1146,7 +1140,7 @@ export class OfficeScene extends Phaser.Scene {
     // Static, not sprite.play('ceo-idle') - nothing drives this character's
     // state (no actual agent behind it), so it should hold still instead of
     // looping a breathing animation nobody asked for.
-    this.representativeSprite = this.add.sprite(835, 811, 'ceo-animation-sheet', 'ceo-idle-0')
+    this.representativeSprite = this.add.sprite(835, 811, 'ceo-animation-sheet-frames', 'ceo-idle-0')
       .setDisplaySize(104, 120).setDepth(810)
     this.representativeLabel = this.add.text(835 + CEO_SPRITE_ART_X_OFFSET, 748, '김태호 대표', {
       fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '13px', color: '#111111', align: 'center'
@@ -1154,31 +1148,70 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createCeoAnimations(): void {
-    const texture = this.textures.get('ceo-animation-sheet')
-    const source = texture.getSourceImage() as HTMLImageElement
-    const frameWidth = Math.floor(source.width / 8)
-    const frameHeight = Math.floor(source.height / 6)
     const rowNames = ['idle', 'walk-down', 'walk-up', 'walk-left', 'work', 'interact']
+    const key = this.createCharacterFrames('ceo-animation-sheet', (column, row) => `ceo-${rowNames[row]}-${column}`)
     rowNames.forEach((name, row) => {
       const frames: string[] = []
       for (let column = 0; column < 8; column += 1) {
         const frameName = `ceo-${name}-${column}`
-        texture.add(frameName, 0, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
         frames.push(frameName)
       }
       this.anims.create({
         key: `ceo-${name}`,
-        frames: frames.map((frame) => ({ key: 'ceo-animation-sheet', frame })),
+        frames: frames.map((frame) => ({ key, frame })),
         frameRate: name === 'idle' ? 4 : 8,
         repeat: name === 'interact' ? 0 : -1,
-        // The idle row's frames aren't perfectly recentered in their cells
-        // (last frame sits a bit off from the first), so a hard loop back to
-        // frame 0 reads as a visible snap/teleport. Playing it forward then
-        // back removes that jump cut - every step is a real consecutive-frame
-        // transition either way.
+        // Reverse through adjacent poses rather than jumping to frame zero.
         yoyo: name === 'idle'
       })
     })
+  }
+
+  private createCharacterFrames(sourceKey: CharacterSheetKey, frameName: (column: number, row: number) => string): string {
+    const source = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement
+    const layout = CHARACTER_SHEET_LAYOUTS[sourceKey]
+    const key = `${sourceKey}-frames`
+    const texture = this.textures.createCanvas(
+      key, layout.columns * CHARACTER_FRAME_WIDTH, layout.rows.length * CHARACTER_FRAME_HEIGHT
+    )
+    if (!texture) throw new Error(`Could not create character frames: ${sourceKey}`)
+    const input = document.createElement('canvas')
+    input.width = source.width
+    input.height = source.height
+    const inputContext = input.getContext('2d')!
+    inputContext.drawImage(source, 0, 0)
+    const pixels = inputContext.getImageData(0, 0, source.width, source.height).data
+    const context = texture.getContext()
+    context.imageSmoothingEnabled = false
+    layout.rows.forEach((_, row) => {
+      for (let column = 0; column < layout.columns; column += 1) {
+        const region = characterFrameRegion(sourceKey, source.width, column, row)
+        const { source: crop, destination } = measureCharacterFrame(pixels, source.width, region)
+        const x = column * CHARACTER_FRAME_WIDTH + destination.x
+        const y = row * CHARACTER_FRAME_HEIGHT + destination.y
+        context.drawImage(source, crop.x, crop.y, crop.width, crop.height, x, y, destination.width, destination.height)
+        // Separate the two poses that share scanlines in the Claude source.
+        context.save()
+        context.beginPath()
+        context.rect(x, y, destination.width, destination.height)
+        context.clip()
+        region.exclusions.forEach((excluded) => {
+          const scaleX = destination.width / crop.width
+          const scaleY = destination.height / crop.height
+          context.clearRect(
+            x + (excluded.x - crop.x) * scaleX, y + (excluded.y - crop.y) * scaleY,
+            excluded.width * scaleX, excluded.height * scaleY
+          )
+        })
+        context.restore()
+        texture.add(
+          frameName(column, row), 0, column * CHARACTER_FRAME_WIDTH, row * CHARACTER_FRAME_HEIGHT,
+          CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT
+        )
+      }
+    })
+    texture.refresh()
+    return key
   }
 
   private applySnapshot(snapshot: OfficeWorldSnapshot): void {

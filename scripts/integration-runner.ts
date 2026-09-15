@@ -24,6 +24,10 @@ import {
 import { ActorStateMachine, actionForPresence } from '../src/renderer/src/game/actorStateMachine'
 import { OFFICE_OBJECTS, objectById } from '../src/renderer/src/game/officeObjects'
 import { parseOfficeWorldSave, upsertSavedActor } from '../src/renderer/src/game/worldPersistence'
+import {
+  CHARACTER_FRAME_HEIGHT, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_PADDING,
+  characterFrameRegion, measureCharacterFrame, type CharacterSheetKey
+} from '../src/renderer/src/game/characterFrames'
 
 interface RecordedEvent {
   channel: string
@@ -289,7 +293,48 @@ function spawnFixture(sender: WebContents, adapterId: CliAdapterId): string {
   )
 }
 
+function verifyCharacterFeet(): void {
+  // Source-pixel shoe baselines measured independently from the runtime crops.
+  // Uniform height / 4 slicing loses 30–64 pixels from the first team row.
+  const sheets: Array<{ key: CharacterSheetKey; file: string; feet: number[][] }> = [
+    { key: 'claude-team-animation-atlas', file: 'claude-team-animation-atlas-v1.png', feet: [
+      [343, 342, 342, 342, 342], [609, 610, 609, 611, 611], [866, 865, 865, 865, 865]
+    ] },
+    { key: 'codex-team-animation-atlas', file: 'codex-team-animation-atlas-v1.png', feet: [
+      [369, 369, 369, 369, 369], [675, 675, 675, 675, 675], [954, 953, 954, 953, 954]
+    ] },
+    { key: 'antigravity-team-animation-atlas', file: 'antigravity-team-animation-atlas-v1.png', feet: [
+      [310, 309, 309, 309, 309], [583, 583, 583, 582, 583], [833, 833, 833, 833, 833]
+    ] },
+    { key: 'ceo-animation-sheet', file: 'ceo-animation-sheet-v2.png', feet: [
+      [162, 163, 163, 163, 163, 163, 163, 163], [329, 329, 328, 329, 329, 329, 329, 329],
+      [479, 479, 480, 479, 480, 480, 479, 480], [628, 628, 627, 628, 627, 627, 627, 627]
+    ] }
+  ]
+  for (const { key, file, feet } of sheets) {
+    const png = PNG.sync.read(fs.readFileSync(path.join(process.cwd(), 'src/renderer/src/assets/pixel-office/characters', file)))
+    feet.forEach((columns, row) => columns.forEach((footY, column) => {
+      const region = characterFrameRegion(key, png.width, column, row)
+      const { source, destination } = measureCharacterFrame(png.data, png.width, region)
+      const label = `${key} column ${column} row ${row}`
+      assert.ok(source.y <= footY && source.y + source.height > footY, `${label}: missing shoes`)
+      let shoePixels = 0
+      for (let x = source.x; x < source.x + source.width; x += 1) {
+        if (png.data[(footY * png.width + x) * 4 + 3] > 127) shoePixels += 1
+      }
+      assert.ok(shoePixels > 2, `${label}: shoe baseline must contain actual art`)
+      assert.equal(destination.y + destination.height, CHARACTER_FRAME_HEIGHT - CHARACTER_FRAME_PADDING, `${label}: stable ground line`)
+      assert.ok(destination.x >= CHARACTER_FRAME_PADDING && destination.y >= CHARACTER_FRAME_PADDING)
+      assert.ok(destination.x + destination.width <= CHARACTER_FRAME_WIDTH - CHARACTER_FRAME_PADDING)
+      assert.ok(Math.abs(destination.width / source.width - destination.height / source.height) < 0.02, `${label}: preserve proportions`)
+    }))
+  }
+  console.log('PASS complete character shoes and stable frame alignment (77 poses)')
+}
+
 async function main(): Promise<void> {
+  verifyCharacterFeet()
+  if (process.argv.includes('--character-frames')) return
   const events: RecordedEvent[] = []
   const sender = {
     isDestroyed: () => false,

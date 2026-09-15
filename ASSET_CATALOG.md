@@ -25,6 +25,12 @@ pixel-office/
 - `characters/roster-row-4-animation-atlas-v1.png`
 - `characters/ceo-animation-sheet-v2.png`
 
+팀별 애니메이션 시트와 대표 시트는 행 높이가 일정하지 않다. 런타임은
+`game/characterFrames.ts`의 실측 영역으로 각 포즈를 읽고, 원본 비율을 유지한 채
+투명 여백이 있는 312×360px 프레임에 발끝을 맞춰 배치한다. 시트를 단순히
+4등분 또는 6등분하면 신발이 잘리고 인접 포즈가 섞이므로 사용하지 않는다.
+프레임 검증은 `npm run test:integration -- --character-frames`로 실행한다.
+
 ## Furniture
 
 | 파일 | 용도 | 점유 칸 |
