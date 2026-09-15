@@ -50,6 +50,9 @@ function imageDouble(x, y, width = 64, height = 64) {
 
 function createScene(saved) {
   const scene = new OfficeScene()
+  scene.furnitureTextureBounds = () => ({ x: 0, y: 0, width: 1, height: 1 })
+  scene.renderSeatedForeground = () => {}
+  scene.seatedFrameAnchor = () => ({ x: 156, y: 280 })
   scene.add = { image: imageDouble, rectangle: imageDouble }
   scene.input = { setDraggable() {} }
   scene.furniturePlacementCollides = () => false

@@ -44,12 +44,9 @@ export function rotatedFootprint(frame: number, angle: number): TileFootprint {
     : source
 }
 
-// The desk sprite renders large (see DESK_ASSET_SCALE in OfficeScene), but a
-// hitbox that size leaves no room for two desks to sit at TEAM_DESKS' actual
-// spacing without colliding - which used to be masked by manually-dragged
-// positions saved in the interior editor, and breaks the moment that saved
-// layout is cleared. Placement/pathing collision uses this tighter box
-// instead; display size still comes from the full FURNITURE_FOOTPRINTS entry.
+// The editor uses a tighter desk footprint to preserve existing placements
+// near walls. Walking uses rendered bounds plus clearance in OfficeScene,
+// so this placement footprint must never determine movement collisions.
 const FURNITURE_COLLISION_FOOTPRINTS: Partial<Record<number, TileFootprint>> = {
   10: { columns: 6, rows: 3 }
 }

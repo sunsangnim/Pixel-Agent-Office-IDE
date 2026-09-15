@@ -48,6 +48,8 @@ import {
   collisionFootprint, furnitureCollision, OFFICE_FLOOR_REGION, OFFICE_WALL_COLLISIONS, rotatedFootprint, snapFurniturePoint
 } from './officeGrid'
 import { intersectsAabb, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
+import { measureFurnitureBounds } from './furnitureBounds'
+import { seatedFrameAnchor, seatedSpriteFoot } from './seatAnchors'
 import {
   DEFAULT_LAYOUT_SEED,
   OFFICE_LAYOUT_SAVE_KEY,
@@ -135,6 +137,7 @@ const DESK_FURNITURE_FRAME = 10
 // Keep the monitor wider than a seated character's head so its edges remain visible.
 const DESK_ASSET_SCALE = 1
 const CHAIR_ASSET_SCALE = 1.33
+const FURNITURE_WALK_CLEARANCE = 2
 type FurnitureDirection = typeof FURNITURE_DIRECTIONS[number]
 const directionalFurnitureAssets = import.meta.glob('../assets/pixel-office/furniture/directional/*.png', {
   eager: true, query: '?url', import: 'default'
@@ -192,7 +195,6 @@ const ACTOR_COLLISION_HALF_HEIGHT = ACTOR_NAV_HALF_HEIGHT
 const ACTOR_SPRITE_WIDTH = 104
 const ACTOR_SPRITE_HEIGHT = 120
 const ACTOR_SPRITE_Y_OFFSET = -64
-const SEAT_FOOT_OFFSET = 22
 // The layered meeting table and its bookcase leave its far chair 8 tiles
 // from free floor. The final seat segment still checks walls and other seats.
 const SEAT_ACCESS_RADIUS = 144
@@ -221,6 +223,9 @@ export class OfficeScene extends Phaser.Scene {
   private worldSave: OfficeWorldSave = { version: 1, actors: [] }
   private actorSelectHandler: ((profileId: string) => void) | null = null
   private furniture = new Map<string, FurnitureView>()
+  private furnitureBoundsByTexture = new Map<string, CollisionRect>()
+  private seatedFrameAnchors = new Map<string, WorldPoint>()
+  private seatedChairOverlays = new Map<Phaser.GameObjects.Sprite, Phaser.GameObjects.Image>()
   private layoutSave: OfficeLayoutSave = {}
   private removedDeskIds = new Set<string>()
   private deskCountsHandler: ((counts: number[]) => void) | null = null
@@ -254,7 +259,7 @@ export class OfficeScene extends Phaser.Scene {
   private representativeNavigationRevision = -1
   private representativeGait = new CharacterGait('ceo')
   private representativeChairTarget: string | null = null
-  private representativeSeat: { chairId: string; approach: WorldPoint } | null = null
+  private representativeSeat: { chairId: string; approach: WorldPoint; center: WorldPoint } | null = null
   // Persisted (not just in-memory) so whichever piece was placed/edited most
   // recently keeps rendering on top of anything it overlaps even after a
   // reload, instead of only for the rest of the current session.
@@ -326,6 +331,7 @@ export class OfficeScene extends Phaser.Scene {
     }
     this.actors.forEach((view) => {
       if (editing) {
+        this.clearSeatedChairOverlay(view.sprite)
         view.sprite.anims.pause()
         view.actionTween?.pause()
       } else {
@@ -928,7 +934,7 @@ export class OfficeScene extends Phaser.Scene {
 
   private furnitureNavigationKey(): string {
     return [...this.furniture.values()].map(({ id, frame, image }) =>
-      `${id}:${frame}:${image.x}:${image.y}:${this.furnitureRotation(image)}`).join('|')
+      `${id}:${frame}:${image.x}:${image.y}:${image.displayWidth}:${image.displayHeight}:${this.furnitureRotation(image)}`).join('|')
   }
 
   private refreshNavigationLayout(): void {
@@ -939,12 +945,44 @@ export class OfficeScene extends Phaser.Scene {
     }
   }
 
-  private collisionRects(excludedIds: ReadonlySet<string> = new Set()): CollisionRect[] {
+  private collisionRects(excludedIds: ReadonlySet<string> = new Set(), clearance = FURNITURE_WALK_CLEARANCE): CollisionRect[] {
     const furnitureRects = [...this.furniture.values()]
       .filter(({ id, frame }) => !excludedIds.has(id) && !STACKABLE_FURNITURE_FRAMES.has(frame))
-      .map(({ frame, image }) =>
-        furnitureCollision({ x: image.x, y: image.y }, collisionFootprint(frame, this.furnitureRotation(image))))
+      .map(({ image }) => this.furnitureWalkCollision(image, clearance))
     return [...OFFICE_WALL_COLLISIONS, ...furnitureRects]
+  }
+
+  private furnitureTextureBounds(image: Phaser.GameObjects.Image): CollisionRect {
+    const key = image.texture.key
+    const cached = this.furnitureBoundsByTexture.get(key)
+    if (cached) return cached
+    const pixels = this.furnitureTexturePixels(image)
+    const bounds = measureFurnitureBounds(pixels.data, pixels.width, pixels.height)
+    this.furnitureBoundsByTexture.set(key, bounds)
+    return bounds
+  }
+
+  private furnitureTexturePixels(image: Phaser.GameObjects.Image): ImageData {
+    const source = image.texture.getSourceImage() as HTMLImageElement
+    const canvas = document.createElement('canvas')
+    canvas.width = source.width
+    canvas.height = source.height
+    const context = canvas.getContext('2d', { willReadFrequently: true })!
+    context.drawImage(source, 0, 0)
+    const pixels = context.getImageData(0, 0, source.width, source.height)
+    return pixels
+  }
+
+  private furnitureWalkCollision(image: Phaser.GameObjects.Image, clearance = FURNITURE_WALK_CLEARANCE): CollisionRect {
+    // PNG padding is empty floor. Only the visible furniture blocks walking;
+    // the actor's foot collider already supplies most of the required clearance.
+    const bounds = this.furnitureTextureBounds(image)
+    return {
+      x: image.x + (bounds.x - image.originX) * image.displayWidth - clearance,
+      y: image.y + (bounds.y - image.originY) * image.displayHeight - clearance,
+      width: bounds.width * image.displayWidth + clearance * 2,
+      height: bounds.height * image.displayHeight + clearance * 2
+    }
   }
 
   // Only walls block furniture placement now - two pieces of furniture are
@@ -1226,8 +1264,8 @@ export class OfficeScene extends Phaser.Scene {
     const obstacles = [...this.collisionRects(), ...this.actorObstacles(undefined, false)]
     const saved = parseRepresentativePosition(localStorage.getItem(OFFICE_REPRESENTATIVE_SAVE_KEY))
     const initial = (saved && nearestOfficePosition(saved, obstacles))
-      || nearestOfficePosition({ x: 835, y: 871 }, obstacles)
       || nearestOfficePosition({ x: 832, y: 736 }, obstacles)
+      || nearestOfficePosition({ x: 835, y: 871 }, obstacles)
       || { x: 832, y: 736 }
     this.representativeSprite = this.add.sprite(initial.x, initial.y, 'ceo-animation-sheet-frames', 'ceo-idle-0')
       .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setOrigin(0.5, 1)
@@ -1292,16 +1330,19 @@ export class OfficeScene extends Phaser.Scene {
 
   private chairAccessCollisions(chair: FurnitureView, actor?: ActorView, includeActors = true): CollisionRect[] {
     const excluded = new Set([chair.id])
-    const seat = furnitureCollision(chair.image, collisionFootprint(chair.frame, this.furnitureRotation(chair.image)))
+    const seat = this.furnitureWalkCollision(chair.image, 0)
     // Chairs can be tucked under desks or meeting tables. Their overlapping
     // tabletop permits the short seating step; every other object still blocks it.
     for (const view of this.furniture.values()) {
-      if ([DESK_FURNITURE_FRAME, 6, 16].includes(view.frame) && intersectsAabb(seat,
-        furnitureCollision(view.image, collisionFootprint(view.frame, this.furnitureRotation(view.image))))) {
+      const bounds = this.furnitureWalkCollision(view.image, 0)
+      if ([DESK_FURNITURE_FRAME, 6, 16].includes(view.frame) &&
+        (intersectsAabb(seat, bounds) || intersectsAabb(actorCollisionRect(chair.image), bounds))) {
         excluded.add(view.id)
       }
     }
-    return [...this.collisionRects(excluded), ...(includeActors ? this.actorObstacles(actor, Boolean(actor)) : [])]
+    // The final pose change has no walking stride. Keep other furniture's
+    // full visual bounds, but allow the extra shoe clearance to close here.
+    return [...this.collisionRects(excluded, 0), ...(includeActors ? this.actorObstacles(actor, Boolean(actor)) : [])]
   }
 
   private representativeChairApproach(chair: FurnitureView, from: WorldPoint): WorldPoint | null {
@@ -1320,7 +1361,7 @@ export class OfficeScene extends Phaser.Scene {
     const seat = this.representativeSeat
     if (!seat) return { x: sprite.x, y: sprite.y }
     const chair = this.furniture.get(seat.chairId)
-    const center = chair?.image ?? { x: sprite.x, y: sprite.y - SEAT_FOOT_OFFSET }
+    const center = chair?.image ?? seat.center
     const collisions = [...this.collisionRects(), ...this.actorObstacles(undefined, false)]
     const access = chair ? this.chairAccessCollisions(chair) : collisions
     const candidates = [seat.approach]
@@ -1439,13 +1480,12 @@ export class OfficeScene extends Phaser.Scene {
     if (arrived && sprite && chair && this.representativeChairAvailable(chair) &&
       Math.hypot(sprite.x - chair.image.x, sprite.y - chair.image.y) <= SEAT_ACCESS_RADIUS &&
       hasOfficeLineOfSight(sprite, chair.image, this.chairAccessCollisions(chair))) {
-      this.representativeSeat = { chairId: chair.id, approach: { x: sprite.x, y: sprite.y } }
+      this.representativeSeat = { chairId: chair.id, approach: { x: sprite.x, y: sprite.y },
+        center: { x: chair.image.x, y: chair.image.y } }
       const direction = this.furnitureDirection(this.furnitureRotation(chair.image))
       sprite.setTexture('ceo-seated-sheet-frames', `ceo-sit-${direction}`)
         .setFlipX(false).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
-        .setPosition(chair.image.x, chair.image.y + SEAT_FOOT_OFFSET)
-      this.representativeSeatedForeground?.setFrame(`ceo-sit-${direction}`)
-        .setPosition(sprite.x, sprite.y)
+        .setPosition(chair.image.x, chair.image.y)
     }
     this.representativeDestination?.setVisible(false)
     this.updateRepresentativeDepth()
@@ -1458,9 +1498,10 @@ export class OfficeScene extends Phaser.Scene {
     const chair = this.representativeSeat && this.furniture.get(this.representativeSeat.chairId)
     let headDepth: number
     if (chair && this.representativeSeatedForeground) {
-      headDepth = this.applySeatedComposition(chair, sprite, this.representativeSeatedForeground, sprite, sprite)
+      headDepth = this.applySeatedComposition(chair, sprite, this.representativeSeatedForeground, sprite)
     } else {
-      sprite.setDepth(this.maxFurnitureDepth() + 1 + sprite.y).setCrop()
+      this.clearSeatedChairOverlay(sprite)
+      sprite.setDepth(this.maxFurnitureDepth() + 1 + sprite.y).setCrop().setVisible(true)
       this.representativeSeatedForeground?.setVisible(false)
       headDepth = sprite.depth
     }
@@ -1468,37 +1509,68 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private applySeatedComposition(chair: FurnitureView, sprite: Phaser.GameObjects.Sprite,
-    foreground: Phaser.GameObjects.Sprite, foot: WorldPoint,
+    foreground: Phaser.GameObjects.Sprite,
     depthTarget: Phaser.GameObjects.Sprite | Phaser.GameObjects.Container): number {
-    const behind = this.furnitureDirection(this.furnitureRotation(chair.image)) === 'back'
-    depthTarget.setDepth(chair.image.depth + (behind ? -1 : 1))
-    sprite.setCrop()
+    const direction = this.furnitureDirection(this.furnitureRotation(chair.image))
+    const behindBackrest = direction === 'back'
+    const foot = seatedSpriteFoot(chair.image, direction, this.seatedFrameAnchor(sprite), sprite)
+    if (sprite === depthTarget) sprite.setPosition(foot.x, foot.y)
+    else sprite.setPosition(foot.x - depthTarget.x, foot.y - depthTarget.y - sprite.displayHeight / 2)
+    depthTarget.setDepth(chair.image.depth + (behindBackrest ? -1 : 1))
+    sprite.setCrop().setVisible(true)
     foreground.setPosition(foot.x, foot.y).setVisible(false)
     let headDepth = depthTarget.depth
-    // Furniture layers are user-controlled. Split at the top of the chair:
-    // the head clears the monitor while the lower body stays behind the
-    // backrest. Representatives and employees share this composition.
     const top = foot.y - sprite.displayHeight
-    const split = Math.max(0, Math.min(sprite.displayHeight, chair.image.y - chair.image.displayHeight / 2 - top))
-    const upperBounds = { x: foot.x - sprite.displayWidth / 2, y: top, width: sprite.displayWidth, height: split }
+    const bodyBounds = { x: foot.x - sprite.displayWidth / 2, y: top,
+      width: sprite.displayWidth, height: sprite.displayHeight }
     for (const { frame, image } of this.furniture.values()) {
       if (![DESK_FURNITURE_FRAME, 6, 16].includes(frame)) continue
       const bounds = { x: image.x - image.displayWidth / 2, y: image.y - image.displayHeight / 2,
         width: image.displayWidth, height: image.displayHeight }
-      if (intersectsAabb(upperBounds, bounds)) headDepth = Math.max(headDepth, image.depth + 1)
+      if (intersectsAabb(bodyBounds, bounds)) headDepth = Math.max(headDepth, image.depth + 1)
     }
-    if (headDepth > depthTarget.depth && split > 0) {
-      const cropHeight = Math.round(split / sprite.displayHeight * CHARACTER_FRAME_HEIGHT)
-      sprite.setCrop(0, cropHeight, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT - cropHeight)
-      foreground.setCrop(0, 0, CHARACTER_FRAME_WIDTH, cropHeight)
-        .setDepth(headDepth).setVisible(true)
+    if (headDepth > depthTarget.depth) {
+      this.renderSeatedForeground(sprite, foreground)
+      sprite.setVisible(false)
+      foreground.setDepth(headDepth).setVisible(true)
     }
+    // The desk, sitter, and back-facing chair must be drawn in that order.
+    // Repeat the unchanged chair above a raised sitter, preserving the saved
+    // furniture order while its opaque backrest naturally covers the body.
+    if (behindBackrest && headDepth >= chair.image.depth && !this.layoutEditing) {
+      let overlay = this.seatedChairOverlays.get(sprite)
+      if (!overlay) {
+        overlay = this.add.image(chair.image.x, chair.image.y, chair.image.texture.key)
+        this.seatedChairOverlays.set(sprite, overlay)
+      }
+      overlay.setTexture(chair.image.texture.key).setPosition(chair.image.x, chair.image.y)
+        .setOrigin(chair.image.originX, chair.image.originY)
+        .setDisplaySize(chair.image.displayWidth, chair.image.displayHeight)
+        .setDepth(headDepth + 1)
+    } else this.clearSeatedChairOverlay(sprite)
     return headDepth
   }
 
+  private clearSeatedChairOverlay(sprite: Phaser.GameObjects.Sprite): void {
+    this.seatedChairOverlays.get(sprite)?.destroy()
+    this.seatedChairOverlays.delete(sprite)
+  }
+
+  private seatedFrameAnchor(sprite: Phaser.GameObjects.Sprite): WorldPoint {
+    const anchor = this.seatedFrameAnchors.get(`${sprite.texture.key}/${sprite.frame.name}`)
+    if (!anchor) throw new Error(`Missing seated contact point: ${sprite.texture.key}/${sprite.frame.name}`)
+    return anchor
+  }
+
+  private renderSeatedForeground(sprite: Phaser.GameObjects.Sprite, foreground: Phaser.GameObjects.Sprite): void {
+    foreground.setTexture(sprite.texture.key, sprite.frame.name).setCrop().setFlipX(sprite.flipX)
+      .setDisplaySize(sprite.displayWidth, sprite.displayHeight)
+  }
+
   private applyRepresentativePose(pose: CharacterPose): void {
+    if (this.representativeSprite) this.clearSeatedChairOverlay(this.representativeSprite)
     this.representativeSprite?.stop().setTexture('ceo-animation-sheet-frames', pose.frame)
-      .setCrop().setFlipX(pose.flipX).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
+      .setCrop().setVisible(true).setFlipX(pose.flipX).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
     this.representativeSeatedForeground?.setVisible(false)
   }
 
@@ -1562,6 +1634,10 @@ export class OfficeScene extends Phaser.Scene {
       : kind === 'walk' ? measureWalkSheet(pixels, source.width, source.height)
       : measureCharacterSheet(pixels, source.width, sourceKey as CharacterSheetKey)
     frames.forEach(({ row, column, source: crop, destination, exclusions }) => {
+      if (kind === 'seated' || sourceKey === 'ceo-seated-sheet') {
+        this.seatedFrameAnchors.set(`${key}/${frameName(column, row)}`,
+          seatedFrameAnchor(sourceKey, column, row, crop, destination))
+      }
       const x = column * CHARACTER_FRAME_WIDTH + destination.x
       const y = row * CHARACTER_FRAME_HEIGHT + destination.y
       context.drawImage(source, crop.x, crop.y, crop.width, crop.height, x, y, destination.width, destination.height)
@@ -1601,6 +1677,7 @@ export class OfficeScene extends Phaser.Scene {
     for (const [id, view] of this.actors) {
       if (!activeIds.has(id)) {
         this.stopActorAction(view)
+        this.clearSeatedChairOverlay(view.sprite)
         view.container.destroy(true)
         view.overlay.destroy(true)
         view.seatedForeground.destroy()
@@ -1802,10 +1879,11 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private restoreActorStandingPose(view: ActorView): void {
+    this.clearSeatedChairOverlay(view.sprite)
     const atlas = this.animationAtlasFor(view.actor)
     if (atlas) view.sprite.setTexture(atlas, `actor-${this.actorAnimationKey(view.actor)}-idle-0`)
-    view.sprite.stop().setCrop().setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
-      .setY(ACTOR_SPRITE_Y_OFFSET).setFlipX(false)
+    view.sprite.stop().setCrop().setVisible(true).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
+      .setPosition(0, ACTOR_SPRITE_Y_OFFSET).setFlipX(false)
     view.seatedForeground.setVisible(false)
   }
 
@@ -1943,7 +2021,7 @@ export class OfficeScene extends Phaser.Scene {
       const frame = `actor-${this.actorAnimationKey(actor)}-sit-${direction === 'right' ? 'left' : direction}`
       const texture = `staff-seated-${actor.teamIndex}-frames`
       view.sprite.setTexture(texture, frame).setCrop().setFlipX(direction === 'right')
-        .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setY(SEAT_FOOT_OFFSET - ACTOR_SPRITE_HEIGHT / 2)
+        .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
       view.seatedForeground.setTexture(texture, frame).setFlipX(direction === 'right')
         .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
         .setTint(actor.presence === 'error' ? 0xff7777 : actor.presence === 'requestingHelp' ? 0xffd36a : 0xffffff)
@@ -1974,11 +2052,11 @@ export class OfficeScene extends Phaser.Scene {
     const chair = view.settled && view.seatedGoal && view.chairId && this.furniture.get(view.chairId)
     let headDepth: number
     if (chair && this.animationAtlasFor(view.actor)) {
-      headDepth = this.applySeatedComposition(chair, view.sprite, view.seatedForeground,
-        { x: view.container.x, y: view.container.y + SEAT_FOOT_OFFSET }, view.container)
+      headDepth = this.applySeatedComposition(chair, view.sprite, view.seatedForeground, view.container)
     } else {
+      this.clearSeatedChairOverlay(view.sprite)
       view.container.setDepth(this.maxFurnitureDepth() + 1 + view.container.y)
-      view.sprite.setCrop()
+      view.sprite.setCrop().setVisible(true)
       view.seatedForeground.setVisible(false)
       headDepth = view.container.depth
     }
@@ -1992,7 +2070,7 @@ export class OfficeScene extends Phaser.Scene {
       const side = view.container.x > OFFICE_WORLD_WIDTH / 2 ? -1 : 1
       view.label.setPosition(side * (view.sprite.displayWidth / 2 + view.label.displayWidth / 2 + CEO_LABEL_GAP),
         view.label.displayHeight + 8 - view.container.y)
-    } else view.label.setPosition(0, above - view.container.y)
+    } else view.label.setPosition(view.sprite.x, above - view.container.y)
     view.bubble.setY(Math.max(8, above - 30) - view.container.y)
   }
 
