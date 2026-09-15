@@ -85,7 +85,7 @@ export function targetPoint(
   resolveDesk: (actor: OfficeGameActor) => WorldPoint = deskPoint
 ): WorldPoint | null {
   if (actor.presence === 'offDuty') return null
-  if (actor.presence === 'arriving') return WAYPOINTS.elevatorInside
+  if (actor.presence === 'arriving') return resolveDesk(actor)
   if (actor.presence === 'pantryDoor') return WAYPOINTS.pantryDoor
   if (actor.presence === 'pantry') return {
     x: actorIndex % 2 === 0 ? 220 : 65,
@@ -112,20 +112,25 @@ function isInside(point: WorldPoint, bounds: { x0: number; x1: number; y0: numbe
 export function routeFor(
   actor: OfficeGameActor,
   actorIndex: number,
-  currentPosition: WorldPoint,
+  currentPosition: WorldPoint = WAYPOINTS.elevatorInside,
   resolveDesk: (actor: OfficeGameActor) => WorldPoint = deskPoint
 ): WorldPoint[] {
   const target = targetPoint(actor, actorIndex, resolveDesk)
   if (!target) return []
-  if (actor.presence === 'arriving') return [WAYPOINTS.elevatorInside, WAYPOINTS.elevatorExit, resolveDesk(actor)]
-  if (actor.presence === 'pantry') return [WAYPOINTS.pantryDoor, target]
-  if (actor.presence === 'meeting') return [WAYPOINTS.meetingDoor, target]
-  // Presence itself only says where the actor is headed next, not where it
-  // currently is - without this, leaving the pantry/meeting room for
-  // anywhere else (back to desk, etc.) beelined straight at the new target
-  // and tried to walk through the wall instead of funneling back out
-  // through that room's one doorway first.
-  if (isInside(currentPosition, PANTRY_BOUNDS)) return [WAYPOINTS.pantryDoor, target]
-  if (isInside(currentPosition, MEETING_BOUNDS)) return [WAYPOINTS.meetingDoor, target]
-  return [target]
+  if (Math.hypot(target.x - currentPosition.x, target.y - currentPosition.y) < 0.5) return []
+  const route: WorldPoint[] = []
+  if (actor.presence === 'arriving' && Math.hypot(currentPosition.x - WAYPOINTS.elevatorInside.x, currentPosition.y - WAYPOINTS.elevatorInside.y) < 32) {
+    route.push(WAYPOINTS.elevatorExit)
+  }
+  for (const [bounds, door] of [[PANTRY_BOUNDS, WAYPOINTS.pantryDoor], [MEETING_BOUNDS, WAYPOINTS.meetingDoor]] as const) {
+    if (isInside(currentPosition, bounds) && !isInside(target, bounds)) route.push(door)
+  }
+  for (const [bounds, door] of [[PANTRY_BOUNDS, WAYPOINTS.pantryDoor], [MEETING_BOUNDS, WAYPOINTS.meetingDoor]] as const) {
+    if (!isInside(currentPosition, bounds) && isInside(target, bounds)) route.push(door)
+  }
+  route.push(target)
+  return route.filter((point, index) => {
+    const previous = index === 0 ? currentPosition : route[index - 1]
+    return Math.hypot(point.x - previous.x, point.y - previous.y) >= 0.5
+  })
 }

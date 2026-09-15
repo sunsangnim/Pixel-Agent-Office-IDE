@@ -33,22 +33,24 @@ import wallSurfaceAsset from '../assets/pixel-office/architecture/wall-surface-v
 import glassWallHorizontalAsset from '../assets/pixel-office/architecture/glass-wall-horizontal-v1.png'
 import glassWallVerticalAsset from '../assets/pixel-office/architecture/glass-wall-vertical-v1.png'
 import {
-  MEETING_SEATS,
   OFFICE_WORLD_HEIGHT,
   OFFICE_WORLD_WIDTH,
   TEAM_DESKS,
   WAYPOINTS,
-  routeFor,
+  targetPoint,
   teamIndexForX,
   type OfficeGameActor,
   type OfficeWorldSnapshot,
   type WorldPoint
 } from './officeWorld'
-import { findOfficePath } from './navigation'
+import {
+  ACTOR_NAV_HALF_HEIGHT, ACTOR_NAV_HALF_WIDTH, actorCollisionRect, findOfficePath,
+  hasOfficeLineOfSight, isOfficePositionWalkable, nearestOfficePosition
+} from './navigation'
 import {
   collisionFootprint, furnitureCollision, OFFICE_FLOOR_REGION, OFFICE_WALL_COLLISIONS, rotatedFootprint, snapFurniturePoint
 } from './officeGrid'
-import { intersectsAabb, pushApart, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
+import { intersectsAabb, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
 import {
   DEFAULT_LAYOUT_SEED,
   OFFICE_LAYOUT_SAVE_KEY,
@@ -59,6 +61,11 @@ import {
   type SavedFurniture
 } from './layoutPersistence'
 import { ActorStateMachine } from './actorStateMachine'
+import { IdleActivity } from './idleActivity'
+import {
+  CHARACTER_FRAME_HEIGHT, CHARACTER_FRAME_WIDTH, CHARACTER_SHEET_LAYOUTS,
+  characterFrameRegion, measureCharacterFrame, type CharacterSheetKey
+} from './characterFrames'
 import { OFFICE_WORLD_SAVE_KEY, parseOfficeWorldSave, upsertSavedActor, type OfficeWorldSave } from './worldPersistence'
 
 interface ActorView {
@@ -72,6 +79,17 @@ interface ActorView {
   route: WorldPoint[]
   routeIndex: number
   actor: OfficeGameActor
+  requestedActor: OfficeGameActor
+  actorIndex: number
+  idleActivity: IdleActivity
+  goal: WorldPoint | null
+  seatedGoal: boolean
+  approachPoint?: WorldPoint
+  settled: boolean
+  blocked: boolean
+  stalledMs: number
+  blockedOccupancy: string | null
+  retryAt: number
 }
 
 interface FurnitureView {
@@ -147,21 +165,14 @@ export interface EditorState {
   floor: FloorTexture
 }
 const OFFICE_FLOOR_SAVE_KEY = 'pixel-office-floor-v4'
-// The CEO sprite's drawn art isn't centered within its animation-sheet cell
-// (measured: opaque-pixel bbox center sits ~26px right of the cell's own
-// center, at the sheet's native 202x161 frame size) - scaled to the sprite's
-// 104px display width, that's this many world-space px, so the nameplate
-// text lines up with the actual character instead of the empty cell center.
-const CEO_SPRITE_ART_X_OFFSET = 13
-const ACTOR_SCALE = 2
-const ACTOR_COLLISION_RADIUS = 11 * ACTOR_SCALE
-const ACTOR_COLLISION_HALF_WIDTH = 7 * ACTOR_SCALE
-const ACTOR_COLLISION_HALF_HEIGHT = 5 * ACTOR_SCALE
+// Normalized frames center the character art on the sprite and nameplate.
+const CEO_SPRITE_ART_X_OFFSET = 0
+const ACTOR_COLLISION_HALF_WIDTH = ACTOR_NAV_HALF_WIDTH
+const ACTOR_COLLISION_HALF_HEIGHT = ACTOR_NAV_HALF_HEIGHT
 // Same size as the CEO sprite (createRepresentativeActor) so every
 // character in the office reads at a consistent scale, animated or not.
 const ACTOR_SPRITE_WIDTH = 104
 const ACTOR_SPRITE_HEIGHT = 120
-const ACTOR_SPRITE_WORKING_HEIGHT = 104
 const ACTOR_SPRITE_SITTING_HEIGHT = 112
 const ACTOR_SPRITE_Y_OFFSET = -64
 
@@ -220,6 +231,9 @@ export class OfficeScene extends Phaser.Scene {
   private nextZOrder = 1
   private floorLayers: Phaser.GameObjects.TileSprite[] = []
   private selectedFloor = DEFAULT_FLOOR_TEXTURE
+  private simulationTimeMs = 0
+  private navigationRevision = 0
+  private navigationLayoutKey = ''
 
   constructor() {
     super(OFFICE_SCENE_KEY)
@@ -270,6 +284,16 @@ export class OfficeScene extends Phaser.Scene {
     }
     this.layoutEditing = editing
     this.setEditorUiVisible(editing)
+    this.actors.forEach((view) => {
+      if (editing) {
+        view.sprite.anims.pause()
+        view.actionTween?.pause()
+      } else {
+        view.actionTween?.resume()
+        this.updateActor(view, this.effectiveActor(view), view.actorIndex)
+      }
+    })
+    if (this.snapshot) this.syncDeskChairDepths(this.snapshot)
     if (!editing) this.selectFurniture(null)
     return true
   }
@@ -335,13 +359,18 @@ export class OfficeScene extends Phaser.Scene {
     this.createTeamAnimations()
     this.createCeoAnimations()
     this.createRepresentativeActor()
+    this.navigationLayoutKey = this.furnitureNavigationKey()
     if (this.pendingSnapshot) this.applySnapshot(this.pendingSnapshot)
     this.reportDeskCounts()
   }
 
   update(_time: number, delta: number): void {
-    this.updateActorMovement(Math.min(delta, 50) / 1000)
-    this.resolveActorOverlaps()
+    if (!this.layoutEditing) {
+      const elapsed = Math.min(delta, 50)
+      this.simulationTimeMs += elapsed
+      this.updateIdleActivities()
+      this.updateActorMovement(elapsed / 1000)
+    }
     // Keep the nameplate centered above the CEO sprite's head, whatever
     // moves it - it's static today, but this doesn't assume that.
     if (this.representativeSprite && this.representativeLabel) {
@@ -426,17 +455,15 @@ export class OfficeScene extends Phaser.Scene {
       // active multi-selection must NOT collapse it down to just this one -
       // otherwise dragging any multi-selected piece would silently drop the
       // rest of the group right before the drag even starts.
-      if (this.layoutEditing && this.multiSelectedIds.has(id) && this.multiSelectedIds.size > 1) return
+      if (this.layoutEditing && this.multiSelectedIds.has(id) && this.multiSelectedIds.size > 1) {
+        this.bringFurnitureToFront(id)
+        this.saveFurnitureLayout()
+        return
+      }
       this.selectFurniture(id)
     })
     image.on('dragstart', () => {
-      // draggable was set unconditionally above (so drag works the instant
-      // edit mode turns on, no re-binding needed) - but that also means a
-      // plain click outside edit mode fires a dragstart Phaser considers a
-      // (zero-distance) drag. Without this guard, that alone bumped the
-      // clicked piece to the front even though drag/dragend both already
-      // refuse to run outside edit mode - the exact z-order-on-click bug
-      // this was supposed to have stayed fixed.
+      // Input remains bound outside editing; that must not change layer order.
       if (!this.layoutEditing) return
       image.setData({ dragStartX: image.x, dragStartY: image.y })
       // Bring the piece being moved to the front immediately, before it's
@@ -508,6 +535,8 @@ export class OfficeScene extends Phaser.Scene {
   // wires the one interaction that has to stay at the Phaser/input level.
   private createLayoutEditor(): void {
     this.input.mouse?.disableContextMenu()
+    // A plain click selects and raises; movement starts a drag separately.
+    this.input.dragDistanceThreshold = 4
     this.input.keyboard?.on('keydown-DELETE', () => this.deleteSelectedFurniture())
     this.createMarqueeSelect()
   }
@@ -525,7 +554,7 @@ export class OfficeScene extends Phaser.Scene {
         .setOrigin(0, 0)
         .setStrokeStyle(2, 0x6ea8fe)
         .setFillStyle(0x6ea8fe, 0.12)
-        .setDepth(2500)
+        .setDepth(this.editorOverlayDepth())
     })
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       if (!this.marqueeStart || !this.marqueeRect) return
@@ -614,19 +643,15 @@ export class OfficeScene extends Phaser.Scene {
       this.notifyEditorState()
       return
     }
-    // Selecting (clicking) a piece is just inspection - it must NOT bump the
-    // z-order on its own, or clicking something to look at/delete it quietly
-    // reorders it in front of whatever it overlaps. Only an actual
-    // reposition (dragstart), rotation, or new placement calls
-    // bringFurnitureToFront.
     if (!this.selectedFurniture) {
       this.notifyEditorState()
       return
     }
     const { image } = this.selectedFurniture
-    image.setDepth(image.y + this.furnitureDepthBonus(id))
+    this.bringFurnitureToFront(id)
+    this.saveFurnitureLayout()
     this.selectionOutline = this.add.rectangle(image.x, image.y, image.displayWidth + 6, image.displayHeight + 6)
-      .setDepth(1990)
+      .setDepth(this.editorOverlayDepth())
     this.updateSelectionOutline()
     this.notifyEditorState()
   }
@@ -640,6 +665,7 @@ export class OfficeScene extends Phaser.Scene {
       this.selectionOutline
         .setPosition(image.x, image.y)
         .setSize(image.displayWidth + 6, image.displayHeight + 6)
+        .setDepth(this.editorOverlayDepth())
         .setStrokeStyle(3, collides ? 0xff4d4d : 0xffdd55)
     }
   }
@@ -655,9 +681,10 @@ export class OfficeScene extends Phaser.Scene {
     const view = this.furniture.get(id)
     if (!view) return
     this.multiSelectedIds.add(id)
+    this.bringFurnitureToFront(id)
     const outline = this.add.rectangle(
       view.image.x, view.image.y, view.image.displayWidth + 6, view.image.displayHeight + 6
-    ).setStrokeStyle(3, 0x6ea8fe).setDepth(1990)
+    ).setStrokeStyle(3, 0x6ea8fe).setDepth(this.editorOverlayDepth())
     this.multiSelectOutlines.set(id, outline)
   }
 
@@ -668,14 +695,20 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private setMultiSelection(ids: string[]): void {
+    if (!this.layoutEditing) return
+    // A marquee selects a group simultaneously, preserving its internal order.
+    const orderedIds = [...ids].sort((a, b) =>
+      (this.furniture.get(a)?.image.depth ?? 0) - (this.furniture.get(b)?.image.depth ?? 0))
     // Also drops any active single-piece selection - only one selection mode
     // is active at a time.
     this.selectFurniture(null)
-    ids.forEach((id) => this.addToMultiSelection(id))
+    orderedIds.forEach((id) => this.addToMultiSelection(id))
+    if (orderedIds.length > 0) this.saveFurnitureLayout()
     this.notifyEditorState()
   }
 
   private toggleFurnitureSelection(id: string): void {
+    if (!this.layoutEditing) return
     if (this.selectedFurniture) {
       // Promote the existing single selection into the multi-select set
       // first, so shift+clicking a second piece builds up a selection
@@ -684,12 +717,17 @@ export class OfficeScene extends Phaser.Scene {
       this.selectedFurniture = null
       this.selectionOutline?.destroy()
       this.selectionOutline = undefined
-      if (previousId !== id) this.addToMultiSelection(previousId)
+      if (previousId === id) {
+        this.notifyEditorState()
+        return
+      }
+      this.addToMultiSelection(previousId)
     }
     if (this.multiSelectedIds.has(id)) {
       this.removeFromMultiSelection(id)
     } else {
       this.addToMultiSelection(id)
+      this.saveFurnitureLayout()
     }
     this.notifyEditorState()
   }
@@ -800,6 +838,7 @@ export class OfficeScene extends Phaser.Scene {
       }
     })
     localStorage.setItem(OFFICE_LAYOUT_SAVE_KEY, JSON.stringify(this.layoutSave))
+    this.refreshNavigationLayout()
     this.reportDeskCounts()
   }
 
@@ -828,6 +867,20 @@ export class OfficeScene extends Phaser.Scene {
     localStorage.setItem(OFFICE_REMOVED_DESKS_KEY, JSON.stringify([...this.removedDeskIds]))
     this.reportDeskCounts()
     this.selectFurniture(null)
+    this.refreshNavigationLayout()
+  }
+
+  private furnitureNavigationKey(): string {
+    return [...this.furniture.values()].map(({ id, frame, image }) =>
+      `${id}:${frame}:${image.x}:${image.y}:${this.furnitureRotation(image)}`).join('|')
+  }
+
+  private refreshNavigationLayout(): void {
+    const key = this.furnitureNavigationKey()
+    if (key !== this.navigationLayoutKey) {
+      this.navigationLayoutKey = key
+      this.navigationRevision += 1
+    }
   }
 
   private collisionRects(): CollisionRect[] {
@@ -873,14 +926,17 @@ export class OfficeScene extends Phaser.Scene {
     return origin
   }
 
-  // Whichever piece was placed or edited most recently renders above every
-  // other piece it overlaps - no furniture type gets a hardcoded bias (a
-  // desk isn't hardcoded behind a chair, a table isn't hardcoded behind a
-  // laptop). A deliberate reorder (drag, rotate, a fresh placement - never
-  // just clicking to select) always jumps to the very front, persists via
-  // saveFurnitureLayout, and applies whether or not the editor is open.
+  // The most recently selected, placed, moved, or rotated piece goes on top.
+  // Callers persist the order with the rest of their editor operation.
   private bringFurnitureToFront(id: string): void {
+    const view = this.furniture.get(id)
+    if (!view) return
     this.zOrderById.set(id, this.nextZOrder++)
+    view.image.setDepth(view.image.y + this.furnitureDepthBonus(id))
+    const overlayDepth = this.editorOverlayDepth()
+    this.selectionOutline?.setDepth(overlayDepth)
+    this.multiSelectOutlines.forEach((outline) => outline.setDepth(overlayDepth))
+    this.marqueeRect?.setDepth(overlayDepth)
   }
 
   private furnitureDepthBonus(id: string): number {
@@ -892,6 +948,10 @@ export class OfficeScene extends Phaser.Scene {
     let max = 0
     this.furniture.forEach(({ image }) => { if (image.depth > max) max = image.depth })
     return max
+  }
+
+  private editorOverlayDepth(): number {
+    return this.maxFurnitureDepth() + OFFICE_WORLD_HEIGHT + 2
   }
 
   private hasCollidingFurniture(): boolean {
@@ -1053,7 +1113,7 @@ export class OfficeScene extends Phaser.Scene {
   private showEditorNotice(text: string): void {
     const notice = this.add.text(480, 30, text, {
       fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '11px', color: '#ffffff', backgroundColor: '#7a2222'
-    }).setOrigin(0.5, 0).setPadding(6, 6).setDepth(3000)
+    }).setOrigin(0.5, 0).setPadding(6, 6).setDepth(this.editorOverlayDepth())
     this.time.delayedCall(2200, () => notice.destroy())
   }
 
@@ -1079,17 +1139,11 @@ export class OfficeScene extends Phaser.Scene {
       { key: 'claude-team-animation-atlas', teamIndex: 0 },
       { key: 'codex-team-animation-atlas', teamIndex: 1 },
       { key: 'antigravity-team-animation-atlas', teamIndex: 2 }
-    ]
-    atlases.forEach(({ key, teamIndex }) => {
-      const texture = this.textures.get(key)
-      const source = texture.getSourceImage() as HTMLImageElement
-      const frameWidth = Math.floor(source.width / 5)
-      const frameHeight = Math.floor(source.height / 4)
+    ] as const
+    atlases.forEach(({ key: sourceKey, teamIndex }) => {
+      const key = this.createCharacterFrames(sourceKey, (column, row) => `actor-${teamIndex}-${column}-${states[row]}`)
       for (let column = 0; column < 5; column += 1) {
         const actorKey = `${teamIndex}-${column}`
-      states.forEach((state, row) => {
-        texture.add(`actor-${actorKey}-${state}`, 0, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
-      })
       this.anims.create({
         key: `actor-${actorKey}-idle`,
         frames: [{ key, frame: `actor-${actorKey}-idle` }],
@@ -1123,9 +1177,9 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private animationAtlasFor(teamIndex: number): string | null {
-    if (teamIndex === 0) return 'claude-team-animation-atlas'
-    if (teamIndex === 1) return 'codex-team-animation-atlas'
-    if (teamIndex === 2) return 'antigravity-team-animation-atlas'
+    if (teamIndex === 0) return 'claude-team-animation-atlas-frames'
+    if (teamIndex === 1) return 'codex-team-animation-atlas-frames'
+    if (teamIndex === 2) return 'antigravity-team-animation-atlas-frames'
     return null
   }
 
@@ -1146,7 +1200,7 @@ export class OfficeScene extends Phaser.Scene {
     // Static, not sprite.play('ceo-idle') - nothing drives this character's
     // state (no actual agent behind it), so it should hold still instead of
     // looping a breathing animation nobody asked for.
-    this.representativeSprite = this.add.sprite(835, 811, 'ceo-animation-sheet', 'ceo-idle-0')
+    this.representativeSprite = this.add.sprite(835, 811, 'ceo-animation-sheet-frames', 'ceo-idle-0')
       .setDisplaySize(104, 120).setDepth(810)
     this.representativeLabel = this.add.text(835 + CEO_SPRITE_ART_X_OFFSET, 748, '김태호 대표', {
       fontFamily: '"DOSGothic", "굴림체", "굴림", sans-serif', fontSize: '13px', color: '#111111', align: 'center'
@@ -1154,31 +1208,70 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createCeoAnimations(): void {
-    const texture = this.textures.get('ceo-animation-sheet')
-    const source = texture.getSourceImage() as HTMLImageElement
-    const frameWidth = Math.floor(source.width / 8)
-    const frameHeight = Math.floor(source.height / 6)
     const rowNames = ['idle', 'walk-down', 'walk-up', 'walk-left', 'work', 'interact']
+    const key = this.createCharacterFrames('ceo-animation-sheet', (column, row) => `ceo-${rowNames[row]}-${column}`)
     rowNames.forEach((name, row) => {
       const frames: string[] = []
       for (let column = 0; column < 8; column += 1) {
         const frameName = `ceo-${name}-${column}`
-        texture.add(frameName, 0, column * frameWidth, row * frameHeight, frameWidth, frameHeight)
         frames.push(frameName)
       }
       this.anims.create({
         key: `ceo-${name}`,
-        frames: frames.map((frame) => ({ key: 'ceo-animation-sheet', frame })),
+        frames: frames.map((frame) => ({ key, frame })),
         frameRate: name === 'idle' ? 4 : 8,
         repeat: name === 'interact' ? 0 : -1,
-        // The idle row's frames aren't perfectly recentered in their cells
-        // (last frame sits a bit off from the first), so a hard loop back to
-        // frame 0 reads as a visible snap/teleport. Playing it forward then
-        // back removes that jump cut - every step is a real consecutive-frame
-        // transition either way.
+        // Reverse through adjacent poses rather than jumping to frame zero.
         yoyo: name === 'idle'
       })
     })
+  }
+
+  private createCharacterFrames(sourceKey: CharacterSheetKey, frameName: (column: number, row: number) => string): string {
+    const source = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement
+    const layout = CHARACTER_SHEET_LAYOUTS[sourceKey]
+    const key = `${sourceKey}-frames`
+    const texture = this.textures.createCanvas(
+      key, layout.columns * CHARACTER_FRAME_WIDTH, layout.rows.length * CHARACTER_FRAME_HEIGHT
+    )
+    if (!texture) throw new Error(`Could not create character frames: ${sourceKey}`)
+    const input = document.createElement('canvas')
+    input.width = source.width
+    input.height = source.height
+    const inputContext = input.getContext('2d')!
+    inputContext.drawImage(source, 0, 0)
+    const pixels = inputContext.getImageData(0, 0, source.width, source.height).data
+    const context = texture.getContext()
+    context.imageSmoothingEnabled = false
+    layout.rows.forEach((_, row) => {
+      for (let column = 0; column < layout.columns; column += 1) {
+        const region = characterFrameRegion(sourceKey, source.width, column, row)
+        const { source: crop, destination } = measureCharacterFrame(pixels, source.width, region)
+        const x = column * CHARACTER_FRAME_WIDTH + destination.x
+        const y = row * CHARACTER_FRAME_HEIGHT + destination.y
+        context.drawImage(source, crop.x, crop.y, crop.width, crop.height, x, y, destination.width, destination.height)
+        // Separate the two poses that share scanlines in the Claude source.
+        context.save()
+        context.beginPath()
+        context.rect(x, y, destination.width, destination.height)
+        context.clip()
+        region.exclusions.forEach((excluded) => {
+          const scaleX = destination.width / crop.width
+          const scaleY = destination.height / crop.height
+          context.clearRect(
+            x + (excluded.x - crop.x) * scaleX, y + (excluded.y - crop.y) * scaleY,
+            excluded.width * scaleX, excluded.height * scaleY
+          )
+        })
+        context.restore()
+        texture.add(
+          frameName(column, row), 0, column * CHARACTER_FRAME_WIDTH, row * CHARACTER_FRAME_HEIGHT,
+          CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT
+        )
+      }
+    })
+    texture.refresh()
+    return key
   }
 
   private applySnapshot(snapshot: OfficeWorldSnapshot): void {
@@ -1193,6 +1286,7 @@ export class OfficeScene extends Phaser.Scene {
     const activeIds = new Set(snapshot.actors.filter((actor) => actor.presence !== 'offDuty').map((actor) => actor.profileId))
     for (const [id, view] of this.actors) {
       if (!activeIds.has(id)) {
+        this.stopActorAction(view)
         view.container.destroy(true)
         this.actors.delete(id)
       }
@@ -1201,7 +1295,9 @@ export class OfficeScene extends Phaser.Scene {
     snapshot.actors.forEach((actor, index) => {
       if (actor.presence === 'offDuty') return
       const view = this.actors.get(actor.profileId) ?? this.createActor(actor)
-      this.updateActor(view, actor, index)
+      view.requestedActor = actor
+      view.actorIndex = index
+      this.updateActor(view, this.effectiveActor(view), index)
     })
     this.syncDeskChairDepths(snapshot)
   }
@@ -1212,20 +1308,17 @@ export class OfficeScene extends Phaser.Scene {
   // edge convincingly occludes the character without also hiding an empty
   // chair the rest of the time.
   private syncDeskChairDepths(snapshot: OfficeWorldSnapshot): void {
-    const occupiedSeats = new Set(
-      snapshot.actors
-        .filter((actor) => actor.presence === 'working' || actor.presence === 'deskIdle')
-        .map((actor) => `${actor.teamIndex}-${actor.slotIndex}`)
-    )
+    const occupiedSeats = new Set([...this.actors.values()]
+      .filter((view) => view.settled && view.seatedGoal && ['working', 'deskIdle'].includes(view.actor.presence))
+      .map(({ actor }) => `${actor.teamIndex}-${actor.slotIndex}`))
     this.furniture.forEach((chair, id) => {
       const match = /^chair-(\d+-\d+)$/.exec(id)
       if (!match) return
       const desk = this.furniture.get(`desk-${match[1]}`)
       if (!desk) return
-      // An actually-seated character always wins the desk-occludes-chair
-      // look, overriding whatever the ordinary zOrder-based stacking says -
-      // only an *empty* seat goes by that.
-      if (occupiedSeats.has(match[1])) {
+      // Editing uses the saved selection order, including occupied chairs.
+      // Outside editing, resume the seated desk/chair composition.
+      if (!this.layoutEditing && occupiedSeats.has(match[1])) {
         chair.image.setDepth(desk.image.depth - 2)
         return
       }
@@ -1245,7 +1338,6 @@ export class OfficeScene extends Phaser.Scene {
       animationAtlas ? `actor-${animKey}-idle` : frame
     ).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
       .setY(ACTOR_SPRITE_Y_OFFSET)
-    if (animationAtlas) sprite.play(`actor-${animKey}-idle`)
     sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => {
       this.actorSelectHandler?.(actor.profileId)
     })
@@ -1263,11 +1355,13 @@ export class OfficeScene extends Phaser.Scene {
     const prop = this.add.rectangle(24, -40, 14, 18, 0x6eb6d9)
       .setStrokeStyle(2, 0x294a5a).setVisible(false)
     const saved = this.worldSave.actors.find((candidate) => candidate.profileId === actor.profileId)
-    const initial = saved ?? { x: WAYPOINTS.elevatorInside.x, y: WAYPOINTS.elevatorInside.y }
+    const initial = nearestOfficePosition(saved ?? WAYPOINTS.elevatorInside,
+      [...this.collisionRects(), ...this.actorObstacles()]) ?? WAYPOINTS.elevatorExit
     const container = this.add.container(initial.x, initial.y, [sprite, label, bubble, prop]).setDepth(initial.y)
     const view: ActorView = {
       container, sprite, bubble, prop, routeKey: '', stateMachine: new ActorStateMachine(actor.presence),
-      route: [], routeIndex: 0, actor
+      route: [], routeIndex: 0, actor, requestedActor: actor, actorIndex: 0, idleActivity: new IdleActivity(),
+      goal: null, seatedGoal: false, settled: false, blocked: false, stalledMs: 0, blockedOccupancy: null, retryAt: 0
     }
     this.actors.set(actor.profileId, view)
     return view
@@ -1277,215 +1371,265 @@ export class OfficeScene extends Phaser.Scene {
   // the static TEAM_DESKS default, so characters keep finding their seat
   // after a desk is dragged elsewhere.
   private deskSeatPoint(actor: OfficeGameActor): WorldPoint {
-    const chair = this.furniture.get(`chair-${actor.teamIndex}-${actor.slotIndex}`)
+    const chair = this.furniture.get('chair-' + actor.teamIndex + '-' + actor.slotIndex)
     if (chair) return { x: chair.image.x, y: chair.image.y }
-    return TEAM_DESKS[actor.teamIndex]?.[actor.slotIndex] ?? { x: 480, y: 360 }
+    const desks = [...this.furniture.values()].filter(({ id, frame, image }) =>
+      frame === DESK_FURNITURE_FRAME && id !== 'representative-desk' && this.deskZone(id, image.x) === actor.teamIndex)
+    const desk = desks[actor.slotIndex]
+    if (desk) return { x: desk.image.x, y: desk.image.y + 64 }
+    // Distinct waiting points for a team that currently has no physical seat.
+    return { x: 352 + actor.teamIndex * 96, y: 592 + actor.slotIndex * 40 }
+  }
+
+  private actorDestination(actor: OfficeGameActor, actorIndex: number): { point: WorldPoint; seated: boolean } {
+    if (actor.presence === 'meeting') {
+      const attendees = this.snapshot?.actors.filter((candidate) => candidate.presence === 'meeting') ?? [actor]
+      const index = Math.max(0, attendees.findIndex((candidate) => candidate.profileId === actor.profileId))
+      const chairs = [...this.furniture.values()].filter(({ frame, image }) =>
+        [12, 13, 14].includes(frame) && image.x > 304 && image.x < 656 && image.y > 32 && image.y < 336
+      ).sort((a, b) => a.image.y - b.image.y || a.image.x - b.image.x || a.id.localeCompare(b.id))
+      const chair = chairs[index]
+      if (chair) return { point: { x: chair.image.x, y: chair.image.y }, seated: true }
+      const waitingIndex = index - chairs.length
+      return { point: { x: 336 + (waitingIndex % 4) * 80, y: 272 + Math.floor(waitingIndex / 4) * 48 }, seated: false }
+    }
+    const point = targetPoint(actor, actorIndex, (candidate) => this.deskSeatPoint(candidate)) ?? this.deskSeatPoint(actor)
+    const seated = ['working', 'deskIdle', 'arriving', 'requestingHelp', 'error'].includes(actor.presence) &&
+      this.furniture.has('chair-' + actor.teamIndex + '-' + actor.slotIndex)
+    return { point, seated }
+  }
+
+  private actorObstacles(except?: ActorView): CollisionRect[] {
+    return [...this.actors.values()].filter((view) => view !== except)
+      .map((view) => actorCollisionRect(view.container))
+  }
+
+  private occupancyKey(view: ActorView): string {
+    return [...this.actors.values()].filter((other) => other !== view &&
+      Math.hypot(other.container.x - view.container.x, other.container.y - view.container.y) < 128)
+      .map((other) => [other.actor.profileId, Math.round(other.container.x / 8), Math.round(other.container.y / 8)].join(':'))
+      .join('|')
+  }
+
+  private effectiveActor(view: ActorView): OfficeGameActor {
+    const pantryAvailable = ![...this.actors.values()].some((other) =>
+      other !== view && other.idleActivity.awayFromDesk)
+    const presence = view.idleActivity.update(
+      view.requestedActor.presence, this.simulationTimeMs, view.settled ? view.actor.presence : null, pantryAvailable
+    )
+    return { ...view.requestedActor, presence }
+  }
+
+  private updateIdleActivities(): void {
+    for (const view of this.actors.values()) {
+      const actor = this.effectiveActor(view)
+      const changed = actor.presence !== view.actor.presence
+      const occupancyChanged = view.blocked && view.blockedOccupancy !== null &&
+        this.simulationTimeMs >= view.retryAt && this.occupancyKey(view) !== view.blockedOccupancy
+      if (occupancyChanged) view.routeKey = ''
+      if (changed || occupancyChanged) this.updateActor(view, actor, view.actorIndex)
+    }
   }
 
   private updateActor(view: ActorView, actor: OfficeGameActor, actorIndex: number): void {
-    if (!view.stateMachine.requestPresence(actor.presence)) return
-    const waypoints = routeFor(
-      actor, actorIndex, { x: view.container.x, y: view.container.y }, (candidate) => this.deskSeatPoint(candidate)
-    )
-    const route: WorldPoint[] = []
-    let cursor = { x: view.container.x, y: view.container.y }
-    for (const waypoint of waypoints) {
-      const segment = findOfficePath(cursor, waypoint, this.collisionRects())
-      route.push(...segment)
-      cursor = waypoint
-    }
-    const routeKey = `${actor.presence}:${route.map((point) => `${point.x},${point.y}`).join('|')}`
-    const actionLabels: Partial<Record<OfficeGameActor['presence'], string>> = {
-      working: '업무 중', pantry: actorIndex % 2 ? '음료' : '간식', meeting: '회의',
-      requestingHelp: '도움 필요!', error: '오류!'
-    }
-    const label = actionLabels[actor.presence]
-    view.bubble.setText(label ?? '').setVisible(Boolean(label))
-    view.sprite.setTint(actor.presence === 'error' ? 0xff7777 : actor.presence === 'requestingHelp' ? 0xffd36a : 0xffffff)
-    view.container.setScale(1, actor.presence === 'working' || actor.presence === 'meeting' ? 0.92 : 1)
-    if (view.routeKey === routeKey) return
-    view.routeKey = routeKey
-    view.actionTween?.stop()
-    view.prop.setVisible(false)
-    if (route.length === 0) return
+    if (this.layoutEditing || !view.stateMachine.requestPresence(actor.presence)) return
+    const destination = this.actorDestination(actor, actorIndex)
+    const key = [actor.presence, destination.point.x, destination.point.y, this.navigationRevision].join(':')
     view.actor = actor
-    view.route = route
+    view.actorIndex = actorIndex
+    if (view.routeKey === key) return
+    view.routeKey = key
+    this.stopActorAction(view)
+    view.route = []
     view.routeIndex = 0
-    // startActionAnimation shrinks/lowers the sprite for a seated pose
-    // (working/sitting) on arrival, but nothing undid that when the actor
-    // heads off somewhere else again - a route starting here means they're
-    // about to walk, so put the sprite back to its standing size/offset now
-    // rather than leaving it squashed for the whole walk.
-    view.sprite.setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setY(ACTOR_SPRITE_Y_OFFSET)
+    view.stalledMs = 0
+    view.blocked = false
+    view.blockedOccupancy = null
+    view.settled = false
+    view.goal = destination.point
+    view.seatedGoal = destination.seated
+    const labels: Partial<Record<OfficeGameActor['presence'], string>> = {
+      working: '업무 중', pantry: '휴식', meeting: '회의', requestingHelp: '도움 필요!', error: '오류!'
+    }
+    view.bubble.setText(labels[actor.presence] ?? '').setVisible(Boolean(labels[actor.presence]))
+    view.sprite.setTint(actor.presence === 'error' ? 0xff7777 : actor.presence === 'requestingHelp' ? 0xffd36a : 0xffffff)
+
+    if (Math.hypot(view.container.x - view.goal.x, view.container.y - view.goal.y) < 0.5) {
+      this.finishActorRoute(view)
+      return
+    }
+
+    const collisions = this.collisionRects()
+    if (!isOfficePositionWalkable(view.container, collisions)) {
+      // Stand up at the approach used to enter the seat. Old saves inside
+      // furniture are repaired once, before planning, rather than every tick.
+      const standing = view.approachPoint && isOfficePositionWalkable(view.approachPoint, collisions)
+        ? view.approachPoint : nearestOfficePosition(view.container, collisions)
+      if (!standing || !hasOfficeLineOfSight(view.container, standing, OFFICE_WALL_COLLISIONS)) {
+        this.blockActor(view, false)
+        return
+      }
+      view.container.setPosition(standing.x, standing.y)
+    }
+    view.approachPoint = undefined
+    view.container.setScale(1)
+    view.sprite.setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setY(ACTOR_SPRITE_Y_OFFSET).setFlipX(false)
+    view.sprite.stop()
+    const atlas = this.animationAtlasFor(actor.teamIndex)
+    if (atlas) view.sprite.setFrame('actor-' + this.actorAnimationKey(actor) + '-idle')
+    view.route = findOfficePath(view.container, view.goal, collisions, {
+      goalRadius: view.seatedGoal ? 96 : 0, goalCollisions: OFFICE_WALL_COLLISIONS
+    })
+    if (view.route.length === 0 && view.seatedGoal && actor.presence === 'meeting') {
+      // Edited tables can completely enclose a chair. Join the meeting from
+      // open floor instead of trying to walk through the table to that seat.
+      const attendees = this.snapshot?.actors.filter((candidate) => candidate.presence === 'meeting') ?? [actor]
+      const index = Math.max(0, attendees.findIndex((candidate) => candidate.profileId === actor.profileId))
+      view.goal = { x: 336 + (index % 4) * 80, y: 272 + Math.floor(index / 4) * 48 }
+      view.seatedGoal = false
+      view.route = findOfficePath(view.container, view.goal, collisions)
+    }
+    if (view.route.length === 0) this.blockActor(view, false)
+  }
+
+  private stopActorAction(view: ActorView): void {
+    view.actionTween?.stop()
+    view.actionTween = undefined
+    view.prop.setVisible(false)
+    view.sprite.stop()
+    view.stateMachine.cancelAction()
+  }
+
+  private stopActorWalking(view: ActorView): void {
+    view.sprite.stop()
+    if (this.animationAtlasFor(view.actor.teamIndex)) {
+      view.sprite.setFrame('actor-' + this.actorAnimationKey(view.actor) + '-idle')
+    }
+    view.stateMachine.stopWalking()
+  }
+
+  private blockActor(view: ActorView, dynamic: boolean): void {
+    view.route = []
+    view.routeIndex = 0
+    view.settled = false
+    view.blocked = true
+    view.blockedOccupancy = dynamic ? this.occupancyKey(view) : null
+    view.retryAt = this.simulationTimeMs + 1000
+    this.stopActorWalking(view)
+    view.bubble.setText('통로 대기').setVisible(true)
+    if (view.idleActivity.visitingPantry) view.idleActivity.cancelVisit()
+  }
+
+  private finishActorRoute(view: ActorView): void {
+    view.route = []
+    view.routeIndex = 0
+    view.blocked = false
+    view.stalledMs = 0
+    view.approachPoint = { x: view.container.x, y: view.container.y }
+    if (view.seatedGoal && view.goal &&
+      Math.hypot(view.container.x - view.goal.x, view.container.y - view.goal.y) <= 96 &&
+      hasOfficeLineOfSight(view.container, view.goal, OFFICE_WALL_COLLISIONS)) {
+      view.container.setPosition(view.goal.x, view.goal.y)
+    }
+    view.settled = true
+    this.startActionAnimation(view, view.actor)
+    this.persistActor(view.actor, view)
+    if (this.snapshot) this.syncDeskChairDepths(this.snapshot)
   }
 
   private updateActorMovement(deltaSeconds: number): void {
-    if (this.layoutEditing) return
+    if (this.layoutEditing || deltaSeconds <= 0) return
     const collisions = this.collisionRects()
-    // Furniture depth is y + zOrder*20000 (furnitureDepthBonus) - once a
-    // piece has been placed/edited even once, that alone puts it at a depth
-    // in the millions, which swallows a plain y-based actor depth whether
-    // the actor is actually in front of it or not (this is also why a
-    // meeting-seated actor's head used to read as buried in the table -
-    // see startActionAnimation's 'sitting' branch for the same fix). Floor
-    // every walking/idle actor's depth at "in front of all furniture" so
-    // desks, plants, decor, etc. never clip a character's legs/feet as they
-    // walk past. A desk still convincingly hides its own seated actor's
-    // legs - that's a separate, relative "desk.depth - 1" override applied
-    // once the actor arrives (startActionAnimation), not the plain
-    // container.y this floor replaces.
     const inFrontOfFurniture = this.maxFurnitureDepth() + 1
     for (const view of this.actors.values()) {
-      const target = view.route[view.routeIndex]
-      if (!target) continue
+      let target = view.route[view.routeIndex]
+      while (target && Math.hypot(target.x - view.container.x, target.y - view.container.y) < 0.5) {
+        view.container.setPosition(target.x, target.y)
+        view.routeIndex += 1
+        if (view.routeIndex >= view.route.length) {
+          this.finishActorRoute(view)
+          break
+        }
+        target = view.route[view.routeIndex]
+      }
+      if (view.route.length === 0 || !target) continue
       const dx = target.x - view.container.x
       const dy = target.y - view.container.y
       const distance = Math.hypot(dx, dy)
-      if (distance < 2) {
-        view.routeIndex += 1
-        this.persistActor(view.actor, view)
-        if (view.routeIndex >= view.route.length) {
-          view.route = []
-          this.startActionAnimation(view, view.actor)
+      const amount = Math.min(distance, 120 * deltaSeconds)
+      const before = { x: view.container.x, y: view.container.y }
+      const obstacles = [...collisions, ...this.actorObstacles(view)]
+      const resolved = resolveAxisSeparated(before,
+        { x: before.x + dx / distance * amount, y: before.y + dy / distance * amount },
+        obstacles, ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT)
+      const movedX = resolved.x - before.x
+      const movedY = resolved.y - before.y
+      if (Math.hypot(movedX, movedY) < 0.01) {
+        this.stopActorWalking(view)
+        view.stalledMs += deltaSeconds * 1000
+        if (view.stalledMs >= 500 && view.goal) {
+          const alternate = findOfficePath(view.container, view.goal, obstacles, {
+            goalRadius: view.seatedGoal ? 96 : 0, goalCollisions: OFFICE_WALL_COLLISIONS
+          })
+          if (alternate.length > 0 && Math.hypot(alternate[0].x - before.x, alternate[0].y - before.y) > 0.5) {
+            view.route = alternate
+            view.routeIndex = 0
+            view.stalledMs = 0
+          } else this.blockActor(view, true)
         }
         continue
       }
-      const amount = Math.min(distance, 160 * deltaSeconds)
-      const desired = { x: view.container.x + dx / distance * amount, y: view.container.y + dy / distance * amount }
-      const movementCollisions = collisions.filter((rect) => !(
-        target.x >= rect.x && target.x <= rect.x + rect.width && target.y >= rect.y && target.y <= rect.y + rect.height
-      ))
-      const resolved = resolveAxisSeparated(
-        { x: view.container.x, y: view.container.y }, desired, movementCollisions,
-        ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT
-      )
-      // Additive, not Math.max: max() would collapse every walking actor to
-      // the exact same depth (inFrontOfFurniture dwarfs any real y), losing
-      // their relative front/back order against each other. Adding keeps
-      // that relative order intact while still guaranteeing every actor
-      // outranks every current furniture piece.
+      view.stalledMs = 0
       view.container.setPosition(resolved.x, resolved.y).setDepth(inFrontOfFurniture + resolved.y)
-      view.stateMachine.startWalking(dx, dy)
-      view.sprite.setFlipX(dx < 0)
+      view.stateMachine.startWalking(movedX, movedY)
+      // Facing follows actual displacement, not an unreachable target vector.
+      view.sprite.setFlipX(movedX < -0.01)
       if (this.animationAtlasFor(view.actor.teamIndex)) {
-        const animation = Math.abs(dy) > Math.abs(dx) && dy < 0 ? 'walk-up' : 'walk-down'
-        view.sprite.play(`actor-${this.actorAnimationKey(view.actor)}-${animation}`, true)
+        const animation = Math.abs(movedY) > Math.abs(movedX) && movedY < 0 ? 'walk-up' : 'walk-down'
+        view.sprite.anims.resume()
+        view.sprite.play('actor-' + this.actorAnimationKey(view.actor) + '-' + animation, true)
       }
-      if (resolved.blockedX && resolved.blockedY) {
-        const remaining = findOfficePath({ x: view.container.x, y: view.container.y }, target, movementCollisions)
-        view.route.splice(view.routeIndex, 1, ...remaining)
-      }
-    }
-  }
-
-  private resolveActorOverlaps(): void {
-    if (this.layoutEditing) return
-    const entries = [...this.actors.entries()]
-    const collisions = this.collisionRects()
-    const inFrontOfFurniture = this.maxFurnitureDepth() + 1
-    for (let pass = 0; pass < 2; pass += 1) {
-      for (let i = 0; i < entries.length; i += 1) for (let j = i + 1; j < entries.length; j += 1) {
-        const [idA, a] = entries[i]
-        const [idB, b] = entries[j]
-        const [nextA, nextB] = pushApart(
-          { id: idA, x: a.container.x, y: a.container.y, radius: ACTOR_COLLISION_RADIUS },
-          { id: idB, x: b.container.x, y: b.container.y, radius: ACTOR_COLLISION_RADIUS }
-        )
-        const safeA = resolveAxisSeparated(
-          { x: a.container.x, y: a.container.y }, nextA, collisions,
-          ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT
-        )
-        const safeB = resolveAxisSeparated(
-          { x: b.container.x, y: b.container.y }, nextB, collisions,
-          ACTOR_COLLISION_HALF_WIDTH, ACTOR_COLLISION_HALF_HEIGHT
-        )
-        a.container.setPosition(safeA.x, safeA.y).setDepth(inFrontOfFurniture + safeA.y)
-        b.container.setPosition(safeB.x, safeB.y).setDepth(inFrontOfFurniture + safeB.y)
+      if (Math.hypot(target.x - resolved.x, target.y - resolved.y) < 0.5) {
+        view.container.setPosition(target.x, target.y)
+        view.routeIndex += 1
+        if (view.routeIndex >= view.route.length) this.finishActorRoute(view)
       }
     }
   }
 
   private startActionAnimation(view: ActorView, actor: OfficeGameActor): void {
-    // A previous bob/eating/drinking tween from the last time this actor
-    // arrived somewhere may still be running (nothing here ever stopped it)
-    // - left alone, it keeps nudging sprite.y on its own schedule even after
-    // setY below puts the sprite back where it belongs, fighting the fresh
-    // pose and reading as a piece of the character (usually the legs, since
-    // that's near the tween's other extreme) floating away from the rest.
-    view.actionTween?.stop()
-    const actorIndex = this.snapshot?.actors.findIndex((candidate) => candidate.profileId === actor.profileId) ?? 0
-    view.stateMachine.arrive(actorIndex)
+    this.stopActorAction(view)
+    view.stateMachine.arrive(view.actorIndex)
     const action = view.stateMachine.current.action
+    const sitting = view.seatedGoal && (action === 'working' || action === 'sitting' || actor.presence === 'deskIdle')
     if (this.animationAtlasFor(actor.teamIndex)) {
-      // Furniture is always composed at runtime. The atlas work row contains a
-      // baked desk, so a desk-facing character frame is used at the chair snap.
-      view.sprite.play(`actor-${this.actorAnimationKey(actor)}-${action === 'working' ? 'walk-up' : 'idle'}`, true)
+      // A static back-facing pose composes with the real desk; never play the
+      // walking loop or an infinite body-bobbing tween after arrival.
+      view.sprite.setFrame('actor-' + this.actorAnimationKey(actor) + '-' + (action === 'working' ? 'walk-up' : 'idle'))
     }
-    view.prop.setVisible(false)
-    view.sprite.setDisplaySize(
-      ACTOR_SPRITE_WIDTH,
-      action === 'working' ? ACTOR_SPRITE_WORKING_HEIGHT : action === 'sitting' ? ACTOR_SPRITE_SITTING_HEIGHT : ACTOR_SPRITE_HEIGHT
-    )
-    view.sprite.setY(
-      action === 'working' ? ACTOR_SPRITE_Y_OFFSET + 24
-        : action === 'sitting' ? ACTOR_SPRITE_Y_OFFSET + 8
-          : ACTOR_SPRITE_Y_OFFSET
-    )
-    if (actor.presence === 'working' || actor.presence === 'deskIdle') {
-      // Sit exactly at the chair snap point and render just behind the desk
-      // front edge, per requirement: independent chair snap + independent
-      // desk in front, never a character frame with a desk baked in.
-      const desk = this.furniture.get(`desk-${actor.teamIndex}-${actor.slotIndex}`)
-      if (desk) view.container.setDepth(desk.image.depth - 1)
-    }
-    if (action === 'sitting') {
-      // The meeting table is ordinary custom furniture, and furniture depth
-      // is y + zOrder*20000 (see furnitureDepthBonus) - once it's been
-      // edited even once, its zOrder alone puts it at a depth in the
-      // millions, which swallows a plain y-based actor depth whole (a small
-      // +/-4..8 bias was never going to clear that gap, whichever way it
-      // pointed - this is why a seated head reads as "buried" in the table).
-      // Meeting seating isn't tied to one specific desk the way desk-seating
-      // is, so instead of matching one piece of furniture, this actor is
-      // pushed in front of every piece of furniture currently in the scene.
-      view.container.setDepth(this.maxFurnitureDepth() + 1 + actorIndex)
-      view.container.setScale(1, 0.86)
-      return
-    }
-    if (!['working', 'pantry', 'meeting', 'requestingHelp', 'error'].includes(actor.presence)) return
-    if (action === 'eating' || action === 'drinking') {
-      const drinking = action === 'drinking'
-      view.prop.setFillStyle(drinking ? 0x6eb6d9 : 0xd99a45)
-        .setStrokeStyle(2, drinking ? 0x294a5a : 0x70431f)
-        .setSize(drinking ? 14 : 18, drinking ? 20 : 14)
-        .setPosition(24, -40)
-        .setVisible(true)
-      view.actionTween = this.tweens.add({
-        targets: view.prop,
-        x: 14,
-        y: -86,
-        duration: 260,
-        hold: 140,
-        yoyo: true,
-        repeat: 2,
-        ease: 'Stepped',
-        easeParams: [3],
-        onComplete: () => {
-          view.prop.setVisible(false)
-          view.stateMachine.completeAction()
-        }
-      })
-      return
-    }
+    view.sprite.setFlipX(false)
+      .setDisplaySize(ACTOR_SPRITE_WIDTH, sitting ? ACTOR_SPRITE_SITTING_HEIGHT : ACTOR_SPRITE_HEIGHT)
+      .setY(sitting ? ACTOR_SPRITE_Y_OFFSET + 8 : ACTOR_SPRITE_Y_OFFSET)
+    view.container.setScale(1)
+    const desk = this.furniture.get('desk-' + actor.teamIndex + '-' + actor.slotIndex)
+    view.container.setDepth(sitting && actor.presence !== 'meeting' && desk
+      ? desk.image.depth - 1 : this.maxFurnitureDepth() + 1 + view.container.y)
+
+    if (action !== 'eating' && action !== 'drinking') return
+    const drinking = action === 'drinking'
+    view.prop.setFillStyle(drinking ? 0x6eb6d9 : 0xd99a45)
+      .setStrokeStyle(2, drinking ? 0x294a5a : 0x70431f)
+      .setSize(drinking ? 14 : 18, drinking ? 20 : 14)
+      .setPosition(24, -40).setVisible(true)
     view.actionTween = this.tweens.add({
-      targets: view.sprite,
-      y: actor.presence === 'working' ? -58 : -50,
-      duration: actor.presence === 'error' ? 150 : 420,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Stepped',
-      easeParams: [2],
-      onComplete: () => view.stateMachine.completeAction()
+      targets: view.prop, x: 14, y: -86, duration: 260, hold: 140, yoyo: true, repeat: 2,
+      ease: 'Stepped', easeParams: [3],
+      onComplete: () => {
+        view.actionTween = undefined
+        view.prop.setVisible(false)
+        view.stateMachine.completeAction()
+        if (this.actors.get(actor.profileId) === view) this.updateActor(view, this.effectiveActor(view), view.actorIndex)
+      }
     })
   }
 
