@@ -40,7 +40,7 @@ function objectDouble(x = 0, y = 0) {
   const data = new Map()
   const object = {
     x, y, depth: 0, scaleX: 1, scaleY: 1, originX: 0.5, originY: 0.5, visible: true, playCount: 0,
-    texture: { setFilter() {} },
+    texture: { setFilter() {} }, events: new Map(),
     anims: {
       isPlaying: false, paused: false,
       pause() { this.paused = true }, resume() { this.paused = false }
@@ -55,6 +55,8 @@ function objectDouble(x = 0, y = 0) {
     setVisible(visible) { this.visible = visible; return this },
     setText(text) { this.text = text; return this },
     setFrame(frame) { this.frame = frame; return this },
+    setTexture(key, frame) { this.textureKey = key; this.frame = frame; return this },
+    on(event, handler) { this.events.set(event, handler); return this },
     setFlipX(flipX) { this.flipX = flipX; return this },
     setData(key, value) {
       if (typeof key === 'object') Object.entries(key).forEach(([name, entry]) => data.set(name, entry))
@@ -69,7 +71,7 @@ function objectDouble(x = 0, y = 0) {
     stop() { this.anims.isPlaying = false; return this },
     destroy() { this.destroyed = true }
   }
-  for (const name of ['setPadding', 'setTint', 'setStrokeStyle', 'setFillStyle', 'setInteractive', 'setAlpha', 'on']) {
+  for (const name of ['setPadding', 'setTint', 'setStrokeStyle', 'setFillStyle', 'setInteractive', 'setAlpha']) {
     object[name] = function () { return this }
   }
   return object
@@ -406,6 +408,135 @@ snapshot(playerTraffic, [actor('blocker', 0, 'offDuty')])
 advance(playerTraffic, 5)
 assert.deepEqual(position(walkingPlayer), { x: 420, y: 400 }, 'movement resumes when the employee clears the passage')
 console.log('PASS representative waits for employees and resumes after the passage clears')
+
+function seatingScene(rotation = 0, frame = 12) {
+  storage.delete(OFFICE_REPRESENTATIVE_SAVE_KEY)
+  storage.set(OFFICE_REPRESENTATIVE_SAVE_KEY, JSON.stringify({ x: 480, y: 600 }))
+  const scene = createScene({
+    'chair-0-0': { x: 400, y: 480, rotation, frame, zOrder: 1 },
+    'custom-chair': { x: 560, y: 480, frame: 12, zOrder: 2 }
+  })
+  scene.createRepresentativeActor()
+  return scene
+}
+function chairClick(scene, id, { button = 'left', event = {} } = {}) {
+  const chair = scene.furniture.get(id).image
+  chair.events.get('pointerdown')({ event, leftButtonDown: () => button === 'left', rightButtonDown: () => button === 'right' })
+  floorClick(scene, position(chair), { button, event, over: [chair] })
+}
+for (const [rotation, direction] of [[0, 'front'], [90, 'right'], [180, 'back'], [270, 'left']]) {
+  const sitting = seatingScene(rotation, 12 + (rotation / 90) % 3)
+  const sprite = sitting.representativeSprite
+  const before = position(sprite)
+  const depths = [...sitting.furniture.values()].map(({ image }) => image.depth)
+  chairClick(sitting, 'chair-0-0')
+  assert.deepEqual(position(sprite), before, 'clicking a distant chair must first walk there')
+  assert.equal(sitting.representativeChairTarget, 'chair-0-0')
+  advance(sitting, 4, () => {
+    if (!sitting.representativeSeat) assert.ok(isOfficePositionWalkable(sprite, sitting.collisionRects()))
+  })
+  assert.equal(sitting.representativeSeat?.chairId, 'chair-0-0')
+  assert.equal(sprite.frame, `ceo-sit-${direction}`)
+  assert.equal(sprite.textureKey, 'ceo-seated-sheet-frames')
+  assert.equal(sprite.anims.isPlaying, false)
+  assert.equal(sitting.representativeGoal, null)
+  assert.equal(sitting.representativeDestination.visible, false)
+  assert.deepEqual([...sitting.furniture.values()].map(({ image }) => image.depth), depths, 'sitting never reorders furniture')
+  const seatedPosition = position(sprite)
+  chairClick(sitting, 'chair-0-0')
+  floorClick(sitting, { x: 4, y: 4 })
+  advance(sitting, 0.2)
+  assert.deepEqual(position(sprite), seatedPosition, 'reclicking the same seat or a wall does not stand up')
+  const saved = parseRepresentativePosition(storage.get(OFFICE_REPRESENTATIVE_SAVE_KEY))
+  assert.ok(isOfficePositionWalkable(saved, sitting.collisionRects()), 'reload position is free floor beside the chair')
+  floorClick(sitting, { x: 480, y: 600 })
+  assert.equal(sitting.representativeSeat, null)
+  assert.equal(sprite.textureKey, 'ceo-animation-sheet-frames')
+  advance(sitting, 4)
+  assert.deepEqual(position(sprite), before, 'floor click stands up and finishes the requested walk')
+}
+console.log('PASS chair clicks, real approach, all chair rotations/types, static seated poses, standing, and safe reload position')
+
+const seats = seatingScene()
+for (const options of [{ button: 'right' }, { event: { shiftKey: true } }, { event: { ctrlKey: true } }]) {
+  chairClick(seats, 'chair-0-0', options)
+  assert.equal(seats.representativeChairTarget, null)
+}
+chairClick(seats, 'chair-0-0')
+advance(seats, 0.2)
+chairClick(seats, 'custom-chair')
+advance(seats, 4)
+assert.equal(seats.representativeSeat?.chairId, 'custom-chair', 'latest chair click replaces a pending destination')
+chairClick(seats, 'chair-0-0')
+advance(seats, 4)
+assert.equal(seats.representativeSeat?.chairId, 'chair-0-0', 'a seated player can switch chairs')
+seats.setLayoutEditing(true)
+assert.equal(seats.representativeSeat, null, 'entering the editor stands up before moving furniture')
+chairClick(seats, 'custom-chair')
+assert.equal(seats.representativeChairTarget, null, 'editing selects a chair instead of sitting')
+seats.setLayoutEditing(false)
+chairClick(seats, 'custom-chair')
+seats.setLayoutEditing(true)
+seats.furniture.get('custom-chair').image.setPosition(560, 560)
+seats.refreshNavigationLayout()
+seats.setLayoutEditing(false)
+advance(seats, 4)
+assert.equal(seats.representativeSeat?.chairId, 'custom-chair')
+assert.equal(seats.representativeSprite.y, 582, 'pending seating follows the edited chair position')
+seats.setLayoutEditing(true)
+seats.setLayoutEditing(false)
+chairClick(seats, 'chair-0-0')
+seats.furniture.delete('chair-0-0')
+seats.refreshNavigationLayout()
+advance(seats, 4)
+assert.equal(seats.representativeSeat, null)
+assert.equal(seats.representativeChairTarget, null, 'deleting the destination safely cancels seating')
+console.log('PASS modified clicks, switching seats, edit selection, moved chairs, and deleted destinations')
+
+const occupiedSeat = seatingScene()
+snapshot(occupiedSeat, [actor('owner')])
+assert.equal(occupiedSeat.sitRepresentativeOn('chair-0-0'), false, 'a worker walking to a chair reserves it')
+advance(occupiedSeat, 15)
+assert.equal(occupiedSeat.sitRepresentativeOn('chair-0-0'), false, 'an occupied chair rejects seating')
+snapshot(occupiedSeat, [actor('owner', 0, 'offDuty')])
+assert.equal(occupiedSeat.sitRepresentativeOn('chair-0-0'), true)
+advance(occupiedSeat, 4)
+snapshot(occupiedSeat, [actor('returning-owner')])
+advance(occupiedSeat, 15)
+const returningOwner = occupiedSeat.actors.get('returning-owner')
+assert.equal(returningOwner.blocked, true, 'a returning worker waits while the representative owns the seat')
+assert.notDeepEqual(position(returningOwner.container), { x: 400, y: 480 })
+floorClick(occupiedSeat, { x: 480, y: 600 })
+advance(occupiedSeat, 12)
+assert.equal(returningOwner.settled, true, 'a worker can sit after the representative leaves')
+assert.deepEqual(position(returningOwner.container), { x: 400, y: 480 })
+
+const inaccessible = seatingScene()
+// Enclose the chair with other furniture; the final seat step cannot ignore it.
+for (const [id, x, y] of [['north', 400, 416], ['south', 400, 544], ['west', 336, 480], ['east', 464, 480]]) {
+  inaccessible.addFurniture(id, 12, x, y, 64, 64)
+}
+assert.equal(inaccessible.sitRepresentativeOn('chair-0-0'), false, 'a chair enclosed by furniture is unreachable')
+assert.equal(inaccessible.representativeChairTarget, null)
+console.log('PASS occupied/reserved seats, returning employee waiting and resuming, and inaccessible chairs')
+
+for (const [id, saved] of Object.entries(DEFAULT_LAYOUT_SEED).filter(([, saved]) =>
+  saved.frame === 12 && saved.y < 336)) {
+  const meetingSeat = representativeScene({ x: 480, y: 600 })
+  assert.equal(meetingSeat.sitRepresentativeOn(id), true, `default meeting chair ${id} must be reachable under its table`)
+  advance(meetingSeat, 15)
+  assert.equal(meetingSeat.representativeSeat?.chairId, id)
+  assert.deepEqual(position(meetingSeat.representativeSprite), { x: saved.x, y: saved.y + 22 })
+  meetingSeat.representativeLabel.setDisplaySize(110, 24)
+  meetingSeat.updateRepresentativeLabelPosition()
+  assert.ok(meetingSeat.representativeLabel.y >= 32, 'the name remains inside the canvas for the northern seats')
+  if (saved.y === 112) assert.ok(Math.abs(meetingSeat.representativeLabel.x - saved.x) > 104,
+    'the name beside a northern seat must clear the head')
+  assert.equal(meetingSeat.moveRepresentativeTo({ x: 480, y: 600 }), true)
+  advance(meetingSeat, 15)
+  assert.deepEqual(position(meetingSeat.representativeSprite), { x: 480, y: 600 })
+}
+console.log('PASS all five real meeting chairs: approach beneath overlapping tables and leave through the doorway')
 
 const gait = new CharacterGait('ceo')
 assert.equal(gait.advance(-1, 0).frame, 'ceo-walk-left-0')

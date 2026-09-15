@@ -15,7 +15,8 @@ export const CHARACTER_SHEET_LAYOUTS = {
   'claude-team-animation-atlas': { columns: 5, rows: [[5, 346], [346, 614], [609, 869], [869, 1108]] },
   'codex-team-animation-atlas': { columns: 5, rows: [[32, 373], [375, 679], [682, 958], [959, 1236]] },
   'antigravity-team-animation-atlas': { columns: 5, rows: [[10, 314], [315, 587], [588, 838], [840, 1103]] },
-  'ceo-animation-sheet': { columns: 4, rows: [[0, 330], [330, 635], [635, 938], [938, 1254]] }
+  'ceo-animation-sheet': { columns: 4, rows: [[0, 330], [330, 635], [635, 938], [938, 1254]] },
+  'ceo-seated-sheet': { columns: 2, rows: [[0, 627], [627, 1254]] }
 } as const satisfies Record<string, CharacterSheetLayout>
 
 export type CharacterSheetKey = keyof typeof CHARACTER_SHEET_LAYOUTS
@@ -98,7 +99,7 @@ export function measureCharacterSheet(pixels: ArrayLike<number>, imageWidth: num
     const region = characterFrameRegion(key, imageWidth, column, row)
     return { row, column, exclusions: region.exclusions, ...measureCharacterFrame(pixels, imageWidth, region) }
   }))
-  if (key === 'ceo-animation-sheet') {
+  if (key === 'ceo-animation-sheet' || key === 'ceo-seated-sheet') {
     const locomotion = frames.filter(({ row }) => row < 4)
     const scale = Math.min(...locomotion.flatMap(({ source }) => [
       (CHARACTER_FRAME_WIDTH - CHARACTER_FRAME_PADDING * 2) / source.width,

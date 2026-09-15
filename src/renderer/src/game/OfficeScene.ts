@@ -4,6 +4,7 @@ import row2 from '../assets/pixel-office/characters/corporate-roster-row-2-v1.pn
 import row3 from '../assets/pixel-office/characters/corporate-roster-row-3-v1.png'
 import row4 from '../assets/pixel-office/characters/corporate-roster-row-4-v1.png'
 import ceoAnimationSheet from '../assets/pixel-office/characters/ceo-walk-cycle-v3.png'
+import ceoSeatedSheet from '../assets/pixel-office/characters/ceo-seated-v1.png'
 import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-v2.png'
 import refrigeratorAsset from '../assets/pixel-office/furniture/refrigerator-v2.png'
 import pantryCabinetAsset from '../assets/pixel-office/furniture/pantry-cabinet-v1.png'
@@ -184,6 +185,10 @@ const ACTOR_SPRITE_WIDTH = 104
 const ACTOR_SPRITE_HEIGHT = 120
 const ACTOR_SPRITE_SITTING_HEIGHT = 112
 const ACTOR_SPRITE_Y_OFFSET = -64
+const REPRESENTATIVE_SEAT_FOOT_OFFSET = 22
+// The layered meeting table and its bookcase leave its far chair 8 tiles
+// from free floor. The final seat segment still checks walls and other seats.
+const SEAT_ACCESS_RADIUS = 144
 
 function furnitureDisplaySize(frame: number, columns: number, rows: number): { width: number; height: number } {
   const scale = frame === DESK_FURNITURE_FRAME ? DESK_ASSET_SCALE : 1
@@ -239,6 +244,8 @@ export class OfficeScene extends Phaser.Scene {
   private representativeStalledMs = 0
   private representativeNavigationRevision = -1
   private representativeGait = new CharacterGait('ceo')
+  private representativeChairTarget: string | null = null
+  private representativeSeat: { chairId: string; approach: WorldPoint } | null = null
   // Persisted (not just in-memory) so whichever piece was placed/edited most
   // recently keeps rendering on top of anything it overlaps even after a
   // reload, instead of only for the rest of the current session.
@@ -299,9 +306,12 @@ export class OfficeScene extends Phaser.Scene {
     }
     this.layoutEditing = editing
     this.setEditorUiVisible(editing)
-    if (editing) this.representativeSprite?.anims.pause()
-    else if (this.representativeSprite) {
-      this.repairRepresentativePosition()
+    if (editing) {
+      this.standRepresentative()
+      this.representativeSprite?.anims.pause()
+    } else if (this.representativeSprite) {
+      this.standRepresentative()
+      if (!this.representativeSeat) this.repairRepresentativePosition()
       if (this.representativeGoal) this.planRepresentativeRoute()
       this.updateRepresentativeDepth()
     }
@@ -326,6 +336,7 @@ export class OfficeScene extends Phaser.Scene {
   preload(): void {
     ;[row1, row2, row3, row4].forEach((url, index) => this.load.image(`roster-row-${index}`, url))
     this.load.image('ceo-animation-sheet', ceoAnimationSheet)
+    this.load.image('ceo-seated-sheet', ceoSeatedSheet)
     for (const { id, file } of STAFF_WALK_SHEETS) {
       const url = staffWalkAssets[`../assets/pixel-office/characters/walk-v6/${file}`]
       if (!url) throw new Error(`Missing employee walk sheet: ${file}`)
@@ -460,6 +471,13 @@ export class OfficeScene extends Phaser.Scene {
     image.setData({ furnitureId: id, furnitureFrame: frame, furnitureRotation: angle })
     this.input.setDraggable(image)
     image.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (!this.layoutEditing) {
+        if (pointer.leftButtonDown() && !pointer.event.shiftKey && !pointer.event.ctrlKey &&
+          !pointer.event.metaKey && !pointer.event.altKey && [12, 13, 14].includes(frame)) {
+          this.sitRepresentativeOn(id)
+        }
+        return
+      }
       if (this.layoutEditing && pointer.rightButtonDown()) {
         // Right-click only rotates a piece that is already selected; it must
         // not also select whatever was right-clicked in the same click.
@@ -902,9 +920,9 @@ export class OfficeScene extends Phaser.Scene {
     }
   }
 
-  private collisionRects(): CollisionRect[] {
+  private collisionRects(excludedIds: ReadonlySet<string> = new Set()): CollisionRect[] {
     const furnitureRects = [...this.furniture.values()]
-      .filter(({ frame }) => !STACKABLE_FURNITURE_FRAMES.has(frame))
+      .filter(({ id, frame }) => !excludedIds.has(id) && !STACKABLE_FURNITURE_FRAMES.has(frame))
       .map(({ frame, image }) =>
         furnitureCollision({ x: image.x, y: image.y }, collisionFootprint(frame, this.furnitureRotation(image))))
     return [...OFFICE_WALL_COLLISIONS, ...furnitureRects]
@@ -1214,8 +1232,12 @@ export class OfficeScene extends Phaser.Scene {
     if (this.layoutEditing || !sprite || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return false
     const collisions = this.collisionRects()
     if (!isOfficePositionWalkable(point, collisions)) return false
-    const route = findOfficePath(sprite, point, collisions)
-    if (route.length === 0 && Math.hypot(sprite.x - point.x, sprite.y - point.y) >= 0.5) return false
+    const departure = this.representativeDeparturePoint()
+    if (!departure) return false
+    const route = findOfficePath(departure, point, collisions)
+    if (route.length === 0 && Math.hypot(departure.x - point.x, departure.y - point.y) >= 0.5) return false
+    if (!this.standRepresentative()) return false
+    this.representativeChairTarget = null
     this.representativeGoal = { ...point }
     this.representativeStalledMs = 0
     this.planRepresentativeRoute()
@@ -1224,10 +1246,101 @@ export class OfficeScene extends Phaser.Scene {
     return true
   }
 
+  /** Reserve a free chair, walk to its accessible edge, then sit on its seat. */
+  sitRepresentativeOn(chairId: string): boolean {
+    if (this.layoutEditing || !this.representativeSprite) return false
+    const chair = this.furniture.get(chairId)
+    if (!chair || ![12, 13, 14].includes(chair.frame)) return false
+    if (this.representativeSeat?.chairId === chairId) return true
+    if (!this.representativeChairAvailable(chair, true)) return false
+    const departure = this.representativeDeparturePoint()
+    if (!departure || !this.representativeChairApproach(chair, departure)) return false
+    if (!this.standRepresentative()) return false
+    this.representativeChairTarget = chairId
+    this.representativeStalledMs = 0
+    this.planRepresentativeRoute()
+    return true
+  }
+
+  private representativeChairAvailable(chair: FurnitureView, checkReservations = false): boolean {
+    return ![...this.actors.values()].some((view) =>
+      intersectsAabb(actorCollisionRect(view.container), actorCollisionRect(chair.image)) ||
+      (checkReservations && view.seatedGoal && view.goal &&
+        Math.hypot(view.goal.x - chair.image.x, view.goal.y - chair.image.y) < 16))
+  }
+
+  private chairAccessCollisions(chair: FurnitureView): CollisionRect[] {
+    const excluded = new Set([chair.id])
+    const seat = furnitureCollision(chair.image, collisionFootprint(chair.frame, this.furnitureRotation(chair.image)))
+    // Chairs can be tucked under desks or meeting tables. Their overlapping
+    // tabletop permits the short seating step; every other object still blocks it.
+    for (const view of this.furniture.values()) {
+      if ([DESK_FURNITURE_FRAME, 6, 16].includes(view.frame) && intersectsAabb(seat,
+        furnitureCollision(view.image, collisionFootprint(view.frame, this.furnitureRotation(view.image))))) {
+        excluded.add(view.id)
+      }
+    }
+    return [...this.collisionRects(excluded), ...this.actorObstacles(undefined, false)]
+  }
+
+  private representativeChairApproach(chair: FurnitureView, from: WorldPoint): WorldPoint | null {
+    const collisions = this.collisionRects()
+    const access = this.chairAccessCollisions(chair)
+    if (isOfficePositionWalkable(from, collisions) &&
+      Math.hypot(from.x - chair.image.x, from.y - chair.image.y) <= 64 &&
+      hasOfficeLineOfSight(from, chair.image, access)) return { x: from.x, y: from.y }
+    const route = findOfficePath(from, chair.image, collisions, { goalRadius: SEAT_ACCESS_RADIUS, goalCollisions: access })
+    return route.at(-1) ?? null
+  }
+
+  private representativeDeparturePoint(): WorldPoint | null {
+    const sprite = this.representativeSprite
+    if (!sprite) return null
+    const seat = this.representativeSeat
+    if (!seat) return { x: sprite.x, y: sprite.y }
+    const chair = this.furniture.get(seat.chairId)
+    const center = chair?.image ?? { x: sprite.x, y: sprite.y - REPRESENTATIVE_SEAT_FOOT_OFFSET }
+    const collisions = [...this.collisionRects(), ...this.actorObstacles(undefined, false)]
+    const access = chair ? this.chairAccessCollisions(chair) : collisions
+    const candidates = [seat.approach]
+    for (let dx = -SEAT_ACCESS_RADIUS; dx <= SEAT_ACCESS_RADIUS; dx += 16) {
+      for (let dy = -SEAT_ACCESS_RADIUS; dy <= SEAT_ACCESS_RADIUS; dy += 16) {
+        if (Math.hypot(dx, dy) <= SEAT_ACCESS_RADIUS) candidates.push({ x: center.x + dx, y: center.y + dy })
+      }
+    }
+    return candidates.find((point) => isOfficePositionWalkable(point, collisions) &&
+      hasOfficeLineOfSight(center, point, access)) ?? null
+  }
+
+  private standRepresentative(): boolean {
+    if (!this.representativeSeat) return true
+    const point = this.representativeDeparturePoint()
+    if (!point || !this.representativeSprite) return false
+    this.representativeSeat = null
+    this.representativeSprite.setPosition(point.x, point.y)
+    this.applyRepresentativePose(this.representativeGait.stop())
+    this.updateRepresentativeDepth()
+    this.persistRepresentativePosition()
+    return true
+  }
+
   private planRepresentativeRoute(): void {
     const sprite = this.representativeSprite
+    if (!sprite) return
+    if (this.representativeChairTarget) {
+      const chair = this.furniture.get(this.representativeChairTarget)
+      const approach = chair && this.representativeChairAvailable(chair) &&
+        this.representativeChairApproach(chair, sprite)
+      if (!chair || !approach) {
+        this.representativeChairTarget = null
+        this.stopRepresentativeMovement()
+        return
+      }
+      this.representativeGoal = approach
+      this.representativeDestination?.setPosition(chair.image.x, chair.image.y).setVisible(true)
+    }
     const goal = this.representativeGoal
-    if (!sprite || !goal) return
+    if (!goal) return
     const collisions = this.collisionRects()
     const route = findOfficePath(sprite, goal, [...collisions, ...this.actorObstacles(undefined, false)])
     // A passing employee may temporarily block the only path. Keep the
@@ -1249,9 +1362,10 @@ export class OfficeScene extends Phaser.Scene {
 
   private updateRepresentativeMovement(deltaSeconds: number): void {
     const sprite = this.representativeSprite
-    const goal = this.representativeGoal
-    if (this.layoutEditing || !sprite || !goal || deltaSeconds <= 0) return
+    if (this.layoutEditing || !sprite || !this.representativeGoal || deltaSeconds <= 0) return
     if (this.representativeNavigationRevision !== this.navigationRevision) this.planRepresentativeRoute()
+    const goal = this.representativeGoal
+    if (!goal) return
     let target = this.representativeRoute[0]
     while (target && Math.hypot(target.x - sprite.x, target.y - sprite.y) < 0.5) {
       sprite.setPosition(target.x, target.y)
@@ -1292,10 +1406,24 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private stopRepresentativeMovement(): void {
+    const chair = this.representativeChairTarget ? this.furniture.get(this.representativeChairTarget) : null
+    const sprite = this.representativeSprite
+    const arrived = sprite && this.representativeGoal &&
+      Math.hypot(sprite.x - this.representativeGoal.x, sprite.y - this.representativeGoal.y) < 0.5
+    this.representativeChairTarget = null
     this.representativeRoute = []
     this.representativeGoal = null
     this.representativeStalledMs = 0
     this.applyRepresentativePose(this.representativeGait.stop())
+    if (arrived && sprite && chair && this.representativeChairAvailable(chair) &&
+      Math.hypot(sprite.x - chair.image.x, sprite.y - chair.image.y) <= SEAT_ACCESS_RADIUS &&
+      hasOfficeLineOfSight(sprite, chair.image, this.chairAccessCollisions(chair))) {
+      this.representativeSeat = { chairId: chair.id, approach: { x: sprite.x, y: sprite.y } }
+      const direction = this.furnitureDirection(this.furnitureRotation(chair.image))
+      sprite.setTexture('ceo-seated-sheet-frames', `ceo-sit-${direction}`)
+        .setFlipX(false).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
+        .setPosition(chair.image.x, chair.image.y + REPRESENTATIVE_SEAT_FOOT_OFFSET)
+    }
     this.representativeDestination?.setVisible(false)
     this.updateRepresentativeDepth()
     this.persistRepresentativePosition()
@@ -1303,35 +1431,54 @@ export class OfficeScene extends Phaser.Scene {
 
   private updateRepresentativeDepth(): void {
     if (!this.representativeSprite) return
-    this.representativeSprite.setDepth(this.maxFurnitureDepth() + 1 + this.representativeSprite.y)
+    const chair = this.representativeSeat && this.furniture.get(this.representativeSeat.chairId)
+    const behind = chair && this.furnitureDirection(this.furnitureRotation(chair.image)) === 'back'
+    this.representativeSprite.setDepth(chair ? chair.image.depth + (behind ? -1 : 1)
+      : this.maxFurnitureDepth() + 1 + this.representativeSprite.y)
     this.representativeLabel?.setDepth(this.representativeSprite.depth + OFFICE_WORLD_HEIGHT)
   }
 
   private applyRepresentativePose(pose: CharacterPose): void {
-    this.representativeSprite?.stop().setFrame(pose.frame).setFlipX(pose.flipX)
+    this.representativeSprite?.stop().setTexture('ceo-animation-sheet-frames', pose.frame)
+      .setFlipX(pose.flipX).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
   }
 
   private persistRepresentativePosition(): void {
     if (!this.representativeSprite) return
     localStorage.setItem(OFFICE_REPRESENTATIVE_SAVE_KEY, JSON.stringify({
-      x: this.representativeSprite.x, y: this.representativeSprite.y
+      // Reload on the free approach tile, never inside the chair's collision.
+      x: this.representativeSeat?.approach.x ?? this.representativeSprite.x,
+      y: this.representativeSeat?.approach.y ?? this.representativeSprite.y
     }))
   }
 
   private updateRepresentativeLabelPosition(): void {
     if (!this.representativeSprite || !this.representativeLabel) return
     const sprite = this.representativeSprite
+    const label = this.representativeLabel
+    const above = sprite.y - sprite.displayHeight * sprite.originY - CEO_LABEL_GAP
+    // North-facing table seats can put the head near the canvas edge. Keep
+    // the name beside the head there instead of clipping it or covering hair.
+    if (above < label.displayHeight + 8) {
+      const side = sprite.x > OFFICE_WORLD_WIDTH / 2 ? -1 : 1
+      label.setPosition(sprite.x + side * (sprite.displayWidth / 2 + label.displayWidth / 2 + CEO_LABEL_GAP),
+        label.displayHeight + 8)
+      return
+    }
     // Anchor the bottom of the label above the sprite, leaving the full text
     // height outside the head even if the font or character size changes.
-    this.representativeLabel.setPosition(
+    label.setPosition(
       sprite.x + CEO_SPRITE_ART_X_OFFSET,
-      sprite.y - sprite.displayHeight * sprite.originY - CEO_LABEL_GAP
+      above
     )
   }
 
   private createCeoFrames(): void {
     const rowNames = ['idle', 'walk-down', 'walk-up', 'walk-left']
     this.createCharacterFrames('ceo-animation-sheet', (column, row) => `ceo-${rowNames[row]}-${column}`)
+    // The generated side views are left, then right in reading order.
+    const seatedDirections = ['front', 'left', 'back', 'right']
+    this.createCharacterFrames('ceo-seated-sheet', (column, row) => `ceo-sit-${seatedDirections[row * 2 + column]}`)
   }
 
   private createCharacterFrames(sourceKey: string, frameName: (column: number, row: number) => string, walkSheet = false): string {
@@ -1480,7 +1627,10 @@ export class OfficeScene extends Phaser.Scene {
   private actorObstacles(except?: ActorView, includeRepresentative = true): CollisionRect[] {
     const obstacles = [...this.actors.values()].filter((view) => view !== except)
       .map((view) => actorCollisionRect(view.container))
-    if (includeRepresentative && this.representativeSprite) obstacles.push(actorCollisionRect(this.representativeSprite))
+    if (includeRepresentative && this.representativeSprite) {
+      const chair = this.representativeSeat && this.furniture.get(this.representativeSeat.chairId)
+      obstacles.push(actorCollisionRect(chair ? chair.image : this.representativeSprite))
+    }
     return obstacles
   }
 
@@ -1490,7 +1640,8 @@ export class OfficeScene extends Phaser.Scene {
       .map((other) => [other.actor.profileId, Math.round(other.container.x / 8), Math.round(other.container.y / 8)].join(':'))
       .join('|')
     const representative = this.representativeSprite
-    return actors + (representative && Math.hypot(representative.x - view.container.x, representative.y - view.container.y) < 128
+    return actors + `|seat:${this.representativeSeat?.chairId ?? this.representativeChairTarget ?? ''}` +
+      (representative && Math.hypot(representative.x - view.container.x, representative.y - view.container.y) < 128
       ? `|representative:${Math.round(representative.x / 8)}:${Math.round(representative.y / 8)}` : '')
   }
 
@@ -1607,6 +1758,15 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private finishActorRoute(view: ActorView): void {
+    const reservedId = this.representativeSeat?.chairId ?? this.representativeChairTarget
+    const reserved = reservedId && this.furniture.get(reservedId)
+    if (view.seatedGoal && view.goal && reserved &&
+      Math.hypot(view.goal.x - reserved.image.x, view.goal.y - reserved.image.y) < 16) {
+      view.route = []
+      view.routeIndex = 0
+      this.blockActor(view, true)
+      return
+    }
     view.route = []
     view.routeIndex = 0
     view.blocked = false

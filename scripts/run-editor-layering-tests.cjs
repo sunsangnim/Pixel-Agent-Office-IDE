@@ -66,7 +66,7 @@ function createScene(saved) {
   return scene
 }
 
-const pointer = { event: { shiftKey: false }, rightButtonDown: () => false }
+const pointer = { event: { shiftKey: false }, rightButtonDown: () => false, leftButtonDown: () => true }
 const click = (scene, id) => scene.furniture.get(id).image.events.get('pointerdown')(pointer)
 const depth = (scene, id) => scene.furniture.get(id).image.depth
 const savedLayout = () => JSON.parse(storage.get('pixel-office-layout-v1'))

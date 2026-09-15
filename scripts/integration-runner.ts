@@ -316,6 +316,9 @@ function verifyCharacterFeet(): void {
     { key: 'ceo-animation-sheet', file: 'ceo-walk-cycle-v3.png', feet: [
       [312, 312, 312, 312], [616, 616, 616, 616],
       [919, 919, 919, 919], [1215, 1215, 1215, 1215]
+    ] },
+    { key: 'ceo-seated-sheet', file: 'ceo-seated-v1.png', feet: [
+      [599, 599], [1180, 1180]
     ] }
   ]
   for (const { key, file, feet } of sheets) {
@@ -361,7 +364,7 @@ function verifyCharacterFeet(): void {
       assert.ok(Math.abs(destination.width / source.width - destination.height / source.height) < 0.02, `${label}: preserve proportions`)
     }))
   }
-  console.log('PASS complete character shoes, stable alignment (61 poses), and alternating representative arms')
+  console.log('PASS complete character shoes, stable alignment (65 poses including seated CEO), and alternating representative arms')
 }
 
 async function main(): Promise<void> {
