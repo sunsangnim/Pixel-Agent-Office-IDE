@@ -122,6 +122,12 @@ export function measureSeatedSheet(pixels: ArrayLike<number>, imageWidth: number
   return measureGridSheet(pixels, imageWidth, imageHeight, 5, 3, true)
 }
 
+// First two rows: six coffee poses. Last two rows: six cookie poses.
+// One scale and ground line keep the actor planted as arms and faces change.
+export function measurePantrySheet(pixels: ArrayLike<number>, imageWidth: number, imageHeight: number) {
+  return measureGridSheet(pixels, imageWidth, imageHeight, 3, 4)
+}
+
 function measureGridSheet(pixels: ArrayLike<number>, imageWidth: number, imageHeight: number,
   columns: number, rows: number, personPerColumn = false) {
   // Generated sheets can shift rows by a few pixels. Split at the actual
