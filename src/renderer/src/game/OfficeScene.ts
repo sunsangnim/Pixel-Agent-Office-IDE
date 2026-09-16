@@ -18,6 +18,8 @@ import sideTableAsset from '../assets/pixel-office/furniture/side-table-v2.png'
 import officeSofaAsset from '../assets/pixel-office/furniture/office-sofa-v1.png'
 import floorLampAsset from '../assets/pixel-office/furniture/floor-lamp-v1.png'
 import bookcaseAsset from '../assets/pixel-office/furniture/bookcase-v2.png'
+import coffeeMugAsset from '../assets/pixel-office/props/coffee-mug-v1.png'
+import chocolateCookieAsset from '../assets/pixel-office/props/chocolate-cookie-v1.png'
 import mintFloorAsset from '../assets/pixel-office/floors/mint-tile-v1.png'
 import oakFloorAsset from '../assets/pixel-office/floors/oak-parquet-v1.png'
 import stoneFloorAsset from '../assets/pixel-office/floors/blue-stone-v1.png'
@@ -81,7 +83,7 @@ interface ActorView {
   bubble: Phaser.GameObjects.Text
   routeKey: string
   actionTween?: Phaser.Tweens.Tween
-  prop: Phaser.GameObjects.Rectangle
+  prop: Phaser.GameObjects.Image
   stateMachine: ActorStateMachine
   gait: CharacterGait
   route: WorldPoint[]
@@ -350,6 +352,8 @@ export class OfficeScene extends Phaser.Scene {
     ;[row1, row2, row3, row4].forEach((url, index) => this.load.image(`roster-row-${index}`, url))
     this.load.image('ceo-animation-sheet', ceoAnimationSheet)
     this.load.image('ceo-seated-sheet', ceoSeatedSheet)
+    this.load.image('prop-coffee-mug', coffeeMugAsset)
+    this.load.image('prop-chocolate-cookie', chocolateCookieAsset)
     for (const { id, file } of STAFF_WALK_SHEETS) {
       const url = staffWalkAssets[`../assets/pixel-office/characters/walk-v6/${file}`]
       if (!url) throw new Error(`Missing employee walk sheet: ${file}`)
@@ -1699,8 +1703,8 @@ export class OfficeScene extends Phaser.Scene {
     const bubble = this.addOfficeText(36, -136, '', {
       fontSize: '11px', color: '#26332f', backgroundColor: '#fff7df'
     }).setPadding(4, 4).setVisible(false)
-    const prop = this.add.rectangle(24, -40, 14, 18, 0x6eb6d9)
-      .setStrokeStyle(2, 0x294a5a).setVisible(false)
+    const prop = this.add.image(24, -46, 'prop-coffee-mug')
+      .setDisplaySize(28, 28).setVisible(false)
     const saved = this.worldSave.actors.find((candidate) => candidate.profileId === actor.profileId)
     const initial = nearestOfficePosition(saved ?? WAYPOINTS.elevatorInside,
       [...this.collisionRects(), ...this.actorObstacles()]) ?? WAYPOINTS.elevatorExit
@@ -1866,7 +1870,7 @@ export class OfficeScene extends Phaser.Scene {
   private stopActorAction(view: ActorView): void {
     view.actionTween?.stop()
     view.actionTween = undefined
-    view.prop.setVisible(false)
+    view.prop.setVisible(false).setAngle(0)
     view.sprite.stop()
     view.gait.stop()
     view.stateMachine.cancelAction()
@@ -2007,13 +2011,13 @@ export class OfficeScene extends Phaser.Scene {
 
     if (action !== 'eating' && action !== 'drinking') return
     const drinking = action === 'drinking'
-    view.prop.setFillStyle(drinking ? 0x6eb6d9 : 0xd99a45)
-      .setStrokeStyle(2, drinking ? 0x294a5a : 0x70431f)
-      .setSize(drinking ? 14 : 18, drinking ? 20 : 14)
-      .setPosition(24, -40).setVisible(true)
+    view.prop.setTexture(drinking ? 'prop-coffee-mug' : 'prop-chocolate-cookie')
+      .setDisplaySize(drinking ? 28 : 26, drinking ? 28 : 26)
+      .setPosition(24, -46).setAngle(0).setVisible(true)
     view.actionTween = this.tweens.add({
-      targets: view.prop, x: 14, y: -86, duration: 260, hold: 140, yoyo: true, repeat: 2,
-      ease: 'Stepped', easeParams: [3],
+      targets: view.prop, x: 8, y: -78, angle: drinking ? -12 : -8,
+      duration: 420, hold: 600, delay: 450, repeatDelay: 600, yoyo: true, repeat: 2,
+      ease: 'Stepped', easeParams: [5],
       onComplete: () => {
         view.actionTween = undefined
         view.prop.setVisible(false)

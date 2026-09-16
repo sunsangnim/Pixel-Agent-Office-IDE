@@ -10,6 +10,7 @@ pixel-office/
 ├─ furniture/    독립 투명 PNG 가구
 │  └─ directional/ 13종 × 정면·오른쪽·뒷면·왼쪽 방향 PNG
 ├─ floors/       64×64 무봉제 바닥 타일
+├─ props/        캐릭터가 손에 드는 투명 PNG 소품
 └─ archive/      런타임에서 제외된 교체 전 원본
 ```
 
@@ -48,6 +49,18 @@ pixel-office/
 | `office-sofa-v1.png` | 대표실 소파 | 8×4 |
 | `floor-lamp-v1.png` | 대표실 램프 | 2×2 |
 | `bookcase-v2.png` | 정면형 대표실 책장 | 4×8 |
+
+## Handheld props
+
+| 파일 | 용도 | 표시 크기 |
+| --- | --- | --- |
+| `props/coffee-mug-v1.png` | 탕비실 휴식 중 마시는 커피 머그컵 | 28×28 |
+| `props/chocolate-cookie-v1.png` | 탕비실 휴식 중 먹는 초코칩 쿠키 | 26×26 |
+
+내장 이미지 생성 도구로 만든 독립 투명 PNG다. 캐릭터 컨테이너 안에서
+몸 앞에 합성하며, 휴식 장소에 도착한 뒤 손에서 입으로 세 번 가져간다.
+인테리어 편집 중에는 동작을 멈추고, 업무 전환·퇴근 시에는 소품을 숨긴다.
+가구로 배치하지 않으므로 충돌 영역이나 바닥 점유 칸은 추가하지 않는다.
 
 ## Floors
 
