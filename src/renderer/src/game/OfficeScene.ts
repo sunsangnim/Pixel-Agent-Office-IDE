@@ -225,7 +225,6 @@ export class OfficeScene extends Phaser.Scene {
   private furniture = new Map<string, FurnitureView>()
   private furnitureBoundsByTexture = new Map<string, CollisionRect>()
   private seatedFrameAnchors = new Map<string, WorldPoint>()
-  private seatedChairOverlays = new Map<Phaser.GameObjects.Sprite, Phaser.GameObjects.Image>()
   private layoutSave: OfficeLayoutSave = {}
   private removedDeskIds = new Set<string>()
   private deskCountsHandler: ((counts: number[]) => void) | null = null
@@ -331,7 +330,6 @@ export class OfficeScene extends Phaser.Scene {
     }
     this.actors.forEach((view) => {
       if (editing) {
-        this.clearSeatedChairOverlay(view.sprite)
         view.sprite.anims.pause()
         view.actionTween?.pause()
       } else {
@@ -476,12 +474,8 @@ export class OfficeScene extends Phaser.Scene {
       : requested
     const initialFootprint = rotatedFootprint(frame, angle)
     const initialDisplaySize = furnitureDisplaySize(frame, initialFootprint.columns, initialFootprint.rows)
-    // No per-type bias (a desk isn't hardcoded behind a chair, a table isn't
-    // hardcoded behind a laptop) - stacking is purely "whatever was placed or
-    // edited most recently is on top". A piece with no prior zOrder (first
-    // time it's ever been created) gets the next one now, so creation order
-    // alone still gives a sane default (e.g. a chair created right after its
-    // desk in ensureDeskPair naturally ends up in front of it).
+    // Floor position determines front/back order. Saved selection order only
+    // breaks ties between pieces at the same Y coordinate.
     if (!this.zOrderById.has(id)) this.zOrderById.set(id, this.nextZOrder++)
     const image = this.add.image(initial.x, initial.y, this.directionalFurnitureTexture(frame, angle))
       .setDisplaySize(initialDisplaySize.width, initialDisplaySize.height)
@@ -528,10 +522,8 @@ export class OfficeScene extends Phaser.Scene {
       // Input remains bound outside editing; that must not change layer order.
       if (!this.layoutEditing) return
       image.setData({ dragStartX: image.x, dragStartY: image.y })
-      // Bring the piece being moved to the front immediately, before it's
-      // even dropped, so it's never hidden behind whatever it's dragged over.
+      // Resolve equal-position ties without lifting rear furniture over the front.
       this.bringFurnitureToFront(id)
-      image.setDepth(image.y + this.furnitureDepthBonus(id))
       this.groupDragOffsets.clear()
       if (this.multiSelectedIds.has(id) && this.multiSelectedIds.size > 1) {
         this.multiSelectedIds.forEach((otherId) => {
@@ -566,6 +558,7 @@ export class OfficeScene extends Phaser.Scene {
         otherImage.setPosition(nx, ny).setDepth(ny + this.furnitureDepthBonus(otherId))
         this.multiSelectOutlines.get(otherId)?.setPosition(nx, ny)
       })
+      this.refreshFurnitureDepths()
     })
     image.on('dragend', () => {
       if (!this.layoutEditing) return
@@ -587,6 +580,7 @@ export class OfficeScene extends Phaser.Scene {
       this.saveFurnitureLayout()
     })
     this.furniture.set(id, { id, frame, image, defaultPoint: { x, y } })
+    this.refreshFurnitureDepths()
     return image
   }
 
@@ -597,7 +591,7 @@ export class OfficeScene extends Phaser.Scene {
   // wires the one interaction that has to stay at the Phaser/input level.
   private createLayoutEditor(): void {
     this.input.mouse?.disableContextMenu()
-    // A plain click selects and raises; movement starts a drag separately.
+    // A plain click selects; movement starts a drag separately.
     this.input.dragDistanceThreshold = 4
     this.input.keyboard?.on('keydown-DELETE', () => this.deleteSelectedFurniture())
     this.createMarqueeSelect()
@@ -800,7 +794,6 @@ export class OfficeScene extends Phaser.Scene {
     const point = this.findFreeFurniturePoint(frame)
     const image = this.addFurniture(id, frame, point.x, point.y, 64, 64)
     this.bringFurnitureToFront(id)
-    image.setDepth(image.y + this.furnitureDepthBonus(id))
     this.layoutSave[id] = { x: image.x, y: image.y, frame, width: 64, height: 64 }
     this.saveFurnitureLayout()
     this.selectFurniture(id)
@@ -938,6 +931,7 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private refreshNavigationLayout(): void {
+    this.refreshFurnitureDepths()
     const key = this.furnitureNavigationKey()
     if (key !== this.navigationLayoutKey) {
       this.navigationLayoutKey = key
@@ -1020,13 +1014,12 @@ export class OfficeScene extends Phaser.Scene {
     return origin
   }
 
-  // The most recently selected, placed, moved, or rotated piece goes on top.
-  // Callers persist the order with the rest of their editor operation.
+  // Selection order is retained only for furniture sharing a floor position.
   private bringFurnitureToFront(id: string): void {
     const view = this.furniture.get(id)
     if (!view) return
     this.zOrderById.set(id, this.nextZOrder++)
-    view.image.setDepth(view.image.y + this.furnitureDepthBonus(id))
+    this.refreshFurnitureDepths()
     const overlayDepth = this.editorOverlayDepth()
     this.selectionOutline?.setDepth(overlayDepth)
     this.multiSelectOutlines.forEach((outline) => outline.setDepth(overlayDepth))
@@ -1034,8 +1027,27 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private furnitureDepthBonus(id: string): number {
-    const zOrder = this.zOrderById.get(id)
-    return zOrder ? zOrder * 20000 : 0
+    const zOrder = Math.max(0, this.zOrderById.get(id) ?? 0)
+    return 0.1 * zOrder / (zOrder + 1)
+  }
+
+  private refreshFurnitureDepths(): void {
+    for (const { id, image } of this.furniture.values()) {
+      image.setDepth(image.y + this.furnitureDepthBonus(id))
+    }
+    // A laptop rests on the tabletop, even when its center is further north
+    // than the table's center. It must not jump in front of unrelated furniture.
+    for (const { frame, image } of this.furniture.values()) {
+      if (!STACKABLE_FURNITURE_FRAMES.has(frame)) continue
+      const propBounds = this.furnitureWalkCollision(image, 0)
+      for (const support of this.furniture.values()) {
+        if (![DESK_FURNITURE_FRAME, 6, 16].includes(support.frame)) continue
+        const bounds = this.furnitureWalkCollision(support.image, 0)
+        if (intersectsAabb(propBounds, bounds)) {
+          image.setDepth(Math.max(image.depth, support.image.depth + 0.25))
+        }
+      }
+    }
   }
 
   private maxFurnitureDepth(): number {
@@ -1157,15 +1169,13 @@ export class OfficeScene extends Phaser.Scene {
         const teamNames = ['Claude', 'Codex', 'Antigravity']
         const label = this.addOfficeText(point.x - 36, point.y - 33, `Team ${teamNames[teamIndex]}`, {
           fontSize: '11px', color: '#111111'
-        }).setPadding(4, 4).setDepth(700)
+        }).setPadding(4, 4).setDepth(3)
         this.teamLabels.set(deskId, label)
       }
     }
     // Created right after its own desk, so on a fresh install (nothing in
-    // zOrderById yet) it naturally gets the later zOrder and renders in
-    // front - an empty seat stays visible instead of tucked out of sight.
-    // Occupancy never changes this order; seated actors use the saved
-    // desk/chair order when choosing their own depth.
+    // zOrderById yet) it gets a stable tie breaker. Its floor position keeps
+    // the chair in front of the desk, whether empty or occupied.
     if (!this.removedDeskIds.has(chairId) && !this.furniture.has(chairId)) {
       this.addFurniture(chairId, 12 + teamIndex, point.x, point.y + 18, 38, 42)
     }
@@ -1500,8 +1510,7 @@ export class OfficeScene extends Phaser.Scene {
     if (chair && this.representativeSeatedForeground) {
       headDepth = this.applySeatedComposition(chair, sprite, this.representativeSeatedForeground, sprite)
     } else {
-      this.clearSeatedChairOverlay(sprite)
-      sprite.setDepth(this.maxFurnitureDepth() + 1 + sprite.y).setCrop().setVisible(true)
+      sprite.setDepth(sprite.y).setCrop().setVisible(true)
       this.representativeSeatedForeground?.setVisible(false)
       headDepth = sprite.depth
     }
@@ -1516,44 +1525,14 @@ export class OfficeScene extends Phaser.Scene {
     const foot = seatedSpriteFoot(chair.image, direction, this.seatedFrameAnchor(sprite), sprite)
     if (sprite === depthTarget) sprite.setPosition(foot.x, foot.y)
     else sprite.setPosition(foot.x - depthTarget.x, foot.y - depthTarget.y - sprite.displayHeight / 2)
-    depthTarget.setDepth(chair.image.depth + (behindBackrest ? -1 : 1))
-    sprite.setCrop().setVisible(true)
-    foreground.setPosition(foot.x, foot.y).setVisible(false)
-    let headDepth = depthTarget.depth
-    const top = foot.y - sprite.displayHeight
-    const bodyBounds = { x: foot.x - sprite.displayWidth / 2, y: top,
-      width: sprite.displayWidth, height: sprite.displayHeight }
-    for (const { frame, image } of this.furniture.values()) {
-      if (![DESK_FURNITURE_FRAME, 6, 16].includes(frame)) continue
-      const bounds = { x: image.x - image.displayWidth / 2, y: image.y - image.displayHeight / 2,
-        width: image.displayWidth, height: image.displayHeight }
-      if (intersectsAabb(bodyBounds, bounds)) headDepth = Math.max(headDepth, image.depth + 1)
-    }
-    if (headDepth > depthTarget.depth) {
-      this.renderSeatedForeground(sprite, foreground)
-      sprite.setVisible(false)
-      foreground.setDepth(headDepth).setVisible(true)
-    }
-    // The desk, sitter, and back-facing chair must be drawn in that order.
-    // Repeat the unchanged chair above a raised sitter, preserving the saved
-    // furniture order while its opaque backrest naturally covers the body.
-    if (behindBackrest && headDepth >= chair.image.depth && !this.layoutEditing) {
-      let overlay = this.seatedChairOverlays.get(sprite)
-      if (!overlay) {
-        overlay = this.add.image(chair.image.x, chair.image.y, chair.image.texture.key)
-        this.seatedChairOverlays.set(sprite, overlay)
-      }
-      overlay.setTexture(chair.image.texture.key).setPosition(chair.image.x, chair.image.y)
-        .setOrigin(chair.image.originX, chair.image.originY)
-        .setDisplaySize(chair.image.displayWidth, chair.image.displayHeight)
-        .setDepth(headDepth + 1)
-    } else this.clearSeatedChairOverlay(sprite)
-    return headDepth
-  }
-
-  private clearSeatedChairOverlay(sprite: Phaser.GameObjects.Sprite): void {
-    this.seatedChairOverlays.get(sprite)?.destroy()
-    this.seatedChairOverlays.delete(sprite)
+    // Sort the complete, unmodified pose at the chair's floor position.
+    // Tables further south naturally cover the lap, while a back-facing
+    // chair's own backrest covers the sitter without duplicating the chair.
+    depthTarget.setDepth(chair.image.depth + (behindBackrest ? -0.25 : 0.25))
+    sprite.setCrop().setVisible(false)
+    this.renderSeatedForeground(sprite, foreground)
+    foreground.setPosition(foot.x, foot.y).setDepth(depthTarget.depth).setVisible(true)
+    return depthTarget.depth
   }
 
   private seatedFrameAnchor(sprite: Phaser.GameObjects.Sprite): WorldPoint {
@@ -1568,7 +1547,6 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private applyRepresentativePose(pose: CharacterPose): void {
-    if (this.representativeSprite) this.clearSeatedChairOverlay(this.representativeSprite)
     this.representativeSprite?.stop().setTexture('ceo-animation-sheet-frames', pose.frame)
       .setCrop().setVisible(true).setFlipX(pose.flipX).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
     this.representativeSeatedForeground?.setVisible(false)
@@ -1677,7 +1655,6 @@ export class OfficeScene extends Phaser.Scene {
     for (const [id, view] of this.actors) {
       if (!activeIds.has(id)) {
         this.stopActorAction(view)
-        this.clearSeatedChairOverlay(view.sprite)
         view.container.destroy(true)
         view.overlay.destroy(true)
         view.seatedForeground.destroy()
@@ -1879,7 +1856,6 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private restoreActorStandingPose(view: ActorView): void {
-    this.clearSeatedChairOverlay(view.sprite)
     const atlas = this.animationAtlasFor(view.actor)
     if (atlas) view.sprite.setTexture(atlas, `actor-${this.actorAnimationKey(view.actor)}-idle-0`)
     view.sprite.stop().setCrop().setVisible(true).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
@@ -1957,7 +1933,6 @@ export class OfficeScene extends Phaser.Scene {
   private updateActorMovement(deltaSeconds: number): void {
     if (this.layoutEditing || deltaSeconds <= 0) return
     const collisions = this.collisionRects()
-    const inFrontOfFurniture = this.maxFurnitureDepth() + 1
     for (const view of this.actors.values()) {
       let target = view.route[view.routeIndex]
       while (target && Math.hypot(target.x - view.container.x, target.y - view.container.y) < 0.5) {
@@ -1995,7 +1970,7 @@ export class OfficeScene extends Phaser.Scene {
         continue
       }
       view.stalledMs = 0
-      view.container.setPosition(resolved.x, resolved.y).setDepth(inFrontOfFurniture + resolved.y)
+      view.container.setPosition(resolved.x, resolved.y).setDepth(resolved.y)
       view.overlay.setDepth(view.container.depth + OFFICE_WORLD_HEIGHT)
       view.stateMachine.startWalking(movedX, movedY)
       // Facing follows actual displacement, not an unreachable target vector.
@@ -2054,8 +2029,7 @@ export class OfficeScene extends Phaser.Scene {
     if (chair && this.animationAtlasFor(view.actor)) {
       headDepth = this.applySeatedComposition(chair, view.sprite, view.seatedForeground, view.container)
     } else {
-      this.clearSeatedChairOverlay(view.sprite)
-      view.container.setDepth(this.maxFurnitureDepth() + 1 + view.container.y)
+      view.container.setDepth(view.container.y)
       view.sprite.setCrop().setVisible(true)
       view.seatedForeground.setVisible(false)
       headDepth = view.container.depth

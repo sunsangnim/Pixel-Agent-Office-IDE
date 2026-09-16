@@ -255,17 +255,9 @@ for (const frontId of ['chair-0-0', 'desk-0-0']) {
 }
 
 function assertSeatedLayers(scene, chair, sprite, bodyDepth) {
-  const overlay = scene.seatedChairOverlays.get(sprite)
   if (scene.furnitureRotation(chair) === 180) {
-    assert.ok((overlay ?? chair).depth > bodyDepth, 'the backrest must be in front of the seated person')
-    if (overlay) {
-      for (const property of ['x', 'y', 'originX', 'originY', 'displayWidth', 'displayHeight']) {
-        assert.equal(overlay[property], chair[property], 'the foreground chair retains its original geometry')
-      }
-      assert.equal(overlay.texture.key, chair.texture.key, 'the complete original chair is used unchanged')
-    }
+    assert.ok(chair.depth > bodyDepth, 'the original backrest must be in front of the seated person')
   } else {
-    assert.equal(overlay, undefined, 'a foreground backrest must not cover front or side views')
     assert.ok(bodyDepth > chair.depth)
   }
 }
@@ -400,7 +392,8 @@ advance(player, 12, () => {
 assert.deepEqual(position(ceo), officeGoal)
 assert.equal(ceo.anims.isPlaying, false)
 assert.equal(player.representativeDestination.visible, false)
-assert.ok(ceo.depth > player.maxFurnitureDepth())
+assert.ok(ceo.depth > player.furniture.get('desk-0-0').image.depth, 'walking south of a desk renders in front of it')
+assert.ok(ceo.depth < player.furniture.get('desk-2-1').image.depth, 'walking north of a desk renders behind it')
 const restoredPlayer = createScene()
 restoredPlayer.createRepresentativeActor()
 assert.deepEqual(position(restoredPlayer.representativeSprite), officeGoal, 'arrival survives a scene reload')
@@ -539,7 +532,6 @@ for (const rotation of [0, 90, 180, 270]) {
     assert.equal(head.visible, true, 'the seated head needs a visible pass above the foreground desk')
     assert.ok(head.depth > desk.depth, 'the monitor cannot cover the head')
     assertSeatedLayers(candidate, chair, body, head.depth)
-    const chairOverlay = candidate.seatedChairOverlays.get(body)
     assert.deepEqual(position(head), position(body), 'the two parts retain identical placement')
     assert.equal(body.visible, false, 'the foreground replaces the body without double drawing')
     assert.equal(head.crop, null, 'the torso is never cut horizontally at the backrest')
@@ -552,12 +544,42 @@ for (const rotation of [0, 90, 180, 270]) {
     assert.equal(head.visible, false, 'standing removes the seated foreground pass')
     assert.equal(body.crop, null, 'walking renders the entire character again')
     assert.equal(body.visible, true, 'standing restores the original sprite')
-    assert.equal(candidate.seatedChairOverlays.has(body), false, 'standing removes the foreground chair')
-    if (chairOverlay) assert.equal(chairOverlay.destroyed, true)
     advance(candidate, 5)
   }
 }
 console.log('PASS desk/person/backrest order, unchanged chairs, all facings, reload, and visible walking')
+
+// A north-side sitter must stay behind the meeting table even if the chair
+// was edited last. Test both CEO and employee composition with actual arrival.
+for (const north of [true, false]) {
+  const arrangement = {
+    'chair-0-0': { x: 432, y: north ? 112 : 224, rotation: north ? 0 : 180, frame: 12, zOrder: 9000 },
+    'custom-meeting-table': { x: 480, y: 160, frame: 6, zOrder: 1 },
+    'custom-laptop': { x: 480, y: 136, frame: 7, zOrder: 2 }
+  }
+  for (const employee of [false, true]) {
+    const scene = createScene(arrangement)
+    if (employee) {
+      scene.worldSave.actors = [{ profileId: 'meeting-depth', x: 480, y: 600 }]
+      snapshot(scene, [actor('meeting-depth')])
+    } else {
+      storage.set(OFFICE_REPRESENTATIVE_SAVE_KEY, JSON.stringify({ x: 480, y: 600 }))
+      scene.createRepresentativeActor()
+      assert.equal(scene.sitRepresentativeOn('chair-0-0'), true)
+    }
+    advance(scene, 15)
+    const view = scene.actors.get('meeting-depth')
+    assert.ok(employee ? view.settled : scene.representativeSeat, 'the actor actually arrives before depth is checked')
+    const sitter = employee ? view.seatedForeground : scene.representativeSeatedForeground
+    const table = scene.furniture.get('custom-meeting-table').image
+    assert.equal(sitter.visible, true)
+    assert.ok(north ? sitter.depth < table.depth : sitter.depth > table.depth,
+      north ? 'front table hides the northern sitter lap' : 'southern sitter remains in front of the table')
+    assert.equal(sitter.crop, null, 'occlusion uses asset layering, without cropping character pixels')
+    assert.ok(scene.furniture.get('custom-laptop').image.depth > table.depth, 'tabletop laptop remains visible')
+  }
+}
+console.log('PASS north/south meeting occlusion for representative and employee despite reversed saved layers')
 
 // Pixel regression for the reported brown-haired Codex: the old horizontal
 // crop removed his coat below the shoulders even though the chair was clear.
@@ -571,7 +593,6 @@ advance(torsoScene, 8)
 const torsoView = torsoScene.actors.get('torso')
 const torsoChair = torsoScene.furniture.get('chair-1-0').image
 assertSeatedLayers(torsoScene, torsoChair, torsoView.sprite, torsoView.seatedForeground.depth)
-const torsoChairOverlay = torsoScene.seatedChairOverlays.get(torsoView.sprite)
 const torsoTextureKey = torsoView.seatedForeground.texture.key
 assert.equal(torsoTextureKey, 'staff-seated-1-frames', 'the renderer uses the original unmodified character texture')
 assert.equal(torsoView.seatedForeground.crop, null, 'no crop removes the lower half of the character')
@@ -592,8 +613,6 @@ assert.equal(torsoView.seatedForeground.texture.key, torsoTextureKey, 'resizing 
 assertSeatedLayers(torsoScene, resizedChair, torsoView.sprite, torsoView.seatedForeground.depth)
 snapshot(torsoScene, [actor('torso', 1, 'offDuty')])
 assert.equal(torsoView.seatedForeground.destroyed, true)
-assert.equal(torsoChairOverlay.destroyed, true, 'departing agents leave no foreground chair behind')
-assert.equal(torsoScene.seatedChairOverlays.size, 0)
 console.log('PASS original Codex torso pixels, no crop or alpha mask, seat contact, resizing, and cleanup')
 
 const seats = seatingScene()
@@ -789,10 +808,7 @@ for (let team = 0; team < 3; team++) {
       assert.ok(view.overlay.depth > view.seatedForeground.depth)
     }
     for (const [rotation, direction] of [[0, 'front'], [90, 'left'], [180, 'back'], [270, 'left']]) {
-      const oldChairOverlay = seated.seatedChairOverlays.get(view.sprite)
       seated.setLayoutEditing(true)
-      assert.equal(seated.seatedChairOverlays.size, 0, 'editing uses the actual furniture only')
-      if (oldChairOverlay) assert.equal(oldChairOverlay.destroyed, true)
       seated.furniture.get(chairId).image.setData('furnitureRotation', rotation)
         .setTexture(seated.directionalFurnitureTexture(12, rotation))
       seated.refreshNavigationLayout()
