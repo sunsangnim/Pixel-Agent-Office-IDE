@@ -55,6 +55,7 @@ function objectDouble(x = 0, y = 0, textureKey) {
     },
     setPosition(x, y) { this.x = x; this.y = y; return this },
     setY(y) { this.y = y; return this },
+    setAngle(angle) { this.angle = angle; return this },
     setScale(x, y = x) { this.scaleX = x; this.scaleY = y; return this },
     setOrigin(x, y = x) { this.originX = x; this.originY = y; return this },
     setDepth(depth) { this.depth = depth; return this },
@@ -116,7 +117,9 @@ function createScene(saved = DEFAULT_LAYOUT_SEED) {
   scene.tweens = {
     add(config) {
       const tween = {
-        config, end: scene.simulationTimeMs + (config.duration * 2 + (config.hold ?? 0)) * ((config.repeat ?? 0) + 1),
+        config, end: scene.simulationTimeMs + (config.delay ?? 0) +
+          (config.duration * 2 + (config.hold ?? 0)) * ((config.repeat ?? 0) + 1) +
+          (config.repeatDelay ?? 0) * (config.repeat ?? 0),
         stopped: false, paused: false,
         stop() { this.stopped = true }, pause() { this.paused = true }, resume() { this.paused = false }
       }
@@ -360,6 +363,55 @@ for (const member of crowd.actors.values()) {
   assert.equal(member.sprite.anims.isPlaying, false)
 }
 console.log('PASS four-person arrivals, occasional pantry visits/returns, and an explicit meeting')
+
+for (const [index, texture, file] of [
+  [0, 'prop-chocolate-cookie', 'chocolate-cookie-v1.png'],
+  [1, 'prop-coffee-mug', 'coffee-mug-v1.png']
+]) {
+  const asset = PNG.sync.read(fs.readFileSync(path.join(process.cwd(), 'src/renderer/src/assets/pixel-office/props', file)))
+  let visiblePixels = 0
+  let transparentPixels = 0
+  for (let offset = 3; offset < asset.data.length; offset += 4) {
+    if (asset.data[offset] > 200) visiblePixels++
+    if (asset.data[offset] === 0) transparentPixels++
+  }
+  assert.ok(visiblePixels > asset.width * asset.height / 4, 'the handheld asset contains visible artwork')
+  assert.ok(transparentPixels > asset.width * asset.height / 4, 'the handheld asset has a transparent background')
+  const pantry = createScene()
+  const resting = actor('pantry-prop', index, 'pantry')
+  const roster = [...Array.from({ length: index }, (_, i) => actor(`absent-${i}`, i, 'offDuty')), resting]
+  pantry.worldSave.actors = [{ profileId: resting.profileId, x: 224, y: 288 }]
+  snapshot(pantry, roster)
+  const view = pantry.actors.get(resting.profileId)
+  assert.equal(view.prop.visible, false, 'food is hidden while walking to the pantry')
+  for (let step = 0; step < 200 && !view.actionTween; step++) advance(pantry, 0.05)
+  assert.equal(view.settled, true)
+  assert.equal(view.stateMachine.current.action, index ? 'drinking' : 'eating')
+  assert.equal(view.prop.texture.key, texture)
+  assert.equal(view.prop.visible, true)
+  assert.equal(view.sprite.flipX, false, 'handheld props align with the front-facing idle pose')
+  assert.match(view.sprite.frame, /-idle-0$/)
+  const tween = view.actionTween
+  assert.equal(tween.config.targets, view.prop, 'only the handheld prop moves during a sip or bite')
+  assert.ok(tween.config.y < view.prop.y, 'the prop moves from the hand up to the mouth')
+  pantry.setLayoutEditing(true)
+  assert.equal(tween.paused, true, 'editing pauses the sip/bite')
+  pantry.setLayoutEditing(false)
+  assert.equal(view.actionTween, tween, 'finishing editing resumes the existing action')
+  assert.equal(tween.paused, false)
+  advance(pantry, 8)
+  assert.equal(view.prop.visible, false, 'the completed snack or drink does not float beside the character')
+  assert.equal(view.stateMachine.current.actionLocked, false)
+  pantry.startActionAnimation(view, resting)
+  const interrupted = view.actionTween
+  snapshot(pantry, [...roster.slice(0, index), { ...resting, presence: 'working' }])
+  assert.equal(interrupted.stopped, true, 'work interrupts the pantry action immediately')
+  assert.equal(view.prop.visible, false)
+  assert.equal(view.prop.angle, 0, 'a stopped drink cannot leave the next prop tilted')
+  snapshot(pantry, [])
+  assert.equal(view.container.destroyed, true, 'off-duty cleanup removes the container holding the prop')
+}
+console.log('PASS generated pantry props, arrival, eating/drinking, editor pause, completion, and work interruption')
 
 function representativeScene(position) {
   storage.delete(OFFICE_REPRESENTATIVE_SAVE_KEY)
