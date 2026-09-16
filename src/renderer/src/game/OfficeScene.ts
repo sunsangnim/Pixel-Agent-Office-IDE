@@ -1752,40 +1752,21 @@ export class OfficeScene extends Phaser.Scene {
     const sprite = this.representativeSprite
     const label = this.representativeLabel
     const above = sprite.y - sprite.displayHeight * sprite.originY - CEO_LABEL_GAP
+    label.setPosition(sprite.x + CEO_SPRITE_ART_X_OFFSET, above)
     const bubble = this.representativeSpeechBubble
     const speech = this.representativeSpeech
     if (bubble?.visible && speech) {
-      const halfWidth = Math.max(label.displayWidth, SPEECH_BUBBLE_WIDTH) / 2
-      const stackHeight = label.displayHeight + 4 + SPEECH_BUBBLE_HEIGHT
-      let x = sprite.x + CEO_SPRITE_ART_X_OFFSET
-      let y = above
-      // At the north edge, move the entire bubble/name stack beside the head.
-      // The bubble stays above the name, with both fully inside the world.
-      if (above < stackHeight + 8) {
-        const side = sprite.x > OFFICE_WORLD_WIDTH / 2 ? -1 : 1
-        x = sprite.x + side * (sprite.displayWidth / 2 + halfWidth + CEO_LABEL_GAP)
-        y = stackHeight + 8
-      }
-      x = Phaser.Math.Clamp(x, halfWidth + 8, OFFICE_WORLD_WIDTH - halfWidth - 8)
-      label.setPosition(x, y)
-      bubble.setPosition(x, y - label.displayHeight - 4)
-      speech.setPosition(x, bubble.y - SPEECH_BUBBLE_HEIGHT * 0.62)
-      return
+      const upperBottom = above - label.displayHeight - 4
+      const below = upperBottom - SPEECH_BUBBLE_HEIGHT < 8
+      // Only the speech changes vertical side. The name never moves away
+      // from the head, even when its normal position reaches the top edge.
+      const bottom = below ? sprite.y + 8 + SPEECH_BUBBLE_HEIGHT : upperBottom
+      const halfWidth = SPEECH_BUBBLE_WIDTH / 2
+      const x = Phaser.Math.Clamp(label.x, halfWidth + 8, OFFICE_WORLD_WIDTH - halfWidth - 8)
+      bubble.setPosition(x, bottom).setFlipY(below)
+      // Flip the panel's tail toward the actor, keeping the text upright.
+      speech.setPosition(x, bottom - SPEECH_BUBBLE_HEIGHT * (below ? 0.38 : 0.62))
     }
-    // North-facing table seats can put the head near the canvas edge. Keep
-    // the name beside the head there instead of clipping it or covering hair.
-    if (above < label.displayHeight + 8) {
-      const side = sprite.x > OFFICE_WORLD_WIDTH / 2 ? -1 : 1
-      label.setPosition(sprite.x + side * (sprite.displayWidth / 2 + label.displayWidth / 2 + CEO_LABEL_GAP),
-        label.displayHeight + 8)
-      return
-    }
-    // Anchor the bottom of the label above the sprite, leaving the full text
-    // height outside the head even if the font or character size changes.
-    label.setPosition(
-      sprite.x + CEO_SPRITE_ART_X_OFFSET,
-      above
-    )
   }
 
   private createCeoFrames(): void {
@@ -1916,9 +1897,9 @@ export class OfficeScene extends Phaser.Scene {
     const label = this.addOfficeText(0, ACTOR_SPRITE_Y_OFFSET - ACTOR_SPRITE_HEIGHT / 2 - 6, actor.displayName, {
       fontSize: '13px', color: '#111111', align: 'center'
     }).setOrigin(0.5, 1).setPadding(4, 4)
-    const bubble = this.addOfficeText(36, -136, '', {
+    const bubble = this.addOfficeText(0, -136, '', {
       fontSize: '11px', color: '#26332f', backgroundColor: '#fff7df'
-    }).setPadding(4, 4).setVisible(false)
+    }).setOrigin(0.5, 0).setPadding(4, 4).setVisible(false)
     const prop = this.add.image(24, -46, 'prop-coffee-mug')
       .setDisplaySize(28, 28).setVisible(false)
     const saved = this.worldSave.actors.find((candidate) => candidate.profileId === actor.profileId)
@@ -2263,13 +2244,11 @@ export class OfficeScene extends Phaser.Scene {
 
   private updateActorOverlayPosition(view: ActorView): void {
     view.overlay.setPosition(view.container.x, view.container.y)
-    const above = view.container.y + view.sprite.y - view.sprite.displayHeight / 2 - CEO_LABEL_GAP
-    if (above < view.label.displayHeight + 8) {
-      const side = view.container.x > OFFICE_WORLD_WIDTH / 2 ? -1 : 1
-      view.label.setPosition(side * (view.sprite.displayWidth / 2 + view.label.displayWidth / 2 + CEO_LABEL_GAP),
-        view.label.displayHeight + 8 - view.container.y)
-    } else view.label.setPosition(view.sprite.x, above - view.container.y)
-    view.bubble.setY(Math.max(8, above - 30) - view.container.y)
+    const above = view.container.y + view.sprite.y - view.sprite.displayHeight * view.sprite.originY - CEO_LABEL_GAP
+    view.label.setPosition(view.sprite.x, above - view.container.y)
+    const bubbleTop = above - view.label.displayHeight - 4 - view.bubble.displayHeight
+    const feet = view.container.y + view.sprite.y + view.sprite.displayHeight * (1 - view.sprite.originY)
+    view.bubble.setPosition(view.sprite.x, (bubbleTop >= 8 ? bubbleTop : feet + 8) - view.container.y)
   }
 
   private persistActor(actor: OfficeGameActor, view: ActorView): void {
