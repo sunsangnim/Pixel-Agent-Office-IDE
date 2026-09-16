@@ -75,6 +75,7 @@ function objectDouble(x = 0, y = 0, textureKey) {
     on(event, handler) { this.events.set(event, handler); return this },
     once(event, handler) { this.events.set(event, handler); return this },
     setFlipX(flipX) { this.flipX = flipX; return this },
+    setFlipY(flipY) { this.flipY = flipY; return this },
     setData(key, value) {
       if (typeof key === 'object') Object.entries(key).forEach(([name, entry]) => data.set(name, entry))
       else data.set(key, value)
@@ -736,19 +737,46 @@ for (const point of [{ x: 24, y: 144 }, { x: 936, y: 144 }, { x: 480, y: 144 },
   const text = speechLayout.representativeSpeech
   const label = speechLayout.representativeLabel
   assert.equal(label.text, '김태호 대표')
-  assert.ok(bubble.y <= label.y - label.displayHeight - 4, 'speech always stays above the name')
+  assert.equal(label.x, point.x, 'the name stays centered over the head even at the north/side edges')
+  assert.equal(label.y, point.y - speechLayout.representativeSprite.displayHeight - 6)
+  const namePosition = position(label)
+  const below = label.y - label.displayHeight - 4 - bubble.displayHeight < 8
+  if (below) {
+    assert.ok(bubble.y - bubble.displayHeight >= point.y + 8, 'insufficient headroom puts speech below the feet, never beside the head')
+  } else {
+    assert.ok(bubble.y <= label.y - label.displayHeight - 4, 'available headroom puts speech above the name')
+  }
+  assert.equal(bubble.flipY, below, 'the tail points toward the character on both vertical sides')
   assert.ok(bubble.y - bubble.displayHeight >= 8, 'speech never clips above the world')
   assert.ok(bubble.x - bubble.displayWidth / 2 >= 8 && bubble.x + bubble.displayWidth / 2 <= 952,
     'the whole speech panel remains inside either horizontal edge')
   assert.ok(text.x - text.displayWidth / 2 > bubble.x - bubble.displayWidth / 2 + 8 &&
     text.x + text.displayWidth / 2 < bubble.x + bubble.displayWidth / 2 - 8, 'Korean text fits the bubble interior')
-  assert.ok(text.y > bubble.y - bubble.displayHeight + 8 && text.y < bubble.y - 12, 'text avoids outline and tail')
+  assert.ok(text.y > bubble.y - bubble.displayHeight + (below ? 12 : 8) && text.y < bubble.y - (below ? 8 : 12),
+    'upright text avoids the outline and the upward/downward tail')
   assert.ok(bubble.depth > label.depth && text.depth > bubble.depth, 'text renders above the opaque bubble')
+  speechLayout.hideRepresentativeSpeech()
+  speechLayout.updateRepresentativeLabelPosition()
+  assert.deepEqual(position(label), namePosition, 'showing or hiding speech never displaces the name')
 }
 speechLayout.showRepresentativeSpeech('커피 마시는 중')
 speechLayout.setLayoutEditing(true)
 assert.equal(speechLayout.representativeSpeechBubble.visible, false, 'editing hides active speech')
-console.log('PASS name above-head tracking, bubble above name, north/side bounds, text fit, depth, and editor cancellation')
+console.log('PASS fixed above-head names, above/below speech, tail orientation, text fit, depth, and editor cancellation')
+
+for (const y of [110, 500]) {
+  const employee = stable.actors.get('test')
+  employee.container.setPosition(48, y)
+  stable.restoreActorStandingPose(employee)
+  employee.bubble.setText('휴식').setVisible(true)
+  stable.updateActorOverlayPosition(employee)
+  const head = employee.container.y + employee.sprite.y - employee.sprite.displayHeight * employee.sprite.originY
+  assert.equal(employee.label.x, employee.sprite.x, 'employee names are also centered above the head')
+  assert.equal(employee.overlay.y + employee.label.y, head - 6)
+  const bubbleTop = employee.overlay.y + employee.bubble.y
+  if (y === 110) assert.ok(bubbleTop >= employee.container.y, 'employee speech moves below the character at the north edge')
+  else assert.ok(bubbleTop + employee.bubble.displayHeight <= employee.overlay.y + employee.label.y - employee.label.displayHeight)
+}
 
 for (const frame of [0, 2]) for (let pose = 0; pose < 6; pose++) {
   const scene = representativeScene({ x: frame === 0 ? 48 : 144, y: 144 })
@@ -989,7 +1017,11 @@ for (const [id, saved] of Object.entries(DEFAULT_LAYOUT_SEED).filter(([, saved])
   assertSeatContact(meetingSeat, meetingSeat.furniture.get(id).image, meetingSeat.representativeSprite, meetingSeat.representativeSprite)
   meetingSeat.representativeLabel.setDisplaySize(110, 24)
   meetingSeat.updateRepresentativeLabelPosition()
-  assert.ok(meetingSeat.representativeLabel.y >= 32, 'the name remains inside the canvas for the northern seats')
+  assert.equal(meetingSeat.representativeLabel.x, meetingSeat.representativeSprite.x,
+    'northern seats never push the name sideways')
+  assert.equal(meetingSeat.representativeLabel.y,
+    meetingSeat.representativeSprite.y - meetingSeat.representativeSprite.displayHeight - 6,
+    'seated names remain anchored above the head regardless of available space')
   assert.equal(meetingSeat.moveRepresentativeTo({ x: 480, y: 600 }), true)
   advance(meetingSeat, 15)
   assert.deepEqual(position(meetingSeat.representativeSprite), { x: 480, y: 600 })
