@@ -20,8 +20,6 @@ import sideTableAsset from '../assets/pixel-office/furniture/side-table-v2.png'
 import officeSofaAsset from '../assets/pixel-office/furniture/office-sofa-v1.png'
 import floorLampAsset from '../assets/pixel-office/furniture/floor-lamp-v1.png'
 import bookcaseAsset from '../assets/pixel-office/furniture/bookcase-v2.png'
-import coffeeMugAsset from '../assets/pixel-office/props/coffee-mug-v1.png'
-import chocolateCookieAsset from '../assets/pixel-office/props/chocolate-cookie-v1.png'
 import mintFloorAsset from '../assets/pixel-office/floors/mint-tile-v1.png'
 import oakFloorAsset from '../assets/pixel-office/floors/oak-parquet-v1.png'
 import stoneFloorAsset from '../assets/pixel-office/floors/blue-stone-v1.png'
@@ -63,10 +61,11 @@ import {
   type OfficeLayoutSave,
   type SavedFurniture
 } from './layoutPersistence'
-import { ActorStateMachine } from './actorStateMachine'
+import { ActorStateMachine, actionForPresence } from './actorStateMachine'
+import { pantryPoseAt, type PantryAnimation } from './pantryAnimation'
 import { IdleActivity } from './idleActivity'
 import { CharacterGait, type CharacterPose } from './characterGait'
-import { STAFF_WALK_SHEETS, WALK_ROW_NAMES, STAFF_SEATED_SHEETS, SEATED_ROW_NAMES } from './staffWalkSheets'
+import { STAFF_WALK_SHEETS, WALK_ROW_NAMES, STAFF_SEATED_SHEETS, SEATED_ROW_NAMES, STAFF_PANTRY_SHEETS } from './staffWalkSheets'
 import {
   CHARACTER_FRAME_HEIGHT, CHARACTER_FRAME_WIDTH, CHARACTER_SHEET_LAYOUTS,
   measureCharacterSheet, measureWalkSheet, measureSeatedSheet, measurePantrySheet, type CharacterSheetKey
@@ -83,9 +82,9 @@ interface ActorView {
   overlay: Phaser.GameObjects.Container
   label: Phaser.GameObjects.Text
   bubble: Phaser.GameObjects.Text
+  speechPanel: Phaser.GameObjects.Image
   routeKey: string
-  actionTween?: Phaser.Tweens.Tween
-  prop: Phaser.GameObjects.Image
+  pantryAction?: PantryAnimation
   stateMachine: ActorStateMachine
   gait: CharacterGait
   route: WorldPoint[]
@@ -152,6 +151,9 @@ const staffWalkAssets = import.meta.glob('../assets/pixel-office/characters/walk
 const staffSeatedAssets = import.meta.glob('../assets/pixel-office/characters/seated-v1/*.png', {
   eager: true, query: '?url', import: 'default'
 }) as Record<string, string>
+const staffPantryAssets = import.meta.glob('../assets/pixel-office/characters/pantry-v1/*.png', {
+  eager: true, query: '?url', import: 'default'
+}) as Record<string, string>
 const FLOOR_TEXTURES = ['floor-mint', 'floor-oak', 'floor-stone', 'floor-carpet', 'floor-office-carpet', 'floor-plain-gray'] as const
 export type FloorTexture = typeof FLOOR_TEXTURES[number]
 const DEFAULT_FLOOR_TEXTURE: FloorTexture = 'floor-plain-gray'
@@ -192,10 +194,6 @@ const OFFICE_FONT_FAMILY = '"Malgun Gothic", "맑은 고딕", "Noto Sans KR", "A
 // Normalized frames center the character art on the sprite and nameplate.
 const CEO_SPRITE_ART_X_OFFSET = 0
 const CEO_LABEL_GAP = 6
-const PANTRY_POSE_DURATIONS = {
-  drinking: [550, 240, 850, 600, 950, 1100],
-  eating: [550, 240, 650, 750, 750, 1100]
-}
 const SPEECH_BUBBLE_WIDTH = 176
 const SPEECH_BUBBLE_HEIGHT = 48
 const ACTOR_COLLISION_HALF_WIDTH = ACTOR_NAV_HALF_WIDTH
@@ -270,7 +268,7 @@ export class OfficeScene extends Phaser.Scene {
   private representativeChairTarget: string | null = null
   private representativeSeat: { chairId: string; approach: WorldPoint; center: WorldPoint } | null = null
   private representativePantryTarget: string | null = null
-  private representativePantryAction?: { action: 'drinking' | 'eating'; elapsedMs: number; pose: number }
+  private representativePantryAction?: PantryAnimation
   private representativeSpeechBubble?: Phaser.GameObjects.Image
   private representativeSpeech?: Phaser.GameObjects.Text
   private pantryHint?: Phaser.GameObjects.Text
@@ -352,9 +350,7 @@ export class OfficeScene extends Phaser.Scene {
     this.actors.forEach((view) => {
       if (editing) {
         view.sprite.anims.pause()
-        view.actionTween?.pause()
       } else {
-        view.actionTween?.resume()
         this.updateActor(view, this.effectiveActor(view), view.actorIndex)
         this.updateActorDepth(view)
       }
@@ -373,8 +369,6 @@ export class OfficeScene extends Phaser.Scene {
     this.load.image('ceo-seated-sheet', ceoSeatedSheet)
     this.load.image('ceo-pantry-sheet', ceoPantrySheet)
     this.load.image('speech-bubble', speechBubbleAsset)
-    this.load.image('prop-coffee-mug', coffeeMugAsset)
-    this.load.image('prop-chocolate-cookie', chocolateCookieAsset)
     for (const { id, file } of STAFF_WALK_SHEETS) {
       const url = staffWalkAssets[`../assets/pixel-office/characters/walk-v6/${file}`]
       if (!url) throw new Error(`Missing employee walk sheet: ${file}`)
@@ -384,6 +378,11 @@ export class OfficeScene extends Phaser.Scene {
       const url = staffSeatedAssets[`../assets/pixel-office/characters/seated-v1/${file}`]
       if (!url) throw new Error(`Missing employee seated sheet: ${file}`)
       this.load.image(`staff-seated-${team}`, url)
+    }
+    for (const { id, file } of STAFF_PANTRY_SHEETS) {
+      const url = staffPantryAssets[`../assets/pixel-office/characters/pantry-v1/${file}`]
+      if (!url) throw new Error(`Missing employee pantry sheet: ${file}`)
+      this.load.image(`staff-pantry-${id}`, url)
     }
     const furnitureAssets: Array<[string, string]> = [
       ['furniture-coffee-machine', coffeeMachineAsset], ['furniture-refrigerator', refrigeratorAsset],
@@ -435,6 +434,7 @@ export class OfficeScene extends Phaser.Scene {
     this.createLayoutEditor()
     this.createRosterFrames()
     this.createStaffWalkFrames()
+    this.createStaffPantryFrames()
     for (const { team } of STAFF_SEATED_SHEETS) {
       this.createCharacterFrames(`staff-seated-${team}`,
         (column, row) => `actor-${team}-${column}-sit-${SEATED_ROW_NAMES[row]}`, 'seated')
@@ -452,6 +452,7 @@ export class OfficeScene extends Phaser.Scene {
       this.simulationTimeMs += elapsed
       this.updateIdleActivities()
       this.updateActorMovement(elapsed / 1000)
+      this.updateActorPantryActions(elapsed)
       this.updateRepresentativeMovement(elapsed / 1000)
       this.updateRepresentativePantryAction(elapsed)
     }
@@ -1277,6 +1278,13 @@ export class OfficeScene extends Phaser.Scene {
       ? 'staff-walk-' + this.actorAnimationKey(actor) + '-frames' : null
   }
 
+  private createStaffPantryFrames(): void {
+    for (const { id } of STAFF_PANTRY_SHEETS) {
+      this.createCharacterFrames(`staff-pantry-${id}`, (column, row) =>
+        `actor-${id}-${row < 2 ? 'drinking' : 'eating'}-${(row % 2) * 3 + column}`, 'pantry')
+    }
+  }
+
   /** Which of the 5 skin variants in the actor's team atlas to use - the
    *  lead (slotIndex 0) gets column 0, sub-agents fill the rest, wrapping
    *  around past a 5th so a very large team still gets an animated sprite
@@ -1473,11 +1481,8 @@ export class OfficeScene extends Phaser.Scene {
     const state = this.representativePantryAction
     if (!state) return
     state.elapsedMs += deltaMs
-    const durations = PANTRY_POSE_DURATIONS[state.action]
-    let time = state.elapsedMs
-    let pose = 0
-    while (pose < durations.length && time >= durations[pose]) time -= durations[pose++]
-    if (pose === durations.length) {
+    const pose = pantryPoseAt(state.action, state.elapsedMs)
+    if (pose === null) {
       this.stopRepresentativePantryAction()
     } else if (pose !== state.pose) {
       state.pose = pose
@@ -1897,18 +1902,18 @@ export class OfficeScene extends Phaser.Scene {
     const label = this.addOfficeText(0, ACTOR_SPRITE_Y_OFFSET - ACTOR_SPRITE_HEIGHT / 2 - 6, actor.displayName, {
       fontSize: '13px', color: '#111111', align: 'center'
     }).setOrigin(0.5, 1).setPadding(4, 4)
-    const bubble = this.addOfficeText(0, -136, '', {
-      fontSize: '11px', color: '#26332f', backgroundColor: '#fff7df'
-    }).setOrigin(0.5, 0).setPadding(4, 4).setVisible(false)
-    const prop = this.add.image(24, -46, 'prop-coffee-mug')
-      .setDisplaySize(28, 28).setVisible(false)
+    const speechPanel = this.add.image(0, 0, 'speech-bubble', 'panel')
+      .setOrigin(0.5, 1).setDisplaySize(SPEECH_BUBBLE_WIDTH, SPEECH_BUBBLE_HEIGHT).setVisible(false)
+    const bubble = this.addOfficeText(0, 0, '', {
+      fontSize: '12px', color: '#26332f', align: 'center'
+    }).setOrigin(0.5, 0.5).setVisible(false)
     const saved = this.worldSave.actors.find((candidate) => candidate.profileId === actor.profileId)
     const initial = nearestOfficePosition(saved ?? WAYPOINTS.elevatorInside,
       [...this.collisionRects(), ...this.actorObstacles()]) ?? WAYPOINTS.elevatorExit
-    const container = this.add.container(initial.x, initial.y, [sprite, prop]).setDepth(initial.y)
-    const overlay = this.add.container(initial.x, initial.y, [label, bubble])
+    const container = this.add.container(initial.x, initial.y, [sprite]).setDepth(initial.y)
+    const overlay = this.add.container(initial.x, initial.y, [label, speechPanel, bubble])
     const view: ActorView = {
-      container, sprite, seatedForeground, overlay, label, bubble, prop, routeKey: '', stateMachine: new ActorStateMachine(actor.presence),
+      container, sprite, seatedForeground, overlay, label, bubble, speechPanel, routeKey: '', stateMachine: new ActorStateMachine(actor.presence),
       gait: new CharacterGait(`actor-${animKey}`),
       route: [], routeIndex: 0, actor, requestedActor: actor, actorIndex: 0, idleActivity: new IdleActivity(),
       goal: null, seatedGoal: false, chairId: null, settled: false, blocked: false, stalledMs: 0, blockedOccupancy: null, retryAt: 0
@@ -2010,9 +2015,12 @@ export class OfficeScene extends Phaser.Scene {
     view.chairId = destination.seated ? destination.chairId ?? [...this.furniture.values()].find(({ frame, image }) =>
       [12, 13, 14].includes(frame) && Math.hypot(image.x - destination.point.x, image.y - destination.point.y) < 0.5)?.id ?? null : null
     const labels: Partial<Record<OfficeGameActor['presence'], string>> = {
-      working: '업무 중', pantry: '휴식', meeting: '회의', requestingHelp: '도움 필요!', error: '오류!'
+      working: '업무 중', meeting: '회의', requestingHelp: '도움 필요!', error: '오류!'
     }
-    view.bubble.setText(labels[actor.presence] ?? '').setVisible(Boolean(labels[actor.presence]))
+    const message = actor.presence === 'pantry'
+      ? actionForPresence('pantry', actorIndex) === 'drinking' ? '커피 마시러 가는 중' : '간식 먹으러 가는 중'
+      : labels[actor.presence] ?? ''
+    this.setActorSpeech(view, message)
     view.sprite.setTint(actor.presence === 'error' ? 0xff7777 : actor.presence === 'requestingHelp' ? 0xffd36a : 0xffffff)
     this.restoreActorStandingPose(view)
 
@@ -2065,9 +2073,11 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private stopActorAction(view: ActorView): void {
-    view.actionTween?.stop()
-    view.actionTween = undefined
-    view.prop.setVisible(false).setAngle(0)
+    if (view.pantryAction) {
+      view.pantryAction = undefined
+      this.restoreActorStandingPose(view)
+      this.setActorSpeech(view, '')
+    }
     view.sprite.stop()
     view.gait.stop()
     view.stateMachine.cancelAction()
@@ -2091,7 +2101,7 @@ export class OfficeScene extends Phaser.Scene {
     view.blockedOccupancy = dynamic ? this.occupancyKey(view) : null
     view.retryAt = this.simulationTimeMs + 1000
     this.stopActorWalking(view)
-    view.bubble.setText('통로 대기').setVisible(true)
+    this.setActorSpeech(view, '통로 대기')
     if (view.idleActivity.visitingPantry) view.idleActivity.cancelVisit()
     this.updateActorDepth(view)
   }
@@ -2207,25 +2217,49 @@ export class OfficeScene extends Phaser.Scene {
     this.updateActorOverlayPosition(view)
 
     if (action !== 'eating' && action !== 'drinking') return
-    view.actionTween = this.playPantryAction(view.prop, action, { x: 0, y: 0 }, () => {
-      view.actionTween = undefined
-      view.prop.setVisible(false)
+    if (!this.animationAtlasFor(actor)) {
       view.stateMachine.completeAction()
-      if (this.actors.get(actor.profileId) === view) this.updateActor(view, this.effectiveActor(view), view.actorIndex)
-    })
+      this.setActorSpeech(view, '')
+      return
+    }
+    view.pantryAction = { action, elapsedMs: 0, pose: 0 }
+    this.applyActorPantryPose(view)
+    this.setActorSpeech(view, action === 'drinking' ? '커피 마시는 중' : '간식 먹는 중')
   }
 
-  private playPantryAction(prop: Phaser.GameObjects.Image, action: 'eating' | 'drinking',
-    origin: WorldPoint, onComplete: () => void): Phaser.Tweens.Tween {
-    const drinking = action === 'drinking'
-    prop.setTexture(drinking ? 'prop-coffee-mug' : 'prop-chocolate-cookie')
-      .setDisplaySize(drinking ? 28 : 26, drinking ? 28 : 26)
-      .setPosition(origin.x + 24, origin.y - 46).setAngle(0).setVisible(true)
-    return this.tweens.add({
-      targets: prop, x: origin.x + 8, y: origin.y - 78, angle: drinking ? -12 : -8,
-      duration: 420, hold: 600, delay: 450, repeatDelay: 600, yoyo: true, repeat: 2,
-      ease: 'Stepped', easeParams: [5], onComplete
-    })
+  private applyActorPantryPose(view: ActorView): void {
+    const state = view.pantryAction
+    if (!state) return
+    const id = this.actorAnimationKey(view.actor)
+    view.sprite.stop().setTexture(`staff-pantry-${id}-frames`, `actor-${id}-${state.action}-${state.pose}`)
+      .setCrop().setFlipX(false).setVisible(true).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
+      .setPosition(0, ACTOR_SPRITE_Y_OFFSET)
+    view.seatedForeground.setVisible(false)
+  }
+
+  private updateActorPantryActions(deltaMs: number): void {
+    for (const view of this.actors.values()) {
+      const state = view.pantryAction
+      if (!state) continue
+      state.elapsedMs += deltaMs
+      const pose = pantryPoseAt(state.action, state.elapsedMs)
+      if (pose === null) {
+        view.pantryAction = undefined
+        view.stateMachine.completeAction()
+        this.restoreActorStandingPose(view)
+        this.setActorSpeech(view, '')
+        this.updateActor(view, this.effectiveActor(view), view.actorIndex)
+      } else if (pose !== state.pose) {
+        state.pose = pose
+        this.applyActorPantryPose(view)
+      }
+    }
+  }
+
+  private setActorSpeech(view: ActorView, text: string): void {
+    view.bubble.setText(text).setVisible(Boolean(text))
+    view.speechPanel.setVisible(Boolean(text))
+    this.updateActorOverlayPosition(view)
   }
 
   private updateActorDepth(view: ActorView): void {
@@ -2246,9 +2280,14 @@ export class OfficeScene extends Phaser.Scene {
     view.overlay.setPosition(view.container.x, view.container.y)
     const above = view.container.y + view.sprite.y - view.sprite.displayHeight * view.sprite.originY - CEO_LABEL_GAP
     view.label.setPosition(view.sprite.x, above - view.container.y)
-    const bubbleTop = above - view.label.displayHeight - 4 - view.bubble.displayHeight
+    const aboveBottom = above - view.label.displayHeight - 4
+    const below = aboveBottom - SPEECH_BUBBLE_HEIGHT < 8
     const feet = view.container.y + view.sprite.y + view.sprite.displayHeight * (1 - view.sprite.originY)
-    view.bubble.setPosition(view.sprite.x, (bubbleTop >= 8 ? bubbleTop : feet + 8) - view.container.y)
+    const bottom = (below ? feet + 8 + SPEECH_BUBBLE_HEIGHT : aboveBottom) - view.container.y
+    const x = Phaser.Math.Clamp(view.container.x + view.sprite.x, SPEECH_BUBBLE_WIDTH / 2 + 8,
+      OFFICE_WORLD_WIDTH - SPEECH_BUBBLE_WIDTH / 2 - 8) - view.container.x
+    view.speechPanel.setPosition(x, bottom).setFlipY(below)
+    view.bubble.setPosition(x, bottom - SPEECH_BUBBLE_HEIGHT * (below ? 0.38 : 0.62))
   }
 
   private persistActor(actor: OfficeGameActor, view: ActorView): void {

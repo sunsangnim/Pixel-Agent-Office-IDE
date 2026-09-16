@@ -20,6 +20,7 @@ buildSync({
       "export * from './src/renderer/src/game/actorStateMachine'",
       "export * from './src/renderer/src/game/worldPersistence'",
       "export * from './src/renderer/src/game/characterGait'",
+      "export * from './src/renderer/src/game/staffWalkSheets'",
       "export * from './src/renderer/src/lib/officePresence'"
     ].join('\n'), resolveDir: process.cwd(), loader: 'ts'
   },
@@ -33,7 +34,7 @@ const {
   findOfficePath, hasOfficeLineOfSight, isOfficePositionWalkable, routeFor, WAYPOINTS,
   DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS,
   OFFICE_REPRESENTATIVE_SAVE_KEY, parseRepresentativePosition, measureFurnitureBounds,
-  measureSeatedSheet, measureCharacterSheet, measurePantrySheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS
+  STAFF_PANTRY_SHEETS, measureWalkSheet, measureSeatedSheet, measureCharacterSheet, measurePantrySheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS
 } = require(outputFile)
 const seatedRenderer = require('./fixtures/seated-renderer.cjs').createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seatedFrameAnchor })
 const installSeatedRenderer = seatedRenderer.install
@@ -372,54 +373,111 @@ for (const member of crowd.actors.values()) {
 }
 console.log('PASS four-person arrivals, occasional pantry visits/returns, and an explicit meeting')
 
-for (const [index, texture, file] of [
-  [0, 'prop-chocolate-cookie', 'chocolate-cookie-v1.png'],
-  [1, 'prop-coffee-mug', 'coffee-mug-v1.png']
-]) {
-  const asset = PNG.sync.read(fs.readFileSync(path.join(process.cwd(), 'src/renderer/src/assets/pixel-office/props', file)))
-  let visiblePixels = 0
-  let transparentPixels = 0
-  for (let offset = 3; offset < asset.data.length; offset += 4) {
-    if (asset.data[offset] > 200) visiblePixels++
-    if (asset.data[offset] === 0) transparentPixels++
+
+assert.equal(STAFF_PANTRY_SHEETS.length, 15)
+for (const { id, file } of STAFF_PANTRY_SHEETS) {
+  const directory = path.join(process.cwd(), 'src/renderer/src/assets/pixel-office/characters')
+  const png = PNG.sync.read(fs.readFileSync(path.join(directory, 'pantry-v1', file)))
+  const frames = measurePantrySheet(png.data, png.width, png.height)
+  const walk = PNG.sync.read(fs.readFileSync(path.join(directory, 'walk-v6', 'staff-' + id + '-walk-v6.png')))
+  const idle = measureWalkSheet(walk.data, walk.width, walk.height)[0]
+  assert.equal(frames.length, 12, id + ' has both six-pose actions')
+  assert.equal(png.data[3], 0, id + ' has a transparent background')
+  const hashes = new Set()
+  for (const { source, destination, region } of frames) {
+    assert.ok(source.x > region.x && source.y > region.y, id + ' has top/left gutters')
+    assert.ok(source.x + source.width < region.x + region.width && source.y + source.height < region.y + region.height,
+      id + ' keeps shoes and adjacent rows inside each frame')
+    assert.equal(destination.y + destination.height, 354, id + ' has stable feet')
+    assert.ok(Math.abs(destination.height - idle.destination.height) < 36, id + ' stays close to walking body height')
+    const hash = require('node:crypto').createHash('sha256')
+    for (let y = source.y; y < source.y + source.height; y++) {
+      hash.update(png.data.subarray((y * png.width + source.x) * 4, (y * png.width + source.x + source.width) * 4))
+    }
+    hashes.add(hash.digest('hex'))
   }
-  assert.ok(visiblePixels > asset.width * asset.height / 4, 'the handheld asset contains visible artwork')
-  assert.ok(transparentPixels > asset.width * asset.height / 4, 'the handheld asset has a transparent background')
-  const pantry = createScene()
-  const resting = actor('pantry-prop', index, 'pantry')
-  const roster = [...Array.from({ length: index }, (_, i) => actor(`absent-${i}`, i, 'offDuty')), resting]
-  pantry.worldSave.actors = [{ profileId: resting.profileId, x: 224, y: 288 }]
-  snapshot(pantry, roster)
-  const view = pantry.actors.get(resting.profileId)
-  assert.equal(view.prop.visible, false, 'food is hidden while walking to the pantry')
-  for (let step = 0; step < 200 && !view.actionTween; step++) advance(pantry, 0.05)
-  assert.equal(view.settled, true)
-  assert.equal(view.stateMachine.current.action, index ? 'drinking' : 'eating')
-  assert.equal(view.prop.texture.key, texture)
-  assert.equal(view.prop.visible, true)
-  assert.equal(view.sprite.flipX, false, 'handheld props align with the front-facing idle pose')
-  assert.match(view.sprite.frame, /-idle-0$/)
-  const tween = view.actionTween
-  assert.equal(tween.config.targets, view.prop, 'only the handheld prop moves during a sip or bite')
-  assert.ok(tween.config.y < view.prop.y, 'the prop moves from the hand up to the mouth')
-  pantry.setLayoutEditing(true)
-  assert.equal(tween.paused, true, 'editing pauses the sip/bite')
-  pantry.setLayoutEditing(false)
-  assert.equal(view.actionTween, tween, 'finishing editing resumes the existing action')
-  assert.equal(tween.paused, false)
-  advance(pantry, 8)
-  assert.equal(view.prop.visible, false, 'the completed snack or drink does not float beside the character')
-  assert.equal(view.stateMachine.current.actionLocked, false)
-  pantry.startActionAnimation(view, resting)
-  const interrupted = view.actionTween
-  snapshot(pantry, [...roster.slice(0, index), { ...resting, presence: 'working' }])
-  assert.equal(interrupted.stopped, true, 'work interrupts the pantry action immediately')
-  assert.equal(view.prop.visible, false)
-  assert.equal(view.prop.angle, 0, 'a stopped drink cannot leave the next prop tilted')
-  snapshot(pantry, [])
-  assert.equal(view.container.destroyed, true, 'off-duty cleanup removes the container holding the prop')
+  assert.equal(hashes.size, 12, id + ' has twelve distinct poses')
+  const heights = frames.map(frame => frame.destination.height)
+  assert.ok(Math.max(...heights) - Math.min(...heights) <= 16, id + ' does not pulse during consumption')
 }
-console.log('PASS generated pantry props, arrival, eating/drinking, editor pause, completion, and work interruption')
+console.log('PASS all fifteen employee pantry sheets: distinct poses, transparent gutters, planted feet and body scale')
+
+for (let team = 0; team < 3; team++) for (let variant = 0; variant < 5; variant++) {
+  for (const [index, action, word] of [[0, 'eating', '간식'], [1, 'drinking', '커피']]) {
+    const id = team + '-' + variant
+    const pantry = createScene()
+    // Claude's lead uses skin 0-4. Its navy skin remains available on slot 5.
+    const slot = team === 0 && variant === 0 ? 5 : variant
+    const resting = actor('pantry-' + id, team, 'pantry', slot)
+    resting.rosterIndex = 19 // Deliberately unrelated: select skin from team/slot.
+    const prefix = Array.from({ length: index }, (_, i) => actor('absent-' + i, i, 'offDuty'))
+    const roster = [...prefix, resting]
+    pantry.worldSave.actors = [{ profileId: resting.profileId, x: 224, y: 288 }]
+    snapshot(pantry, roster)
+    const view = pantry.actors.get(resting.profileId)
+    assert.equal(view.pantryAction, undefined, 'walk before consuming')
+    assert.equal(view.bubble.text, word + (index ? ' 마시러 가는 중' : ' 먹으러 가는 중'))
+    assert.equal(view.speechPanel.visible, true)
+    for (let step = 0; step < 200 && !view.pantryAction; step++) advance(pantry, 0.05)
+    assert.equal(view.settled, true, id + ' reaches the pantry')
+    assert.equal(view.stateMachine.current.action, action)
+    assert.equal(view.sprite.texture.key, 'staff-pantry-' + id + '-frames')
+    assert.equal(view.sprite.frame, 'actor-' + id + '-' + action + '-0')
+    assert.equal(view.sprite.flipX, false)
+    assert.equal(view.bubble.text, word + (index ? ' 마시는 중' : ' 먹는 중'))
+    const running = view.pantryAction
+    const seen = new Set([running.pose])
+    advance(pantry, 0.9, () => seen.add(view.pantryAction.pose))
+    assert.equal(view.pantryAction, running, 'polling preserves the action object')
+    const frozen = { ...running }
+    pantry.setLayoutEditing(true)
+    advance(pantry, 3)
+    assert.deepEqual(view.pantryAction, frozen, 'editor freezes simulation-time playback')
+    pantry.setLayoutEditing(false)
+    assert.equal(view.pantryAction, running, 'editor resumes the same action')
+    const position = { x: view.container.x, y: view.container.y }
+    advance(pantry, 6, () => {
+      if (view.pantryAction) seen.add(view.pantryAction.pose)
+      assert.equal(view.container.x, position.x)
+      assert.equal(view.container.y, position.y)
+    })
+    assert.deepEqual([...seen].sort(), [0, 1, 2, 3, 4, 5])
+    assert.equal(view.pantryAction, undefined)
+    assert.equal(view.sprite.texture.key, 'staff-walk-' + id + '-frames')
+    assert.equal(view.sprite.frame, 'actor-' + id + '-idle-0')
+    assert.equal(view.stateMachine.current.actionLocked, false)
+    assert.equal(view.bubble.visible, false, 'no completion remark')
+    assert.equal(view.speechPanel.visible, false)
+    snapshot(pantry, roster)
+    assert.equal(view.pantryAction, undefined, 'unchanged presence does not restart a completed action')
+    pantry.startActionAnimation(view, resting)
+    snapshot(pantry, [...prefix, { ...resting, presence: 'working' }])
+    assert.equal(view.pantryAction, undefined, 'work interrupts immediately')
+    assert.equal(view.sprite.texture.key, 'staff-walk-' + id + '-frames')
+    assert.equal(view.bubble.text, '업무 중')
+    snapshot(pantry, [])
+    assert.equal(view.container.destroyed, true)
+    assert.equal(view.overlay.destroyed, true)
+  }
+}
+console.log('PASS all thirty employee skin/action combinations, approach/active speech, completion, pause/resume and work interruption')
+
+for (const presence of ['meeting', 'error', 'requestingHelp', 'offDuty']) {
+  const scene = createScene()
+  const resting = actor('interrupt', 0, 'pantry')
+  scene.worldSave.actors = [{ profileId: resting.profileId, x: 220, y: 175 }]
+  snapshot(scene, [resting])
+  const view = scene.actors.get(resting.profileId)
+  assert.ok(view.pantryAction)
+  assert.equal(view.sprite.texture.key, 'staff-pantry-0-4-frames', 'Claude lead retains her existing skin')
+  advance(scene, 0.9)
+  snapshot(scene, [{ ...resting, presence }])
+  assert.equal(view.pantryAction, undefined, presence + ' interrupts the action')
+  advance(scene, 1)
+  assert.notEqual(view.sprite.texture.key, 'staff-pantry-0-4-frames', 'no delayed phase overwrites the next state')
+  if (presence === 'offDuty') assert.equal(view.overlay.destroyed, true)
+}
+console.log('PASS meeting/help/error/off-duty priority and Claude lead identity during breaks')
 
 const pantryPixels = PNG.sync.read(fs.readFileSync(path.join(process.cwd(),
   'src/renderer/src/assets/pixel-office/characters/ceo-pantry-actions-v1.png')))
@@ -768,14 +826,14 @@ for (const y of [110, 500]) {
   const employee = stable.actors.get('test')
   employee.container.setPosition(48, y)
   stable.restoreActorStandingPose(employee)
-  employee.bubble.setText('휴식').setVisible(true)
+  stable.setActorSpeech(employee, '커피 마시는 중')
   stable.updateActorOverlayPosition(employee)
   const head = employee.container.y + employee.sprite.y - employee.sprite.displayHeight * employee.sprite.originY
   assert.equal(employee.label.x, employee.sprite.x, 'employee names are also centered above the head')
   assert.equal(employee.overlay.y + employee.label.y, head - 6)
-  const bubbleTop = employee.overlay.y + employee.bubble.y
+  const bubbleTop = employee.overlay.y + employee.speechPanel.y - employee.speechPanel.displayHeight
   if (y === 110) assert.ok(bubbleTop >= employee.container.y, 'employee speech moves below the character at the north edge')
-  else assert.ok(bubbleTop + employee.bubble.displayHeight <= employee.overlay.y + employee.label.y - employee.label.displayHeight)
+  else assert.ok(bubbleTop + employee.speechPanel.displayHeight <= employee.overlay.y + employee.label.y - employee.label.displayHeight)
 }
 
 for (const frame of [0, 2]) for (let pose = 0; pose < 6; pose++) {
