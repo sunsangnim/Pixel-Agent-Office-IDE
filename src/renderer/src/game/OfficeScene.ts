@@ -5,6 +5,8 @@ import row3 from '../assets/pixel-office/characters/corporate-roster-row-3-v1.pn
 import row4 from '../assets/pixel-office/characters/corporate-roster-row-4-v1.png'
 import ceoAnimationSheet from '../assets/pixel-office/characters/ceo-walk-cycle-v3.png'
 import ceoSeatedSheet from '../assets/pixel-office/characters/ceo-seated-v1.png'
+import ceoPantrySheet from '../assets/pixel-office/characters/ceo-pantry-actions-v1.png'
+import speechBubbleAsset from '../assets/pixel-office/ui/speech-bubble-v1.png'
 import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-v2.png'
 import refrigeratorAsset from '../assets/pixel-office/furniture/refrigerator-v2.png'
 import pantryCabinetAsset from '../assets/pixel-office/furniture/pantry-cabinet-v1.png'
@@ -67,7 +69,7 @@ import { CharacterGait, type CharacterPose } from './characterGait'
 import { STAFF_WALK_SHEETS, WALK_ROW_NAMES, STAFF_SEATED_SHEETS, SEATED_ROW_NAMES } from './staffWalkSheets'
 import {
   CHARACTER_FRAME_HEIGHT, CHARACTER_FRAME_WIDTH, CHARACTER_SHEET_LAYOUTS,
-  measureCharacterSheet, measureWalkSheet, measureSeatedSheet, type CharacterSheetKey
+  measureCharacterSheet, measureWalkSheet, measureSeatedSheet, measurePantrySheet, type CharacterSheetKey
 } from './characterFrames'
 import {
   OFFICE_REPRESENTATIVE_SAVE_KEY, OFFICE_WORLD_SAVE_KEY, parseOfficeWorldSave,
@@ -190,6 +192,12 @@ const OFFICE_FONT_FAMILY = '"Malgun Gothic", "맑은 고딕", "Noto Sans KR", "A
 // Normalized frames center the character art on the sprite and nameplate.
 const CEO_SPRITE_ART_X_OFFSET = 0
 const CEO_LABEL_GAP = 6
+const PANTRY_POSE_DURATIONS = {
+  drinking: [550, 240, 850, 600, 950, 1100],
+  eating: [550, 240, 650, 750, 750, 1100]
+}
+const SPEECH_BUBBLE_WIDTH = 176
+const SPEECH_BUBBLE_HEIGHT = 48
 const ACTOR_COLLISION_HALF_WIDTH = ACTOR_NAV_HALF_WIDTH
 const ACTOR_COLLISION_HALF_HEIGHT = ACTOR_NAV_HALF_HEIGHT
 // Same size as the CEO sprite (createRepresentativeActor) so every
@@ -262,8 +270,10 @@ export class OfficeScene extends Phaser.Scene {
   private representativeChairTarget: string | null = null
   private representativeSeat: { chairId: string; approach: WorldPoint; center: WorldPoint } | null = null
   private representativePantryTarget: string | null = null
-  private representativeProp?: Phaser.GameObjects.Image
-  private representativeActionTween?: Phaser.Tweens.Tween
+  private representativePantryAction?: { action: 'drinking' | 'eating'; elapsedMs: number; pose: number }
+  private representativeSpeechBubble?: Phaser.GameObjects.Image
+  private representativeSpeech?: Phaser.GameObjects.Text
+  private representativeSpeechUntil: number | null = null
   private pantryHint?: Phaser.GameObjects.Text
   // Persisted (not just in-memory) so whichever piece was placed/edited most
   // recently keeps rendering on top of anything it overlaps even after a
@@ -327,6 +337,7 @@ export class OfficeScene extends Phaser.Scene {
     this.setEditorUiVisible(editing)
     if (editing) {
       this.pantryHint?.setVisible(false)
+      this.hideRepresentativeSpeech()
       if (this.representativePantryTarget) {
         this.stopRepresentativePantryAction()
         this.stopRepresentativeMovement()
@@ -361,6 +372,8 @@ export class OfficeScene extends Phaser.Scene {
     ;[row1, row2, row3, row4].forEach((url, index) => this.load.image(`roster-row-${index}`, url))
     this.load.image('ceo-animation-sheet', ceoAnimationSheet)
     this.load.image('ceo-seated-sheet', ceoSeatedSheet)
+    this.load.image('ceo-pantry-sheet', ceoPantrySheet)
+    this.load.image('speech-bubble', speechBubbleAsset)
     this.load.image('prop-coffee-mug', coffeeMugAsset)
     this.load.image('prop-chocolate-cookie', chocolateCookieAsset)
     for (const { id, file } of STAFF_WALK_SHEETS) {
@@ -441,6 +454,7 @@ export class OfficeScene extends Phaser.Scene {
       this.updateIdleActivities()
       this.updateActorMovement(elapsed / 1000)
       this.updateRepresentativeMovement(elapsed / 1000)
+      this.updateRepresentativePantryAction(elapsed)
     }
     this.updateRepresentativeLabelPosition()
     this.actors.forEach((view) => this.updateActorOverlayPosition(view))
@@ -1303,10 +1317,14 @@ export class OfficeScene extends Phaser.Scene {
       .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setOrigin(0.5, 1)
     this.representativeSeatedForeground = this.add.sprite(0, 0, 'ceo-seated-sheet-frames', 'ceo-sit-front')
       .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setOrigin(0.5, 1).setVisible(false)
-    this.representativeProp = this.add.image(0, 0, 'prop-coffee-mug').setVisible(false)
     this.representativeLabel = this.addOfficeText(0, 0, '김태호 대표', {
       fontSize: '13px', color: '#111111', align: 'center'
     }).setOrigin(0.5, 1).setPadding(4, 4).setDepth(700)
+    this.representativeSpeechBubble = this.add.image(0, 0, 'speech-bubble', 'panel')
+      .setOrigin(0.5, 1).setDisplaySize(SPEECH_BUBBLE_WIDTH, SPEECH_BUBBLE_HEIGHT).setVisible(false)
+    this.representativeSpeech = this.addOfficeText(0, 0, '', {
+      fontSize: '12px', color: '#23443e', align: 'center'
+    }).setOrigin(0.5, 0.5).setVisible(false)
     this.representativeDestination = this.add.circle(0, 0, 7, 0x74c9f5, 0.2)
       .setStrokeStyle(2, 0x74c9f5).setDepth(2).setVisible(false)
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
@@ -1369,7 +1387,7 @@ export class OfficeScene extends Phaser.Scene {
     this.representativeChairTarget = null
     this.representativePantryTarget = furnitureId
     this.representativeStalledMs = 0
-    this.representativeLabel?.setText(`김태호 대표\n${furniture.frame === 0 ? '커피 마시러 가는 중' : '간식 먹으러 가는 중'}`)
+    this.showRepresentativeSpeech(furniture.frame === 0 ? '커피 마시러 가는 중' : '간식 먹으러 가는 중')
     this.pantryHint?.setVisible(false)
     this.planRepresentativeRoute()
     return true
@@ -1426,27 +1444,63 @@ export class OfficeScene extends Phaser.Scene {
 
   private startRepresentativePantryAction(): void {
     const sprite = this.representativeSprite
-    const prop = this.representativeProp
     const furniture = this.representativePantryTarget && this.furniture.get(this.representativePantryTarget)
-    if (!sprite || !prop || !furniture || !this.representativeCanUsePantry(furniture, sprite)) {
+    if (!sprite || !furniture || !this.representativeCanUsePantry(furniture, sprite)) {
       this.stopRepresentativePantryAction()
       return
     }
-    this.applyRepresentativePose({ frame: 'ceo-idle-0', flipX: false })
     const action = furniture.frame === 0 ? 'drinking' : 'eating'
-    this.representativeLabel?.setText(`김태호 대표\n${action === 'drinking' ? '커피 마시는 중' : '간식 먹는 중'}`)
-    // The representative's larger head places the mouth and hands lower
-    // within the same sprite bounds than the employee artwork.
-    this.representativeActionTween = this.playPantryAction(prop, action, sprite, () => this.stopRepresentativePantryAction(), 14)
-    prop.setDepth(sprite.y + 0.5)
+    this.representativePantryAction = { action, elapsedMs: 0, pose: 0 }
+    this.showRepresentativeSpeech(action === 'drinking' ? '커피 마시는 중' : '간식 먹는 중')
+    this.applyRepresentativePantryPose()
   }
 
   private stopRepresentativePantryAction(): void {
-    this.representativeActionTween?.stop()
-    this.representativeActionTween = undefined
+    if (this.representativePantryAction) this.applyRepresentativePose({ frame: 'ceo-idle-0', flipX: false })
+    this.representativePantryAction = undefined
     this.representativePantryTarget = null
-    this.representativeProp?.setVisible(false).setAngle(0)
-    this.representativeLabel?.setText('김태호 대표')
+    this.hideRepresentativeSpeech()
+  }
+
+  private applyRepresentativePantryPose(): void {
+    const state = this.representativePantryAction
+    if (!state) return
+    this.representativeSprite?.stop().setTexture('ceo-pantry-sheet-frames', `ceo-${state.action}-${state.pose}`)
+      .setCrop().setFlipX(false).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
+    this.representativeSeatedForeground?.setVisible(false)
+  }
+
+  private updateRepresentativePantryAction(deltaMs: number): void {
+    if (this.representativeSpeechUntil !== null && this.simulationTimeMs >= this.representativeSpeechUntil) {
+      this.hideRepresentativeSpeech()
+    }
+    const state = this.representativePantryAction
+    if (!state) return
+    state.elapsedMs += deltaMs
+    const durations = PANTRY_POSE_DURATIONS[state.action]
+    let time = state.elapsedMs
+    let pose = 0
+    while (pose < durations.length && time >= durations[pose]) time -= durations[pose++]
+    if (pose === durations.length) {
+      this.stopRepresentativePantryAction()
+      this.showRepresentativeSpeech(state.action === 'drinking' ? '후~ 커피 좋다!' : '잘 먹었다!', 1600)
+    } else if (pose !== state.pose) {
+      state.pose = pose
+      this.applyRepresentativePantryPose()
+    }
+  }
+
+  private showRepresentativeSpeech(text: string, durationMs?: number): void {
+    this.representativeSpeech?.setText(text).setVisible(true)
+    this.representativeSpeechBubble?.setVisible(true)
+    this.representativeSpeechUntil = durationMs === undefined ? null : this.simulationTimeMs + durationMs
+    this.updateRepresentativeLabelPosition()
+  }
+
+  private hideRepresentativeSpeech(): void {
+    this.representativeSpeech?.setVisible(false)
+    this.representativeSpeechBubble?.setVisible(false)
+    this.representativeSpeechUntil = null
   }
 
   private representativeChairAvailable(chair: FurnitureView, checkReservations = false): boolean {
@@ -1563,7 +1617,7 @@ export class OfficeScene extends Phaser.Scene {
 
   private updateRepresentativeMovement(deltaSeconds: number): void {
     const sprite = this.representativeSprite
-    if (sprite && this.representativeActionTween && this.representativePantryTarget) {
+    if (sprite && this.representativePantryAction && this.representativePantryTarget) {
       const furniture = this.furniture.get(this.representativePantryTarget)
       if (!furniture || !this.representativeCanUsePantry(furniture, sprite)) this.stopRepresentativePantryAction()
     }
@@ -1652,6 +1706,8 @@ export class OfficeScene extends Phaser.Scene {
       headDepth = sprite.depth
     }
     this.representativeLabel?.setDepth(headDepth + OFFICE_WORLD_HEIGHT)
+    this.representativeSpeechBubble?.setDepth(headDepth + OFFICE_WORLD_HEIGHT + 1)
+    this.representativeSpeech?.setDepth(headDepth + OFFICE_WORLD_HEIGHT + 2)
   }
 
   private applySeatedComposition(chair: FurnitureView, sprite: Phaser.GameObjects.Sprite,
@@ -1703,6 +1759,26 @@ export class OfficeScene extends Phaser.Scene {
     const sprite = this.representativeSprite
     const label = this.representativeLabel
     const above = sprite.y - sprite.displayHeight * sprite.originY - CEO_LABEL_GAP
+    const bubble = this.representativeSpeechBubble
+    const speech = this.representativeSpeech
+    if (bubble?.visible && speech) {
+      const halfWidth = Math.max(label.displayWidth, SPEECH_BUBBLE_WIDTH) / 2
+      const stackHeight = label.displayHeight + 4 + SPEECH_BUBBLE_HEIGHT
+      let x = sprite.x + CEO_SPRITE_ART_X_OFFSET
+      let y = above
+      // At the north edge, move the entire bubble/name stack beside the head.
+      // The bubble stays above the name, with both fully inside the world.
+      if (above < stackHeight + 8) {
+        const side = sprite.x > OFFICE_WORLD_WIDTH / 2 ? -1 : 1
+        x = sprite.x + side * (sprite.displayWidth / 2 + halfWidth + CEO_LABEL_GAP)
+        y = stackHeight + 8
+      }
+      x = Phaser.Math.Clamp(x, halfWidth + 8, OFFICE_WORLD_WIDTH - halfWidth - 8)
+      label.setPosition(x, y)
+      bubble.setPosition(x, y - label.displayHeight - 4)
+      speech.setPosition(x, bubble.y - SPEECH_BUBBLE_HEIGHT * 0.62)
+      return
+    }
     // North-facing table seats can put the head near the canvas edge. Keep
     // the name beside the head there instead of clipping it or covering hair.
     if (above < label.displayHeight + 8) {
@@ -1725,12 +1801,25 @@ export class OfficeScene extends Phaser.Scene {
     // The generated side views are left, then right in reading order.
     const seatedDirections = ['front', 'left', 'back', 'right']
     this.createCharacterFrames('ceo-seated-sheet', (column, row) => `ceo-sit-${seatedDirections[row * 2 + column]}`)
+    this.createCharacterFrames('ceo-pantry-sheet', (column, row) =>
+      `ceo-${row < 2 ? 'drinking' : 'eating'}-${(row % 2) * 3 + column}`, 'pantry')
+    const bubble = this.textures.get('speech-bubble')
+    const source = bubble.getSourceImage() as HTMLImageElement
+    const canvas = document.createElement('canvas')
+    canvas.width = source.width
+    canvas.height = source.height
+    const context = canvas.getContext('2d')!
+    context.drawImage(source, 0, 0)
+    const bounds = measureFurnitureBounds(context.getImageData(0, 0, source.width, source.height).data, source.width, source.height)
+    bubble.add('panel', 0, Math.floor(bounds.x * source.width), Math.floor(bounds.y * source.height),
+      Math.ceil(bounds.width * source.width), Math.ceil(bounds.height * source.height))
   }
 
   private createCharacterFrames(sourceKey: string, frameName: (column: number, row: number) => string,
-    kind: 'legacy' | 'walk' | 'seated' = 'legacy'): string {
+    kind: 'legacy' | 'walk' | 'seated' | 'pantry' = 'legacy'): string {
     const source = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement
-    const layout = kind === 'seated' ? { columns: 5, rows: SEATED_ROW_NAMES }
+    const layout = kind === 'pantry' ? { columns: 3, rows: [0, 1, 2, 3] }
+      : kind === 'seated' ? { columns: 5, rows: SEATED_ROW_NAMES }
       : kind === 'walk' ? { columns: 4, rows: WALK_ROW_NAMES } : CHARACTER_SHEET_LAYOUTS[sourceKey as CharacterSheetKey]
     const key = `${sourceKey}-frames`
     const texture = this.textures.createCanvas(
@@ -1745,7 +1834,8 @@ export class OfficeScene extends Phaser.Scene {
     const pixels = inputContext.getImageData(0, 0, source.width, source.height).data
     const context = texture.getContext()
     context.imageSmoothingEnabled = false
-    const frames = kind === 'seated' ? measureSeatedSheet(pixels, source.width, source.height)
+    const frames = kind === 'pantry' ? measurePantrySheet(pixels, source.width, source.height)
+      : kind === 'seated' ? measureSeatedSheet(pixels, source.width, source.height)
       : kind === 'walk' ? measureWalkSheet(pixels, source.width, source.height)
       : measureCharacterSheet(pixels, source.width, sourceKey as CharacterSheetKey)
     frames.forEach(({ row, column, source: crop, destination, exclusions }) => {
@@ -2152,13 +2242,13 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private playPantryAction(prop: Phaser.GameObjects.Image, action: 'eating' | 'drinking',
-    origin: WorldPoint, onComplete: () => void, poseOffsetY = 0): Phaser.Tweens.Tween {
+    origin: WorldPoint, onComplete: () => void): Phaser.Tweens.Tween {
     const drinking = action === 'drinking'
     prop.setTexture(drinking ? 'prop-coffee-mug' : 'prop-chocolate-cookie')
       .setDisplaySize(drinking ? 28 : 26, drinking ? 28 : 26)
-      .setPosition(origin.x + 24, origin.y - 46 + poseOffsetY).setAngle(0).setVisible(true)
+      .setPosition(origin.x + 24, origin.y - 46).setAngle(0).setVisible(true)
     return this.tweens.add({
-      targets: prop, x: origin.x + 8, y: origin.y - 78 + poseOffsetY, angle: drinking ? -12 : -8,
+      targets: prop, x: origin.x + 8, y: origin.y - 78, angle: drinking ? -12 : -8,
       duration: 420, hold: 600, delay: 450, repeatDelay: 600, yoyo: true, repeat: 2,
       ease: 'Stepped', easeParams: [5], onComplete
     })

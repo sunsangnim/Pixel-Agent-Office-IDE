@@ -33,7 +33,7 @@ const {
   findOfficePath, hasOfficeLineOfSight, isOfficePositionWalkable, routeFor, WAYPOINTS,
   DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS,
   OFFICE_REPRESENTATIVE_SAVE_KEY, parseRepresentativePosition, measureFurnitureBounds,
-  measureSeatedSheet, measureCharacterSheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS
+  measureSeatedSheet, measureCharacterSheet, measurePantrySheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS
 } = require(outputFile)
 const seatedRenderer = require('./fixtures/seated-renderer.cjs').createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seatedFrameAnchor })
 const installSeatedRenderer = seatedRenderer.install
@@ -62,7 +62,13 @@ function objectDouble(x = 0, y = 0, textureKey) {
     setDisplaySize(width, height) { this.displayWidth = width; this.displayHeight = height; return this },
     setSize(width, height) { return this.setDisplaySize(width, height) },
     setVisible(visible) { this.visible = visible; return this },
-    setText(text) { this.text = text; return this },
+    setText(text) {
+      this.text = text
+      const lines = text.split('\n')
+      this.displayWidth = Math.max(...lines.map(line => Array.from(line).reduce((width, c) => width + (c.charCodeAt(0) > 255 ? 12 : 7), 0)))
+      this.displayHeight = lines.length * 18
+      return this
+    },
     setFrame(frame) { this.frame = frame; return this },
     setTexture(key, frame) { this.textureKey = key; this.texture.key = key; this.frame = frame; return this },
     setCrop(x, y, width, height) { this.crop = x === undefined ? null : { x, y, width, height }; return this },
@@ -109,7 +115,8 @@ function createScene(saved = DEFAULT_LAYOUT_SEED) {
   const scene = new OfficeScene()
   scene.furnitureTextureBounds = furnitureTextureBounds
   installSeatedRenderer(scene)
-  scene.add = { sprite: objectDouble, image: objectDouble, circle: objectDouble, rectangle: objectDouble, text: objectDouble, container: objectDouble }
+  scene.add = { sprite: objectDouble, image: objectDouble, circle: objectDouble, rectangle: objectDouble,
+    text: (x, y, text) => objectDouble(x, y).setText(text), container: objectDouble }
   scene.input = { events: new Map(), setDraggable() {}, on(event, handler) { this.events.set(event, handler) } }
   scene.sys = { isActive: () => true }
   scene.reportDeskCounts = () => {}
@@ -413,6 +420,35 @@ for (const [index, texture, file] of [
 }
 console.log('PASS generated pantry props, arrival, eating/drinking, editor pause, completion, and work interruption')
 
+const pantryPixels = PNG.sync.read(fs.readFileSync(path.join(process.cwd(),
+  'src/renderer/src/assets/pixel-office/characters/ceo-pantry-actions-v1.png')))
+const pantryFrames = measurePantrySheet(pantryPixels.data, pantryPixels.width, pantryPixels.height)
+assert.equal(pantryFrames.length, 12)
+const poseHashes = new Set()
+for (const { source: crop, destination, region } of pantryFrames) {
+  assert.ok(crop.x > region.x && crop.y > region.y, 'each pose has a transparent gutter above and to the left')
+  assert.ok(crop.x + crop.width < region.x + region.width && crop.y + crop.height < region.y + region.height,
+    'neither shoes nor neighboring poses are cut into the frame')
+  assert.equal(destination.y + destination.height, 354, 'all twelve poses share the original padded ground line')
+  const hash = require('node:crypto').createHash('sha256')
+  for (let y = crop.y; y < crop.y + crop.height; y++) {
+    hash.update(pantryPixels.data.subarray((y * pantryPixels.width + crop.x) * 4, (y * pantryPixels.width + crop.x + crop.width) * 4))
+  }
+  poseHashes.add(hash.digest('hex'))
+}
+assert.equal(poseHashes.size, 12, 'each action phase contains distinct authored pixels')
+const pantryScales = pantryFrames.map(frame => frame.destination.height / frame.source.height)
+assert.ok(Math.max(...pantryScales) - Math.min(...pantryScales) < 0.007, 'poses use one scale without pulsing between phases')
+const pantryHeights = pantryFrames.map(frame => frame.destination.height)
+assert.ok(Math.max(...pantryHeights) - Math.min(...pantryHeights) <= 8, 'the planted body stays the same height')
+const bubblePixels = PNG.sync.read(fs.readFileSync(path.join(process.cwd(),
+  'src/renderer/src/assets/pixel-office/ui/speech-bubble-v1.png')))
+assert.equal(bubblePixels.data[3], 0, 'the speech sprite has a transparent background')
+const bubbleCenter = (Math.floor(bubblePixels.height * 0.4) * bubblePixels.width + Math.floor(bubblePixels.width / 2)) * 4
+assert.ok(bubblePixels.data[bubbleCenter + 3] > 240, 'the text area stays opaque over the scene')
+assert.ok(bubblePixels.data[bubbleCenter] > 200 && bubblePixels.data[bubbleCenter + 1] > 200, 'the text area is light ivory')
+console.log('PASS twelve distinct pantry poses, transparent gutters, stable scale/feet, and opaque speech interior')
+
 function representativeScene(position) {
   storage.delete(OFFICE_REPRESENTATIVE_SAVE_KEY)
   if (position) storage.set(OFFICE_REPRESENTATIVE_SAVE_KEY, JSON.stringify(position))
@@ -535,7 +571,7 @@ const chairClick = furnitureClick
 function awaitRepresentativeBreak(scene) {
   const sprite = scene.representativeSprite
   let previous = position(sprite)
-  for (let i = 0; i < 900 && !scene.representativeActionTween; i++) {
+  for (let i = 0; i < 900 && !scene.representativePantryAction; i++) {
     advance(scene, 0.05, () => {
       assert.ok(isOfficePositionWalkable(sprite, [...scene.collisionRects(), ...scene.actorObstacles(undefined, false)]),
         'every pantry approach step respects furniture, walls and employees')
@@ -544,7 +580,7 @@ function awaitRepresentativeBreak(scene) {
       previous = position(sprite)
     })
   }
-  assert.ok(scene.representativeActionTween, 'a reachable pantry click starts its action after arrival')
+  assert.ok(scene.representativePantryAction, 'a reachable pantry click starts its action after arrival')
 }
 
 for (const frame of [0, 1, 2]) {
@@ -558,25 +594,39 @@ for (const frame of [0, 1, 2]) {
   assert.equal(scene.pantryHint.visible, false)
   furnitureClick(scene, furniture.id)
   assert.deepEqual(position(sprite), initial)
-  assert.equal(scene.representativeProp.visible, false, 'walk before showing a drink or snack')
+  assert.equal(scene.representativePantryAction, undefined, 'walk before showing a drink or snack')
   assert.equal(scene.representativePantryTarget, furniture.id)
+  assert.equal(scene.representativeLabel.text, '김태호 대표', 'action text never alters the name')
+  assert.match(scene.representativeSpeech.text, frame === 0 ? /커피 마시러 가는 중/ : /간식 먹으러 가는 중/)
+  assert.equal(scene.representativeSpeechBubble.visible, true)
   awaitRepresentativeBreak(scene)
   assert.equal(scene.representativeGoal, null)
   assert.equal(scene.representativeDestination.visible, false)
-  assert.equal(scene.representativeProp.texture.key, frame === 0 ? 'prop-coffee-mug' : 'prop-chocolate-cookie')
-  assert.equal(scene.representativeProp.visible, true)
-  assert.ok(scene.representativeProp.depth > sprite.depth)
-  assert.match(scene.representativeLabel.text, frame === 0 ? /커피 마시는 중/ : /간식 먹는 중/)
-  const action = scene.representativeActionTween
+  assert.equal(sprite.texture.key, 'ceo-pantry-sheet-frames')
+  assert.match(sprite.frame, frame === 0 ? /^ceo-drinking-/ : /^ceo-eating-/)
+  assert.match(scene.representativeSpeech.text, frame === 0 ? /커피 마시는 중/ : /간식 먹는 중/)
+  const action = scene.representativePantryAction
   furnitureClick(scene, furniture.id)
-  assert.equal(scene.representativeActionTween, action, 'repeated clicks do not restart consumption')
+  assert.equal(scene.representativePantryAction, action, 'repeated clicks do not restart consumption')
   floorClick(scene, { x: 4, y: 4 })
-  assert.equal(scene.representativeActionTween, action, 'an invalid floor command preserves the current break')
-  advance(scene, 7)
-  assert.equal(scene.representativeActionTween, undefined)
-  assert.equal(scene.representativeProp.visible, false)
+  assert.equal(scene.representativePantryAction, action, 'an invalid floor command preserves the current break')
+  const frames = new Set([sprite.frame])
+  const feet = position(sprite)
+  advance(scene, 4.5, () => {
+    if (scene.representativePantryAction) frames.add(sprite.frame)
+    assert.deepEqual(position(sprite), feet, 'articulated poses never move the collision body')
+  })
+  assert.equal(frames.size, 6, 'all six distinct authored poses play, including both sips/bites and recovery')
+  assert.equal(scene.representativePantryAction, undefined)
+  assert.equal(sprite.texture.key, 'ceo-animation-sheet-frames')
+  assert.equal(sprite.frame, 'ceo-idle-0')
   assert.equal(scene.representativePantryTarget, null)
   assert.equal(scene.representativeLabel.text, '김태호 대표')
+  assert.equal(scene.representativeSpeechBubble.visible, true, 'brief completion reaction is visible')
+  assert.match(scene.representativeSpeech.text, frame === 0 ? /커피 좋다/ : /잘 먹었다/)
+  advance(scene, 2)
+  assert.equal(scene.representativeSpeechBubble.visible, false)
+  assert.equal(scene.representativeSpeech.visible, false)
 }
 console.log('PASS representative coffee machine, snack cabinet, refrigerator, approach, props, hints, repeat clicks, and completion')
 
@@ -589,29 +639,29 @@ for (const options of [{ button: 'right' }, ...['shiftKey', 'ctrlKey', 'metaKey'
 }
 furnitureClick(pantryControls, coffee.id)
 awaitRepresentativeBreak(pantryControls)
-const replacedCoffee = pantryControls.representativeActionTween
+const replacedCoffee = pantryControls.representativePantryAction
 furnitureClick(pantryControls, snack.id)
-assert.equal(replacedCoffee.stopped, true)
+assert.notEqual(pantryControls.representativePantryAction, replacedCoffee)
 assert.equal(pantryControls.representativePantryTarget, snack.id)
 awaitRepresentativeBreak(pantryControls)
-const interruptedSnack = pantryControls.representativeActionTween
 floorClick(pantryControls, { x: 160, y: 288 })
-assert.equal(interruptedSnack.stopped, true)
-assert.equal(pantryControls.representativeProp.visible, false)
+assert.equal(pantryControls.representativePantryAction, undefined)
+assert.equal(pantryControls.representativeSprite.texture.key, 'ceo-animation-sheet-frames')
+assert.equal(pantryControls.representativeSpeechBubble.visible, false)
 assert.equal(pantryControls.representativePantryTarget, null)
 advance(pantryControls, 3)
 furnitureClick(pantryControls, coffee.id)
 awaitRepresentativeBreak(pantryControls)
-const editedAction = pantryControls.representativeActionTween
 pantryControls.setLayoutEditing(true)
-assert.equal(editedAction.stopped, true)
-assert.equal(pantryControls.representativeProp.visible, false)
+assert.equal(pantryControls.representativePantryAction, undefined)
+assert.equal(pantryControls.representativeSpeechBubble.visible, false)
 furnitureClick(pantryControls, snack.id)
 assert.equal(pantryControls.representativePantryTarget, null, 'editing selects furniture without taking a break')
 assert.equal(pantryControls.selectedFurniture.id, snack.id)
 pantryControls.setLayoutEditing(false)
 advance(pantryControls, 7)
-assert.equal(pantryControls.representativeProp.visible, false, 'editing does not resume a stale pantry action')
+assert.equal(pantryControls.representativePantryAction, undefined, 'editing does not resume a stale pantry action')
+assert.equal(pantryControls.representativeSpeechBubble.visible, false, 'no delayed completion reaction survives interruption')
 floorClick(pantryControls, { x: 160, y: 288 })
 advance(pantryControls, 3)
 furnitureClick(pantryControls, coffee.id)
@@ -628,10 +678,9 @@ assert.ok(pantrySeat.representativeSeat)
 furnitureClick(pantrySeat, 'test-coffee')
 assert.equal(pantrySeat.representativeSeat, null, 'a pantry click safely stands up from a chair')
 awaitRepresentativeBreak(pantrySeat)
-const seatedAction = pantrySeat.representativeActionTween
 furnitureClick(pantrySeat, 'chair-0-0')
-assert.equal(seatedAction.stopped, true)
-assert.equal(pantrySeat.representativeProp.visible, false)
+assert.equal(pantrySeat.representativePantryAction, undefined)
+assert.equal(pantrySeat.representativeSpeechBubble.visible, false)
 advance(pantrySeat, 8)
 assert.equal(pantrySeat.representativeSeat?.chairId, 'chair-0-0')
 console.log('PASS representative seated departure to pantry and chair interruption of consumption')
@@ -645,7 +694,8 @@ awaitRepresentativeBreak(livePantry)
 assert.ok(livePantry.representativeSprite.y > 600, 'the route follows the relocated coffee machine')
 livePantry.furniture.delete(liveCoffee.id)
 advance(livePantry, 0.05)
-assert.equal(livePantry.representativeProp.visible, false, 'removing an active target cancels consumption')
+assert.equal(livePantry.representativePantryAction, undefined, 'removing an active target cancels consumption')
+assert.equal(livePantry.representativeSpeechBubble.visible, false)
 const liveSnack = [...livePantry.furniture.values()].find(item => item.frame === 2)
 furnitureClick(livePantry, liveSnack.id)
 livePantry.furniture.delete(liveSnack.id)
@@ -659,7 +709,7 @@ const originalCollisions = blockedPantry.collisionRects.bind(blockedPantry)
 blockedPantry.collisionRects = (...args) => [...originalCollisions(...args), { x: 0, y: 232, width: 960, height: 16 }]
 furnitureClick(blockedPantry, blockedCoffee.id)
 assert.equal(blockedPantry.representativePantryTarget, null)
-assert.equal(blockedPantry.representativeProp.visible, false)
+assert.equal(blockedPantry.representativePantryAction, undefined)
 assert.match(blockedPantry.pantryHint.text, /갈 수 없어요/)
 console.log('PASS representative live furniture destinations, removal during approach/action, and unreachable feedback')
 
@@ -675,6 +725,45 @@ awaitRepresentativeBreak(busyPantry)
 assert.ok(isOfficePositionWalkable(busyPantry.representativeSprite, busyPantry.actorObstacles()),
   'use another reachable spot when an employee occupies the closest service position')
 console.log('PASS representative pantry approach around an occupied service position')
+
+const speechLayout = representativeScene({ x: 480, y: 600 })
+for (const point of [{ x: 24, y: 144 }, { x: 936, y: 144 }, { x: 480, y: 144 },
+  { x: 16, y: 400 }, { x: 480, y: 600 }, { x: 944, y: 800 }]) {
+  speechLayout.representativeSprite.setPosition(point.x, point.y)
+  speechLayout.showRepresentativeSpeech('커피 마시러 가는 중')
+  speechLayout.updateRepresentativeDepth()
+  const bubble = speechLayout.representativeSpeechBubble
+  const text = speechLayout.representativeSpeech
+  const label = speechLayout.representativeLabel
+  assert.equal(label.text, '김태호 대표')
+  assert.ok(bubble.y <= label.y - label.displayHeight - 4, 'speech always stays above the name')
+  assert.ok(bubble.y - bubble.displayHeight >= 8, 'speech never clips above the world')
+  assert.ok(bubble.x - bubble.displayWidth / 2 >= 8 && bubble.x + bubble.displayWidth / 2 <= 952,
+    'the whole speech panel remains inside either horizontal edge')
+  assert.ok(text.x - text.displayWidth / 2 > bubble.x - bubble.displayWidth / 2 + 8 &&
+    text.x + text.displayWidth / 2 < bubble.x + bubble.displayWidth / 2 - 8, 'Korean text fits the bubble interior')
+  assert.ok(text.y > bubble.y - bubble.displayHeight + 8 && text.y < bubble.y - 12, 'text avoids outline and tail')
+  assert.ok(bubble.depth > label.depth && text.depth > bubble.depth, 'text renders above the opaque bubble')
+}
+speechLayout.showRepresentativeSpeech('잘 먹었다!', 1600)
+speechLayout.setLayoutEditing(true)
+assert.equal(speechLayout.representativeSpeechBubble.visible, false, 'editing hides even a completion-only bubble')
+console.log('PASS name above-head tracking, bubble above name, north/side bounds, text fit, depth, and completion cancellation')
+
+for (const frame of [0, 2]) for (let pose = 0; pose < 6; pose++) {
+  const scene = representativeScene({ x: frame === 0 ? 48 : 144, y: 144 })
+  const furniture = [...scene.furniture.values()].find(item => item.frame === frame)
+  furnitureClick(scene, furniture.id)
+  awaitRepresentativeBreak(scene)
+  while (scene.representativePantryAction.pose < pose) advance(scene, 0.05)
+  floorClick(scene, { x: 160, y: 288 })
+  assert.equal(scene.representativePantryAction, undefined, `pose ${pose} cancels immediately`)
+  advance(scene, 6, () => {
+    assert.notEqual(scene.representativeSprite.texture.key, 'ceo-pantry-sheet-frames', 'no stale phase can overwrite the walking sprite')
+    assert.equal(scene.representativeSpeechBubble.visible, false, 'no stale completion message after interruption')
+  })
+}
+console.log('PASS immediate interruption of every coffee and cookie pose without delayed sprites or speech')
 
 for (const [rotation, direction] of [[0, 'front'], [90, 'right'], [180, 'back'], [270, 'left']]) {
   const sitting = seatingScene(rotation, 12 + (rotation / 90) % 3)
