@@ -273,7 +273,6 @@ export class OfficeScene extends Phaser.Scene {
   private representativePantryAction?: { action: 'drinking' | 'eating'; elapsedMs: number; pose: number }
   private representativeSpeechBubble?: Phaser.GameObjects.Image
   private representativeSpeech?: Phaser.GameObjects.Text
-  private representativeSpeechUntil: number | null = null
   private pantryHint?: Phaser.GameObjects.Text
   // Persisted (not just in-memory) so whichever piece was placed/edited most
   // recently keeps rendering on top of anything it overlaps even after a
@@ -1471,9 +1470,6 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private updateRepresentativePantryAction(deltaMs: number): void {
-    if (this.representativeSpeechUntil !== null && this.simulationTimeMs >= this.representativeSpeechUntil) {
-      this.hideRepresentativeSpeech()
-    }
     const state = this.representativePantryAction
     if (!state) return
     state.elapsedMs += deltaMs
@@ -1483,24 +1479,21 @@ export class OfficeScene extends Phaser.Scene {
     while (pose < durations.length && time >= durations[pose]) time -= durations[pose++]
     if (pose === durations.length) {
       this.stopRepresentativePantryAction()
-      this.showRepresentativeSpeech(state.action === 'drinking' ? '후~ 커피 좋다!' : '잘 먹었다!', 1600)
     } else if (pose !== state.pose) {
       state.pose = pose
       this.applyRepresentativePantryPose()
     }
   }
 
-  private showRepresentativeSpeech(text: string, durationMs?: number): void {
+  private showRepresentativeSpeech(text: string): void {
     this.representativeSpeech?.setText(text).setVisible(true)
     this.representativeSpeechBubble?.setVisible(true)
-    this.representativeSpeechUntil = durationMs === undefined ? null : this.simulationTimeMs + durationMs
     this.updateRepresentativeLabelPosition()
   }
 
   private hideRepresentativeSpeech(): void {
     this.representativeSpeech?.setVisible(false)
     this.representativeSpeechBubble?.setVisible(false)
-    this.representativeSpeechUntil = null
   }
 
   private representativeChairAvailable(chair: FurnitureView, checkReservations = false): boolean {

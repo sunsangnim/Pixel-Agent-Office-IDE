@@ -622,8 +622,8 @@ for (const frame of [0, 1, 2]) {
   assert.equal(sprite.frame, 'ceo-idle-0')
   assert.equal(scene.representativePantryTarget, null)
   assert.equal(scene.representativeLabel.text, '김태호 대표')
-  assert.equal(scene.representativeSpeechBubble.visible, true, 'brief completion reaction is visible')
-  assert.match(scene.representativeSpeech.text, frame === 0 ? /커피 좋다/ : /잘 먹었다/)
+  assert.equal(scene.representativeSpeechBubble.visible, false, 'completion immediately hides the bubble without a reaction')
+  assert.equal(scene.representativeSpeech.visible, false)
   advance(scene, 2)
   assert.equal(scene.representativeSpeechBubble.visible, false)
   assert.equal(scene.representativeSpeech.visible, false)
@@ -745,10 +745,10 @@ for (const point of [{ x: 24, y: 144 }, { x: 936, y: 144 }, { x: 480, y: 144 },
   assert.ok(text.y > bubble.y - bubble.displayHeight + 8 && text.y < bubble.y - 12, 'text avoids outline and tail')
   assert.ok(bubble.depth > label.depth && text.depth > bubble.depth, 'text renders above the opaque bubble')
 }
-speechLayout.showRepresentativeSpeech('잘 먹었다!', 1600)
+speechLayout.showRepresentativeSpeech('커피 마시는 중')
 speechLayout.setLayoutEditing(true)
-assert.equal(speechLayout.representativeSpeechBubble.visible, false, 'editing hides even a completion-only bubble')
-console.log('PASS name above-head tracking, bubble above name, north/side bounds, text fit, depth, and completion cancellation')
+assert.equal(speechLayout.representativeSpeechBubble.visible, false, 'editing hides active speech')
+console.log('PASS name above-head tracking, bubble above name, north/side bounds, text fit, depth, and editor cancellation')
 
 for (const frame of [0, 2]) for (let pose = 0; pose < 6; pose++) {
   const scene = representativeScene({ x: frame === 0 ? 48 : 144, y: 144 })
