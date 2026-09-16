@@ -525,11 +525,157 @@ function seatingScene(rotation = 0, frame = 12) {
   scene.createRepresentativeActor()
   return scene
 }
-function chairClick(scene, id, { button = 'left', event = {} } = {}) {
-  const chair = scene.furniture.get(id).image
-  chair.events.get('pointerdown')({ event, leftButtonDown: () => button === 'left', rightButtonDown: () => button === 'right' })
-  floorClick(scene, position(chair), { button, event, over: [chair] })
+function furnitureClick(scene, id, { button = 'left', event = {} } = {}) {
+  const image = scene.furniture.get(id).image
+  image.events.get('pointerdown')({ event, leftButtonDown: () => button === 'left', rightButtonDown: () => button === 'right' })
+  floorClick(scene, position(image), { button, event, over: [image] })
 }
+const chairClick = furnitureClick
+
+function awaitRepresentativeBreak(scene) {
+  const sprite = scene.representativeSprite
+  let previous = position(sprite)
+  for (let i = 0; i < 900 && !scene.representativeActionTween; i++) {
+    advance(scene, 0.05, () => {
+      assert.ok(isOfficePositionWalkable(sprite, [...scene.collisionRects(), ...scene.actorObstacles(undefined, false)]),
+        'every pantry approach step respects furniture, walls and employees')
+      assert.ok(Math.hypot(sprite.x - previous.x, sprite.y - previous.y) <= 2.5,
+        `no teleport to the pantry (at most a 2px step plus arrival snap): ${JSON.stringify(previous)} -> ${JSON.stringify(position(sprite))}`)
+      previous = position(sprite)
+    })
+  }
+  assert.ok(scene.representativeActionTween, 'a reachable pantry click starts its action after arrival')
+}
+
+for (const frame of [0, 1, 2]) {
+  const scene = representativeScene({ x: 160, y: 288 })
+  const furniture = [...scene.furniture.values()].find(item => item.frame === frame)
+  const sprite = scene.representativeSprite
+  const initial = position(sprite)
+  furniture.image.events.get('pointerover')()
+  assert.match(scene.pantryHint.text, frame === 0 ? /커피/ : /간식/)
+  furniture.image.events.get('pointerout')()
+  assert.equal(scene.pantryHint.visible, false)
+  furnitureClick(scene, furniture.id)
+  assert.deepEqual(position(sprite), initial)
+  assert.equal(scene.representativeProp.visible, false, 'walk before showing a drink or snack')
+  assert.equal(scene.representativePantryTarget, furniture.id)
+  awaitRepresentativeBreak(scene)
+  assert.equal(scene.representativeGoal, null)
+  assert.equal(scene.representativeDestination.visible, false)
+  assert.equal(scene.representativeProp.texture.key, frame === 0 ? 'prop-coffee-mug' : 'prop-chocolate-cookie')
+  assert.equal(scene.representativeProp.visible, true)
+  assert.ok(scene.representativeProp.depth > sprite.depth)
+  assert.match(scene.representativeLabel.text, frame === 0 ? /커피 마시는 중/ : /간식 먹는 중/)
+  const action = scene.representativeActionTween
+  furnitureClick(scene, furniture.id)
+  assert.equal(scene.representativeActionTween, action, 'repeated clicks do not restart consumption')
+  floorClick(scene, { x: 4, y: 4 })
+  assert.equal(scene.representativeActionTween, action, 'an invalid floor command preserves the current break')
+  advance(scene, 7)
+  assert.equal(scene.representativeActionTween, undefined)
+  assert.equal(scene.representativeProp.visible, false)
+  assert.equal(scene.representativePantryTarget, null)
+  assert.equal(scene.representativeLabel.text, '김태호 대표')
+}
+console.log('PASS representative coffee machine, snack cabinet, refrigerator, approach, props, hints, repeat clicks, and completion')
+
+const pantryControls = representativeScene({ x: 160, y: 288 })
+const coffee = [...pantryControls.furniture.values()].find(item => item.frame === 0)
+const snack = [...pantryControls.furniture.values()].find(item => item.frame === 2)
+for (const options of [{ button: 'right' }, ...['shiftKey', 'ctrlKey', 'metaKey', 'altKey'].map(key => ({ event: { [key]: true } }))]) {
+  furnitureClick(pantryControls, coffee.id, options)
+  assert.equal(pantryControls.representativePantryTarget, null)
+}
+furnitureClick(pantryControls, coffee.id)
+awaitRepresentativeBreak(pantryControls)
+const replacedCoffee = pantryControls.representativeActionTween
+furnitureClick(pantryControls, snack.id)
+assert.equal(replacedCoffee.stopped, true)
+assert.equal(pantryControls.representativePantryTarget, snack.id)
+awaitRepresentativeBreak(pantryControls)
+const interruptedSnack = pantryControls.representativeActionTween
+floorClick(pantryControls, { x: 160, y: 288 })
+assert.equal(interruptedSnack.stopped, true)
+assert.equal(pantryControls.representativeProp.visible, false)
+assert.equal(pantryControls.representativePantryTarget, null)
+advance(pantryControls, 3)
+furnitureClick(pantryControls, coffee.id)
+awaitRepresentativeBreak(pantryControls)
+const editedAction = pantryControls.representativeActionTween
+pantryControls.setLayoutEditing(true)
+assert.equal(editedAction.stopped, true)
+assert.equal(pantryControls.representativeProp.visible, false)
+furnitureClick(pantryControls, snack.id)
+assert.equal(pantryControls.representativePantryTarget, null, 'editing selects furniture without taking a break')
+assert.equal(pantryControls.selectedFurniture.id, snack.id)
+pantryControls.setLayoutEditing(false)
+advance(pantryControls, 7)
+assert.equal(pantryControls.representativeProp.visible, false, 'editing does not resume a stale pantry action')
+floorClick(pantryControls, { x: 160, y: 288 })
+advance(pantryControls, 3)
+furnitureClick(pantryControls, coffee.id)
+assert.ok(pantryControls.representativeGoal)
+pantryControls.setLayoutEditing(true)
+assert.equal(pantryControls.representativeGoal, null, 'editing also cancels a pending pantry visit')
+console.log('PASS representative pantry command replacement, modifiers, movement interruption, and editing cancellation')
+
+const pantrySeat = seatingScene()
+pantrySeat.addFurniture('test-coffee', 0, 600, 640, 64, 64)
+furnitureClick(pantrySeat, 'chair-0-0')
+advance(pantrySeat, 4)
+assert.ok(pantrySeat.representativeSeat)
+furnitureClick(pantrySeat, 'test-coffee')
+assert.equal(pantrySeat.representativeSeat, null, 'a pantry click safely stands up from a chair')
+awaitRepresentativeBreak(pantrySeat)
+const seatedAction = pantrySeat.representativeActionTween
+furnitureClick(pantrySeat, 'chair-0-0')
+assert.equal(seatedAction.stopped, true)
+assert.equal(pantrySeat.representativeProp.visible, false)
+advance(pantrySeat, 8)
+assert.equal(pantrySeat.representativeSeat?.chairId, 'chair-0-0')
+console.log('PASS representative seated departure to pantry and chair interruption of consumption')
+
+const livePantry = representativeScene({ x: 480, y: 600 })
+const liveCoffee = [...livePantry.furniture.values()].find(item => item.frame === 0)
+furnitureClick(livePantry, liveCoffee.id)
+liveCoffee.image.setPosition(640, 640)
+livePantry.refreshNavigationLayout()
+awaitRepresentativeBreak(livePantry)
+assert.ok(livePantry.representativeSprite.y > 600, 'the route follows the relocated coffee machine')
+livePantry.furniture.delete(liveCoffee.id)
+advance(livePantry, 0.05)
+assert.equal(livePantry.representativeProp.visible, false, 'removing an active target cancels consumption')
+const liveSnack = [...livePantry.furniture.values()].find(item => item.frame === 2)
+furnitureClick(livePantry, liveSnack.id)
+livePantry.furniture.delete(liveSnack.id)
+livePantry.refreshNavigationLayout()
+advance(livePantry, 0.05)
+assert.equal(livePantry.representativeGoal, null)
+assert.equal(livePantry.representativePantryTarget, null)
+const blockedPantry = representativeScene({ x: 160, y: 288 })
+const blockedCoffee = [...blockedPantry.furniture.values()].find(item => item.frame === 0)
+const originalCollisions = blockedPantry.collisionRects.bind(blockedPantry)
+blockedPantry.collisionRects = (...args) => [...originalCollisions(...args), { x: 0, y: 232, width: 960, height: 16 }]
+furnitureClick(blockedPantry, blockedCoffee.id)
+assert.equal(blockedPantry.representativePantryTarget, null)
+assert.equal(blockedPantry.representativeProp.visible, false)
+assert.match(blockedPantry.pantryHint.text, /갈 수 없어요/)
+console.log('PASS representative live furniture destinations, removal during approach/action, and unreachable feedback')
+
+const busyPantry = representativeScene({ x: 160, y: 288 })
+const busyCoffee = [...busyPantry.furniture.values()].find(item => item.frame === 0)
+const busyApproach = busyPantry.representativePantryApproach(busyCoffee, busyPantry.representativeSprite)
+busyPantry.actorObstacles = () => [actorCollisionRect(busyApproach)]
+furnitureClick(busyPantry, busyCoffee.id)
+const pendingRoute = busyPantry.representativeRoute
+furnitureClick(busyPantry, busyCoffee.id)
+assert.equal(busyPantry.representativeRoute, pendingRoute, 'repeated clicks preserve the approach in progress')
+awaitRepresentativeBreak(busyPantry)
+assert.ok(isOfficePositionWalkable(busyPantry.representativeSprite, busyPantry.actorObstacles()),
+  'use another reachable spot when an employee occupies the closest service position')
+console.log('PASS representative pantry approach around an occupied service position')
+
 for (const [rotation, direction] of [[0, 'front'], [90, 'right'], [180, 'back'], [270, 'left']]) {
   const sitting = seatingScene(rotation, 12 + (rotation / 90) % 3)
   const sprite = sitting.representativeSprite

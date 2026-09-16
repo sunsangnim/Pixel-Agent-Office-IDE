@@ -261,6 +261,10 @@ export class OfficeScene extends Phaser.Scene {
   private representativeGait = new CharacterGait('ceo')
   private representativeChairTarget: string | null = null
   private representativeSeat: { chairId: string; approach: WorldPoint; center: WorldPoint } | null = null
+  private representativePantryTarget: string | null = null
+  private representativeProp?: Phaser.GameObjects.Image
+  private representativeActionTween?: Phaser.Tweens.Tween
+  private pantryHint?: Phaser.GameObjects.Text
   // Persisted (not just in-memory) so whichever piece was placed/edited most
   // recently keeps rendering on top of anything it overlaps even after a
   // reload, instead of only for the rest of the current session.
@@ -322,6 +326,11 @@ export class OfficeScene extends Phaser.Scene {
     this.layoutEditing = editing
     this.setEditorUiVisible(editing)
     if (editing) {
+      this.pantryHint?.setVisible(false)
+      if (this.representativePantryTarget) {
+        this.stopRepresentativePantryAction()
+        this.stopRepresentativeMovement()
+      }
       this.standRepresentative()
       this.representativeSprite?.anims.pause()
     } else if (this.representativeSprite) {
@@ -496,8 +505,11 @@ export class OfficeScene extends Phaser.Scene {
     image.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (!this.layoutEditing) {
         if (pointer.leftButtonDown() && !pointer.event.shiftKey && !pointer.event.ctrlKey &&
-          !pointer.event.metaKey && !pointer.event.altKey && [12, 13, 14].includes(frame)) {
-          this.sitRepresentativeOn(id)
+          !pointer.event.metaKey && !pointer.event.altKey) {
+          if ([12, 13, 14].includes(frame)) this.sitRepresentativeOn(id)
+          else if ([0, 1, 2].includes(frame) && !this.interactRepresentativeWith(id)) {
+            this.showPantryHint(id, '지금은 가까이 갈 수 없어요')
+          }
         }
         return
       }
@@ -522,6 +534,12 @@ export class OfficeScene extends Phaser.Scene {
       }
       this.selectFurniture(id)
     })
+    image.on('pointerover', () => {
+      if (!this.layoutEditing && [0, 1, 2].includes(frame)) {
+        this.showPantryHint(id, frame === 0 ? '클릭해서 커피 마시기' : '클릭해서 간식 먹기')
+      }
+    })
+    image.on('pointerout', () => this.pantryHint?.setVisible(false))
     image.on('dragstart', () => {
       // Input remains bound outside editing; that must not change layer order.
       if (!this.layoutEditing) return
@@ -1285,6 +1303,7 @@ export class OfficeScene extends Phaser.Scene {
       .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setOrigin(0.5, 1)
     this.representativeSeatedForeground = this.add.sprite(0, 0, 'ceo-seated-sheet-frames', 'ceo-sit-front')
       .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setOrigin(0.5, 1).setVisible(false)
+    this.representativeProp = this.add.image(0, 0, 'prop-coffee-mug').setVisible(false)
     this.representativeLabel = this.addOfficeText(0, 0, '김태호 대표', {
       fontSize: '13px', color: '#111111', align: 'center'
     }).setOrigin(0.5, 1).setPadding(4, 4).setDepth(700)
@@ -1310,6 +1329,7 @@ export class OfficeScene extends Phaser.Scene {
     const route = findOfficePath(departure, point, collisions)
     if (route.length === 0 && Math.hypot(departure.x - point.x, departure.y - point.y) >= 0.5) return false
     if (!this.standRepresentative()) return false
+    this.stopRepresentativePantryAction()
     this.representativeChairTarget = null
     this.representativeGoal = { ...point }
     this.representativeStalledMs = 0
@@ -1329,10 +1349,104 @@ export class OfficeScene extends Phaser.Scene {
     const departure = this.representativeDeparturePoint()
     if (!departure || !this.representativeChairApproach(chair, departure)) return false
     if (!this.standRepresentative()) return false
+    this.stopRepresentativePantryAction()
     this.representativeChairTarget = chairId
     this.representativeStalledMs = 0
     this.planRepresentativeRoute()
     return true
+  }
+
+  /** Approach the clicked furniture's live position before taking a break. */
+  interactRepresentativeWith(furnitureId: string): boolean {
+    if (this.layoutEditing || !this.representativeSprite) return false
+    const furniture = this.furniture.get(furnitureId)
+    if (!furniture || ![0, 1, 2].includes(furniture.frame)) return false
+    if (this.representativePantryTarget === furnitureId) return true
+    const departure = this.representativeDeparturePoint()
+    if (!departure || !this.representativePantryApproach(furniture, departure)) return false
+    if (!this.standRepresentative()) return false
+    this.stopRepresentativePantryAction()
+    this.representativeChairTarget = null
+    this.representativePantryTarget = furnitureId
+    this.representativeStalledMs = 0
+    this.representativeLabel?.setText(`김태호 대표\n${furniture.frame === 0 ? '커피 마시러 가는 중' : '간식 먹으러 가는 중'}`)
+    this.pantryHint?.setVisible(false)
+    this.planRepresentativeRoute()
+    return true
+  }
+
+  private showPantryHint(id: string, text: string): void {
+    const furniture = this.furniture.get(id)
+    if (!furniture) return
+    if (!this.pantryHint) {
+      this.pantryHint = this.addOfficeText(0, 0, '', {
+        fontSize: '12px', color: '#ffffff', backgroundColor: '#23443e', align: 'center'
+      }).setOrigin(0.5, 0).setPadding(8, 5).setDepth(OFFICE_WORLD_HEIGHT * 3)
+    }
+    const point = this.pantryServicePoint(furniture)
+    this.pantryHint.setText(text).setPosition(Phaser.Math.Clamp(point.x, 110, OFFICE_WORLD_WIDTH - 110), point.y + 12)
+      .setVisible(true)
+  }
+
+  private pantryServicePoint(furniture: FurnitureView): WorldPoint {
+    const bounds = this.furnitureWalkCollision(furniture.image, 0)
+    return { x: furniture.image.x, y: bounds.y + bounds.height }
+  }
+
+  private pantryAccessCollisions(furniture: FurnitureView): CollisionRect[] {
+    const excluded = new Set([furniture.id])
+    const bounds = this.furnitureWalkCollision(furniture.image, 0)
+    // Reaching for a cup on a side table is allowed; the walking route still
+    // respects both objects. No other furniture or walls are bypassed.
+    for (const view of this.furniture.values()) {
+      if (furniture.frame === 0 && view.frame === 16 &&
+        intersectsAabb(bounds, this.furnitureWalkCollision(view.image, 0))) excluded.add(view.id)
+    }
+    return this.collisionRects(excluded, 0)
+  }
+
+  private representativeCanUsePantry(furniture: FurnitureView, from: WorldPoint): boolean {
+    const point = this.pantryServicePoint(furniture)
+    return [0, 1, 2].includes(furniture.frame) && isOfficePositionWalkable(from, this.collisionRects()) &&
+      Math.hypot(from.x - point.x, from.y - point.y) <= 64 &&
+      hasOfficeLineOfSight(from, point, this.pantryAccessCollisions(furniture))
+  }
+
+  private representativePantryApproach(furniture: FurnitureView, from: WorldPoint): WorldPoint | null {
+    const actors = this.actorObstacles(undefined, false)
+    if (this.representativeCanUsePantry(furniture, from) && isOfficePositionWalkable(from, actors)) return { x: from.x, y: from.y }
+    const point = this.pantryServicePoint(furniture)
+    const collisions = this.collisionRects()
+    const access = this.pantryAccessCollisions(furniture)
+    // Prefer a free service position. If an employee temporarily blocks the
+    // only approach, keep the static route and wait without crossing them.
+    const route = findOfficePath(from, point, [...collisions, ...actors], { goalRadius: 64, goalCollisions: [...access, ...actors] })
+    return route.at(-1) ?? findOfficePath(from, point, collisions, { goalRadius: 64, goalCollisions: access }).at(-1) ?? null
+  }
+
+  private startRepresentativePantryAction(): void {
+    const sprite = this.representativeSprite
+    const prop = this.representativeProp
+    const furniture = this.representativePantryTarget && this.furniture.get(this.representativePantryTarget)
+    if (!sprite || !prop || !furniture || !this.representativeCanUsePantry(furniture, sprite)) {
+      this.stopRepresentativePantryAction()
+      return
+    }
+    this.applyRepresentativePose({ frame: 'ceo-idle-0', flipX: false })
+    const action = furniture.frame === 0 ? 'drinking' : 'eating'
+    this.representativeLabel?.setText(`김태호 대표\n${action === 'drinking' ? '커피 마시는 중' : '간식 먹는 중'}`)
+    // The representative's larger head places the mouth and hands lower
+    // within the same sprite bounds than the employee artwork.
+    this.representativeActionTween = this.playPantryAction(prop, action, sprite, () => this.stopRepresentativePantryAction(), 14)
+    prop.setDepth(sprite.y + 0.5)
+  }
+
+  private stopRepresentativePantryAction(): void {
+    this.representativeActionTween?.stop()
+    this.representativeActionTween = undefined
+    this.representativePantryTarget = null
+    this.representativeProp?.setVisible(false).setAngle(0)
+    this.representativeLabel?.setText('김태호 대표')
   }
 
   private representativeChairAvailable(chair: FurnitureView, checkReservations = false): boolean {
@@ -1403,6 +1517,17 @@ export class OfficeScene extends Phaser.Scene {
   private planRepresentativeRoute(): void {
     const sprite = this.representativeSprite
     if (!sprite) return
+    if (this.representativePantryTarget) {
+      const furniture = this.furniture.get(this.representativePantryTarget)
+      const approach = furniture && this.representativePantryApproach(furniture, sprite)
+      if (!furniture || !approach) {
+        this.stopRepresentativePantryAction()
+        this.stopRepresentativeMovement()
+        return
+      }
+      this.representativeGoal = approach
+      this.representativeDestination?.setPosition(approach.x, approach.y).setVisible(true)
+    }
     if (this.representativeChairTarget) {
       const chair = this.furniture.get(this.representativeChairTarget)
       const approach = chair && this.representativeChairAvailable(chair) &&
@@ -1438,6 +1563,10 @@ export class OfficeScene extends Phaser.Scene {
 
   private updateRepresentativeMovement(deltaSeconds: number): void {
     const sprite = this.representativeSprite
+    if (sprite && this.representativeActionTween && this.representativePantryTarget) {
+      const furniture = this.furniture.get(this.representativePantryTarget)
+      if (!furniture || !this.representativeCanUsePantry(furniture, sprite)) this.stopRepresentativePantryAction()
+    }
     if (this.layoutEditing || !sprite || !this.representativeGoal || deltaSeconds <= 0) return
     if (this.representativeNavigationRevision !== this.navigationRevision) this.planRepresentativeRoute()
     const goal = this.representativeGoal
@@ -1500,6 +1629,10 @@ export class OfficeScene extends Phaser.Scene {
       sprite.setTexture('ceo-seated-sheet-frames', `ceo-sit-${direction}`)
         .setFlipX(false).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
         .setPosition(chair.image.x, chair.image.y)
+    }
+    if (this.representativePantryTarget) {
+      if (arrived) this.startRepresentativePantryAction()
+      else this.stopRepresentativePantryAction()
     }
     this.representativeDestination?.setVisible(false)
     this.updateRepresentativeDepth()
@@ -2010,20 +2143,24 @@ export class OfficeScene extends Phaser.Scene {
     this.updateActorOverlayPosition(view)
 
     if (action !== 'eating' && action !== 'drinking') return
+    view.actionTween = this.playPantryAction(view.prop, action, { x: 0, y: 0 }, () => {
+      view.actionTween = undefined
+      view.prop.setVisible(false)
+      view.stateMachine.completeAction()
+      if (this.actors.get(actor.profileId) === view) this.updateActor(view, this.effectiveActor(view), view.actorIndex)
+    })
+  }
+
+  private playPantryAction(prop: Phaser.GameObjects.Image, action: 'eating' | 'drinking',
+    origin: WorldPoint, onComplete: () => void, poseOffsetY = 0): Phaser.Tweens.Tween {
     const drinking = action === 'drinking'
-    view.prop.setTexture(drinking ? 'prop-coffee-mug' : 'prop-chocolate-cookie')
+    prop.setTexture(drinking ? 'prop-coffee-mug' : 'prop-chocolate-cookie')
       .setDisplaySize(drinking ? 28 : 26, drinking ? 28 : 26)
-      .setPosition(24, -46).setAngle(0).setVisible(true)
-    view.actionTween = this.tweens.add({
-      targets: view.prop, x: 8, y: -78, angle: drinking ? -12 : -8,
+      .setPosition(origin.x + 24, origin.y - 46 + poseOffsetY).setAngle(0).setVisible(true)
+    return this.tweens.add({
+      targets: prop, x: origin.x + 8, y: origin.y - 78 + poseOffsetY, angle: drinking ? -12 : -8,
       duration: 420, hold: 600, delay: 450, repeatDelay: 600, yoyo: true, repeat: 2,
-      ease: 'Stepped', easeParams: [5],
-      onComplete: () => {
-        view.actionTween = undefined
-        view.prop.setVisible(false)
-        view.stateMachine.completeAction()
-        if (this.actors.get(actor.profileId) === view) this.updateActor(view, this.effectiveActor(view), view.actorIndex)
-      }
+      ease: 'Stepped', easeParams: [5], onComplete
     })
   }
 
