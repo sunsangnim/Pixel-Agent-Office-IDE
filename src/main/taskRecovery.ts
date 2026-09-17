@@ -1,11 +1,14 @@
 import { randomUUID } from 'crypto'
+import { mkdirSync } from 'fs'
+import { join } from 'path'
 import { BrowserWindow, type WebContents } from 'electron'
 import { TaskRecoveryStore } from './taskRecoveryStore'
 import { workspaceFiles } from './workspaceStore'
 import { instanceManager } from './instanceManager'
 import { ptyManager } from './ptyManager'
 import { taskWorkspaceManager } from './taskWorkspaceManager'
-import { TASK_DOCUMENTS_FOLDER } from '../shared/workspaceLayout'
+import { TASK_DOCUMENTS_FOLDER, WORKSPACE_FOLDERS } from '../shared/workspaceLayout'
+import { ensureTaskRepository, newProjectRepository } from './projectRepository'
 import { meetingPlanningRequest, pendingMeetingQuestions, validateMeetingDraft, type MeetingDraft } from '../shared/meetingNotes'
 import type { AgentInstance, TaskCommand, TaskDispatch, TaskRestoreResult, TaskWorkspace, TrackedTask } from '../shared/types'
 
@@ -69,6 +72,30 @@ class TaskRecovery {
     this.broadcast()
   }
 
+  private createTask(request: string, sourceId?: string, sourceProjectPath?: string): TrackedTask {
+    const files = workspaceFiles()
+    const workspace = taskWorkspaceManager.prepare(files.path(TASK_DOCUMENTS_FOLDER), request)
+    const projectPath = files.path(join(WORKSPACE_FOLDERS.projects, workspace.taskId))
+    mkdirSync(projectPath)
+    this.store().register(workspace, request, projectPath, { sourceId, sourceProjectPath, repository: newProjectRepository(workspace.taskId) })
+    this.broadcast()
+    return this.store().get(workspace.taskId)
+  }
+
+  private async prepareRepository(task: TrackedTask): Promise<void> {
+    await ensureTaskRepository(workspaceFiles(), task, repository => {
+      this.store().setRepository(task.taskId, repository)
+      this.broadcast()
+    })
+  }
+
+  async prepare(request: string): Promise<TrackedTask> {
+    if (typeof request !== 'string' || !request.trim()) throw new Error('새 작업 내용을 입력해주세요.')
+    const task = this.createTask(request)
+    await this.prepareRepository(task)
+    return this.store().get(task.taskId)
+  }
+
   async planMeeting(draft: MeetingDraft, sender: WebContents): Promise<TaskRestoreResult> {
     validateMeetingDraft(draft)
     if (!draft.endedAt || !draft.entries.length || pendingMeetingQuestions(draft).length) throw new Error('회의를 마치고 세 에이전트의 답변을 받은 뒤 SRS를 작성할 수 있습니다.')
@@ -76,18 +103,16 @@ class TaskRecovery {
     if (active) return active
     const projectPath = workspaceFiles().path(draft.projectPath)
     let task = this.list().find(item => item.sourceId === draft.meetingId)
-    if (task && task.projectPath !== projectPath) throw new Error('회의 프로젝트가 변경되었습니다.')
+    if (task && (task.sourceProjectPath ?? task.projectPath) !== projectPath) throw new Error('회의 프로젝트가 변경되었습니다.')
     if (!task) {
       if (this.list().some(item => item.projectPath === projectPath && ['planning', 'review'].includes(item.stage))) throw new Error('기존 기획을 승인하거나 취소한 뒤 회의 SRS 작성을 다시 눌러주세요. 회의 내용은 보관됩니다.')
       const request = meetingPlanningRequest(draft)
-      const workspace = taskWorkspaceManager.prepare(workspaceFiles().path(TASK_DOCUMENTS_FOLDER), request)
-      this.store().register(workspace, request, projectPath, draft.meetingId)
-      task = this.store().get(workspace.taskId)
-      this.broadcast()
+      task = this.createTask(request, draft.meetingId, projectPath)
     }
     const taskId = task.taskId
     const pending = (async () => {
-      const notices = await this.restoreTasks(sender, projectPath, taskId)
+      await this.prepareRepository(task)
+      const notices = await this.restoreTasks(sender, task.projectPath, taskId)
       return { bootId: this.bootId, tasks: this.list(), instances: instanceManager.list(), notices }
     })()
     this.meetingPlans.set(draft.meetingId, pending)
@@ -200,6 +225,7 @@ class TaskRecovery {
     for (const task of selected()) for (const command of task.commands) await this.check(task.taskId, command.id)
     for (const task of selected()) {
       try {
+        await this.prepareRepository(task)
         let commands = task.commands.filter(command => ['queued', 'running', 'interrupted'].includes(command.status))
         if (task.stage === 'review') {
           for (const command of task.commands.filter(item => item.stage === 'planning')) await this.ensureInstance(task, command, sender)

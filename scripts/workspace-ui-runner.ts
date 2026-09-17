@@ -5,8 +5,12 @@ import { join, resolve } from 'node:path'
 import { registerIpcHandlers } from '../src/main/ipc'
 import { workspaceFiles, workspaceStore } from '../src/main/workspaceStore'
 import { TASK_DOCUMENTS_FOLDER, WORKSPACE_FOLDERS } from '../src/shared/workspaceLayout'
+import { repositoryCommands } from '../src/main/projectRepository'
+import { repositoryFixture } from './fixtures/project-repository'
 
 const fixture = mkdtempSync(join(resolve('out'), 'workspace-ui-'))
+const github = repositoryFixture(fixture)
+repositoryCommands.run = github.run
 const desktop = join(fixture, 'desktop')
 mkdirSync(desktop)
 app.setPath('desktop', desktop)
@@ -91,6 +95,12 @@ app.whenReady().then(async () => {
   assert.ok(existsSync(prepared.specPath))
   assert.ok(existsSync(prepared.phasesPath))
   assert.ok(existsSync(prepared.readmePath))
+  assert.equal(workspaceStore.get(), prepared.projectPath)
+  assert.equal(prepared.repository.ready, true)
+  const next = await js(`window.api.tasks.prepare('다른 새 작업')`)
+  assert.notEqual(next.projectPath, prepared.projectPath)
+  assert.notEqual(next.repository.url, prepared.repository.url)
+  assert.equal(github.created.length, 2)
   assert.equal(existsSync(join(files.root, '문서')), false)
   await js('document.querySelector("dialog").dispatchEvent(new Event("cancel",{cancelable:true}))')
   await wait('!document.querySelector("dialog")')

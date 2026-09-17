@@ -4,6 +4,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, existsSync, readFil
 import { WorkspaceFiles } from '../src/main/workspaceFiles'
 import { taskWorkspaceManager } from '../src/main/taskWorkspaceManager'
 import { TASK_DOCUMENTS_FOLDER, WORKSPACE_FOLDERS } from '../src/shared/workspaceLayout'
+import { ensureTaskRepository, newProjectRepository, repositoryCommands } from '../src/main/projectRepository'
+import { TaskRecoveryStore } from '../src/main/taskRecoveryStore'
+import { repositoryFixture } from './fixtures/project-repository'
+import { ensureTaskFeatureWorktree, mergeTaskFeature } from '../src/main/taskFeatureWorktree'
+import { taskFeatureBranch } from '../src/shared/taskGitPolicy'
 
 async function main() {
   const fixture = mkdtempSync(join(resolve('out'), 'workspace-test-'))
@@ -89,6 +94,99 @@ async function main() {
   for (const name of ['../escape', 'bad/name', 'NUL', 'COM1.txt', 'name.', ' space ', '..']) assert.throws(() => files.createFolder('', name))
   assert.throws(() => files.createFolder('결과물', '새 폴더'), /이미/)
   console.log('PASS separate task documents, folder creation, recursive search, text preview and size/type limits')
+
+  let recovery = new TaskRecoveryStore(files)
+  const github = repositoryFixture(fixture)
+  const newTask = (request: string) => {
+    const documents = taskWorkspaceManager.prepare(files.path(TASK_DOCUMENTS_FOLDER), request)
+    const project = files.path(join(WORKSPACE_FOLDERS.projects, documents.taskId))
+    mkdirSync(project)
+    recovery.register(documents, request, project, { repository: newProjectRepository(documents.taskId) })
+    return recovery.get(documents.taskId)
+  }
+  const first = newTask('독립 프로젝트')
+  const second = newTask('독립 프로젝트')
+  const prepare = (task: typeof first) => ensureTaskRepository(files, task,
+    repository => recovery.setRepository(task.taskId, repository), github.run)
+  const git = (cwd: string, ...args: string[]) => repositoryCommands.run('git', args, cwd)
+  await prepare(first)
+  await prepare(second)
+  assert.notEqual(first.projectPath, second.projectPath)
+  assert.notEqual(first.repository!.url, second.repository!.url)
+  for (const task of [first, second]) {
+    assert.equal(await git(task.projectPath, 'branch', '--show-current'), 'main')
+    assert.equal(await git(task.projectPath, 'ls-files'), '.gitignore', 'private task documents stay outside Git')
+    assert.equal(await git(task.projectPath, 'remote', 'get-url', 'origin'), `${task.repository!.url}.git`)
+    assert.equal(await git(task.projectPath, 'config', '--get', 'office.featureBranch'), taskFeatureBranch(task.taskId))
+    assert.equal(await git(task.projectPath, 'rev-parse', '--path-format=absolute', '--git-common-dir'), join(task.projectPath, '.git').replace(/\\/g, '/'))
+  }
+  const feature = first.repository!.featureBranch!
+  const worktrees = await Promise.all(Array.from({ length: 3 }, () => ensureTaskFeatureWorktree(files, first.projectPath, feature, github.run)))
+  assert.equal(new Set(worktrees.map(worktree => worktree.path)).size, 1, 'concurrent leads and employees share one feature worktree')
+  const worktree = worktrees[0]
+  assert.equal(await git(worktree.path, 'branch', '--show-current'), feature)
+  assert.deepEqual((await git(first.projectPath, 'for-each-ref', '--format=%(refname:short)', 'refs/heads')).split(/\r?\n/).sort(), [feature, 'main'].sort())
+  await git(first.projectPath, 'config', 'user.name', 'Test')
+  await git(first.projectPath, 'config', 'user.email', 'test@example.invalid')
+  const originalMain = await git(first.projectPath, 'rev-parse', 'main')
+  const remoteGit = (...args: string[]) => git(first.projectPath, '--git-dir', join(github.remotes, first.repository!.name), ...args)
+  writeFileSync(join(worktree.path, 'code.txt'), 'phase one')
+  await git(worktree.path, 'add', '--', 'code.txt')
+  await git(worktree.path, 'commit', '-m', 'Phase 1')
+  await github.run('git', ['push', '--set-upstream', 'origin', feature], worktree.path)
+  assert.equal(await remoteGit('rev-parse', 'main'), originalMain, 'phase push never changes remote main')
+  assert.equal(await remoteGit('rev-parse', feature), await git(worktree.path, 'rev-parse', 'HEAD'))
+  writeFileSync(join(worktree.path, 'code.txt'), 'phase two')
+  assert.equal((await ensureTaskFeatureWorktree(files, first.projectPath, feature, github.run)).path, worktree.path)
+  assert.equal(readFileSync(join(worktree.path, 'code.txt'), 'utf8'), 'phase two', 'reopening preserves uncommitted work')
+  await assert.rejects(mergeTaskFeature(files, first.projectPath, worktree.path, feature, first.repository!.url!, github.run), /커밋/)
+  await git(worktree.path, 'add', '--', 'code.txt')
+  await git(worktree.path, 'commit', '-m', 'Phase 2')
+  await mergeTaskFeature(files, first.projectPath, worktree.path, feature, first.repository!.url!, github.run)
+  const mergedMain = await git(first.projectPath, 'rev-parse', 'main')
+  assert.equal(await remoteGit('rev-parse', 'main'), mergedMain)
+  assert.equal((await git(first.projectPath, 'rev-list', '--parents', '-n', '1', 'main')).split(' ').length, 3, 'final merge leaves a --no-ff merge commit')
+  assert.equal(readFileSync(join(first.projectPath, 'code.txt'), 'utf8'), 'phase two')
+  assert.equal(await git(worktree.path, 'branch', '--show-current'), feature, 'final merge does not switch the agents out of their feature')
+  writeFileSync(join(first.projectPath, 'new-main.txt'), 'external update')
+  await git(first.projectPath, 'add', '--', 'new-main.txt')
+  await git(first.projectPath, 'commit', '-m', 'New upstream main')
+  await github.run('git', ['push', 'origin', 'main'], first.projectPath)
+  await assert.rejects(mergeTaskFeature(files, first.projectPath, worktree.path, feature, first.repository!.url!, github.run), /최신 origin\/main/)
+  console.log('PASS shared feature worktree, concurrent creation, phase-only push, preserved edits, final main merge/push and stale-main guard')
+  const third = newTask('중단 후 재시도')
+  github.state.failAfterCreate = true
+  await assert.rejects(prepare(third), /같은 저장소로 재시도/)
+  recovery = new TaskRecoveryStore(files)
+  const saved = recovery.get(third.taskId)
+  const savedName = saved.repository!.name
+  github.state.failPush = true
+  await assert.rejects(prepare(saved), /network unavailable/)
+  await prepare(saved)
+  assert.equal(saved.repository!.name, savedName)
+  assert.equal(saved.repository!.ready, true)
+  await prepare(saved)
+  assert.equal(github.created.length, 3, 'resume/retry never creates another remote')
+  const publicTask = newTask('공개 저장소 차단')
+  github.state.publicRemote = true
+  await assert.rejects(prepare(publicTask), /비공개 저장소/)
+  assert.equal(await git(publicTask.projectPath, 'remote'), '', 'no origin or push when privacy verification fails')
+  github.state.publicRemote = false
+  const signedOut = newTask('로그인 실패')
+  github.state.failAuth = true
+  await assert.rejects(prepare(signedOut), /not logged in/)
+  assert.equal(signedOut.repository!.ready, false)
+  assert.equal(await git(signedOut.projectPath, 'remote'), '')
+  assert.throws(() => recovery.enqueue({ taskId: signedOut.taskId, stage: 'planning', assignments: [] }, []), /저장소 준비/,
+    'an agent cannot be dispatched before the private repository is ready')
+  github.state.failAuth = false
+  const wrongPush = newTask('잘못된 푸시 대상')
+  github.state.failPush = true
+  await assert.rejects(prepare(wrongPush), /network unavailable/)
+  await git(wrongPush.projectPath, 'config', 'remote.origin.pushurl', 'https://github.com/fixture-owner/ide-repository.git')
+  await assert.rejects(prepare(wrongPush), /푸시 대상/)
+  assert.equal(wrongPush.repository!.ready, false)
+  console.log('PASS independent project Git roots/private remotes, initial push, excluded documents, durable retries, privacy and authentication failures')
 
   const many = files.createFolder('', 'many')
   for (let i = 0; i < 305; i++) writeFileSync(files.path(join(many, `${i}.txt`)), '')

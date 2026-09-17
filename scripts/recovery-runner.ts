@@ -61,6 +61,8 @@ async function main() {
   const prompt = await store.prompt(workspace.taskId, command)
   assert.match(prompt, /새 세션 작업 인수인계/)
   for (const required of [workspace.specPath, workspace.developmentLogPath, 'git log', 'git status/git diff', sha, 'game.txt', '각 명령·작업', '남은 작업']) assert.ok(prompt.includes(required), required)
+  for (const required of ['feature/', '추가 확인 없이', '중간 Phase에서는 main', 'Git 담당: claude-code:lead']) assert.ok(prompt.includes(required), required)
+  assert.ok(!prompt.includes('사용자 승인을 확인한 경우'))
   assert.equal(readFileSync(join(project, 'game.txt'), 'utf8'), 'uncommitted half-finished code')
   receipt(command, 'completed', { attemptId: oldAttempt })
   assert.equal(await store.acceptReceipt(workspace.taskId, command.id), false)

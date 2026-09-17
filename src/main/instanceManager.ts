@@ -75,7 +75,7 @@ class InstanceManager {
     if (!profile) throw new Error(`${template.name} 팀의 좌석 프로필을 찾을 수 없습니다.`)
 
     const deskKey = `${templateId}-${slotIndex}`
-    const worktree = await ensureDeskWorktree(repoRoot, deskKey).catch(() => null)
+    const worktree = await ensureDeskWorktree(repoRoot, deskKey)
     const cwd = workspaceFiles().path(worktree?.path ?? repoRoot)
 
     const ptyId = ptyManager.spawn(
@@ -144,7 +144,7 @@ class InstanceManager {
     for (const target of removals) {
       ptyManager.kill(target.ptyId)
       this.runs.delete(target.runId)
-      if (target.worktreeBranch) {
+      if (target.worktreeBranch?.startsWith('desk/')) {
         await removeDeskWorktree(target.repoRoot, target.cwd).catch(() => {})
       }
     }
