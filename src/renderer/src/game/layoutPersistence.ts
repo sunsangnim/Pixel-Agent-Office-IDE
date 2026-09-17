@@ -1,11 +1,34 @@
 import type { WorldPoint } from './officeWorld'
+import { isInRepresentativeRoom } from './officeRooms'
 
 export const OFFICE_LAYOUT_SAVE_KEY = 'pixel-office-layout-v1'
 // The chair at the left end of the meeting table, in front of the laptop.
 // Its identity remains reserved when the user moves or rotates the furniture.
 export const REPRESENTATIVE_MEETING_CHAIR_ID = 'custom-1787984571110-14'
+export const REPRESENTATIVE_DESK_ID = 'representative-desk'
+export const REPRESENTATIVE_CHAIR_ID = 'representative-chair'
 export interface SavedFurniture extends WorldPoint { frame?: number; width?: number; height?: number; rotation?: number; zOrder?: number }
 export type OfficeLayoutSave = Record<string, SavedFurniture>
+
+// The shipped representative desk was accidentally labelled as Antigravity's
+// first child. Rename its saved identity without moving or recreating furniture.
+export function migrateRepresentativeFurniture(layout: OfficeLayoutSave, removedIds: Set<string>) {
+  const migrated = { ...layout }
+  const removed = new Set(removedIds)
+  const legacy = layout['desk-2-1'] ?? layout['chair-2-1']
+  let changed = false
+  if (!legacy || isInRepresentativeRoom(legacy)) {
+    for (const [oldId, newId] of [['desk-2-1', REPRESENTATIVE_DESK_ID], ['chair-2-1', REPRESENTATIVE_CHAIR_ID]]) {
+      if (migrated[oldId]) {
+        migrated[newId] ??= migrated[oldId]
+        delete migrated[oldId]
+        changed = true
+      }
+      if (removed.delete(oldId)) { removed.add(newId); changed = true }
+    }
+  }
+  return { layout: migrated, removedIds: removed, changed }
+}
 
 export function parseOfficeLayout(raw: string | null): OfficeLayoutSave {
   if (!raw) return {}
@@ -24,7 +47,7 @@ export function parseOfficeLayout(raw: string | null): OfficeLayoutSave {
 
 // Exact pixel positions/rotations/zOrder for the baked-in default arrangement
 // - the hand-arranged office as it stands, desks and every decorative custom
-// piece included (see TEAM_DESKS in officeWorld.ts for why it's 1/1/2 desk
+// piece included (see TEAM_DESKS in officeWorld.ts for why it's 1/1/1 desk
 // seats, not 5 per team). Only fills in ids the user's own save doesn't
 // already have an opinion on - see the merge in OfficeScene.create().
 export const DEFAULT_LAYOUT_SEED: OfficeLayoutSave = {
@@ -34,8 +57,8 @@ export const DEFAULT_LAYOUT_SEED: OfficeLayoutSave = {
   'chair-1-0': { x: 336, y: 512, rotation: 180, zOrder: 45 },
   'desk-2-0': { x: 560, y: 480, rotation: 0, zOrder: 49 },
   'chair-2-0': { x: 576, y: 512, rotation: 180, zOrder: 50 },
-  'desk-2-1': { x: 864, y: 864, rotation: 0, zOrder: 54 },
-  'chair-2-1': { x: 880, y: 896, rotation: 180, zOrder: 55 },
+  [REPRESENTATIVE_DESK_ID]: { x: 864, y: 864, rotation: 0, zOrder: 54 },
+  [REPRESENTATIVE_CHAIR_ID]: { x: 880, y: 896, rotation: 180, zOrder: 55 },
   'custom-1787984430465-1': { x: 48, y: 64, rotation: 0, zOrder: 71, frame: 0, width: 64, height: 96 },
   'custom-1787984435417-2': { x: 144, y: 96, rotation: 0, zOrder: 66, frame: 2, width: 128, height: 64 },
   'custom-1787984442155-3': { x: 240, y: 80, rotation: 0, zOrder: 64, frame: 1, width: 64, height: 128 },

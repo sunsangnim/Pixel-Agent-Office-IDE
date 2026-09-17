@@ -1,6 +1,7 @@
 import { NAV_TILE_SIZE } from './navigation'
 import { OFFICE_WORLD_HEIGHT, OFFICE_WORLD_WIDTH, type WorldPoint } from './officeWorld'
 import type { CollisionRect } from './collisionResolution'
+import { REPRESENTATIVE_ROOM as room } from './officeRooms'
 
 export const OFFICE_GRID_COLUMNS = OFFICE_WORLD_WIDTH / NAV_TILE_SIZE
 export const OFFICE_GRID_ROWS = OFFICE_WORLD_HEIGHT / NAV_TILE_SIZE
@@ -24,7 +25,9 @@ export const OFFICE_WALL_COLLISIONS: CollisionRect[] = [
   // below the top-row rooms) and enlarged 5 tiles taller (top wall row 45 ->
   // row 40), still flush against the bottom wall and clear of the desk
   // placed just above it.
-  tiles(44, 40, 6, 1), tiles(54, 40, 5, 1), tiles(44, 40, 1, 19)
+  { x: room.left, y: room.top, width: room.doorLeft - room.left, height: room.wall },
+  { x: room.doorRight, y: room.top, width: room.right - room.doorRight, height: room.wall },
+  { x: room.left, y: room.top, width: room.wall, height: room.bottom - room.top }
 ]
 
 export const OFFICE_FLOOR_REGION = { x: 480, y: 480, width: 928, height: 928 }

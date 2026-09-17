@@ -1,4 +1,5 @@
 import type { OfficePresence } from '@shared/types'
+import { REPRESENTATIVE_ROOM, REPRESENTATIVE_ROOM_BOUNDS } from './officeRooms'
 
 export const OFFICE_WORLD_WIDTH = 960
 // +320px of open floor added below the existing rooms (was 640) - the desk
@@ -33,7 +34,7 @@ export interface OfficeWorldSnapshot {
 
 // The office no longer boots into a fixed 5-desks-per-team grid - this is
 // the hand-arranged layout that's actually in use (1 seat each for Claude
-// and Codex, 2 for Antigravity), baked in as the default so a fresh install
+// and Codex and Antigravity), baked in as the default so a fresh install
 // or a cleared interior save starts here instead of with 15 desks nobody
 // asked for. Exact desk/chair pixel positions and chair rotation live in
 // DEFAULT_LAYOUT_SEED (layoutPersistence.ts); these points are only the
@@ -41,7 +42,7 @@ export interface OfficeWorldSnapshot {
 export const TEAM_DESKS: WorldPoint[][] = [
   [{ x: 112, y: 468 }],
   [{ x: 320, y: 468 }],
-  [{ x: 560, y: 468 }, { x: 864, y: 852 }]
+  [{ x: 560, y: 468 }]
 ]
 
 /** Team columns have no drawn boundary, so desk-count reporting infers which
@@ -72,7 +73,8 @@ export const WAYPOINTS = {
   pantryDoor: { x: 248, y: 364 },
   pantryTarget: { x: 130, y: 125 },
   meetingDoor: { x: 475, y: 364 },
-  representativeDoor: { x: 735, y: 685 }
+  representativeDoor: { x: (REPRESENTATIVE_ROOM.doorLeft + REPRESENTATIVE_ROOM.doorRight) / 2,
+    y: REPRESENTATIVE_ROOM.top + REPRESENTATIVE_ROOM.wall / 2 }
 } satisfies Record<string, WorldPoint>
 
 export function deskPoint(actor: Pick<OfficeGameActor, 'teamIndex' | 'slotIndex'>): WorldPoint {
@@ -122,10 +124,12 @@ export function routeFor(
   if (actor.presence === 'arriving' && Math.hypot(currentPosition.x - WAYPOINTS.elevatorInside.x, currentPosition.y - WAYPOINTS.elevatorInside.y) < 32) {
     route.push(WAYPOINTS.elevatorExit)
   }
-  for (const [bounds, door] of [[PANTRY_BOUNDS, WAYPOINTS.pantryDoor], [MEETING_BOUNDS, WAYPOINTS.meetingDoor]] as const) {
+  const rooms = [[PANTRY_BOUNDS, WAYPOINTS.pantryDoor], [MEETING_BOUNDS, WAYPOINTS.meetingDoor],
+    [REPRESENTATIVE_ROOM_BOUNDS, WAYPOINTS.representativeDoor]] as const
+  for (const [bounds, door] of rooms) {
     if (isInside(currentPosition, bounds) && !isInside(target, bounds)) route.push(door)
   }
-  for (const [bounds, door] of [[PANTRY_BOUNDS, WAYPOINTS.pantryDoor], [MEETING_BOUNDS, WAYPOINTS.meetingDoor]] as const) {
+  for (const [bounds, door] of rooms) {
     if (!isInside(currentPosition, bounds) && isInside(target, bounds)) route.push(door)
   }
   route.push(target)

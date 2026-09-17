@@ -12,6 +12,7 @@ buildSync({
       "export * from './src/renderer/src/game/navigation'",
       "export * from './src/renderer/src/game/officeWorld'",
       "export * from './src/renderer/src/game/officeGrid'",
+      "export * from './src/renderer/src/game/officeRooms'",
       "export * from './src/renderer/src/game/furnitureBounds'",
       "export * from './src/renderer/src/game/characterFrames'",
       "export * from './src/renderer/src/game/seatAnchors'",
@@ -35,6 +36,7 @@ const {
   OfficeScene, IdleActivity, ActorStateMachine, CharacterGait, actionForPresence, resolveOfficePresence,
   findOfficePath, hasOfficeLineOfSight, isOfficePositionWalkable, routeFor, WAYPOINTS,
   DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS, REPRESENTATIVE_MEETING_CHAIR_ID,
+  REPRESENTATIVE_CHAIR_ID, REPRESENTATIVE_DESK_ID, migrateRepresentativeFurniture, isInRepresentativeRoom,
   OFFICE_REPRESENTATIVE_SAVE_KEY, parseRepresentativePosition, measureFurnitureBounds,
   STAFF_PANTRY_SHEETS, measureWalkSheet, measureSeatedSheet, measureCharacterSheet, measurePantrySheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS,
   REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_CYCLE_MS, REPRESENTATIVE_WORK_FRAME_WIDTH,
@@ -144,7 +146,7 @@ function createScene(saved = DEFAULT_LAYOUT_SEED) {
   scene.zOrderById = new Map(Object.entries(scene.layoutSave).map(([id, value]) => [id, value.zOrder]))
   scene.nextZOrder = Math.max(...scene.zOrderById.values()) + 1
   for (const [id, saved] of Object.entries(scene.layoutSave)) {
-    const frame = saved.frame ?? (id.startsWith('chair-') ? 12 : 10)
+    const frame = saved.frame ?? (id.startsWith('chair-') || id === REPRESENTATIVE_CHAIR_ID ? 12 : 10)
     scene.addFurniture(id, frame, saved.x, saved.y, saved.width ?? 64, saved.height ?? 64)
   }
   scene.navigationLayoutKey = scene.furnitureNavigationKey()
@@ -224,6 +226,68 @@ machine.startWalking(0, 0)
 assert.equal(machine.current.action, 'idle')
 assert.equal(actionForPresence('pantryDoor', 0), 'idle')
 console.log('PASS explicit states, infrequent random breaks, arrival-based rest, and command priority')
+
+const legacyOffice = {
+  'desk-2-1': { x: 848, y: 832, rotation: 90, zOrder: 800 },
+  'chair-2-1': { x: 880, y: 864, rotation: 180, zOrder: 801 }
+}
+const migratedOffice = migrateRepresentativeFurniture(legacyOffice, new Set())
+assert.deepEqual(migratedOffice.layout[REPRESENTATIVE_DESK_ID], legacyOffice['desk-2-1'])
+assert.deepEqual(migratedOffice.layout[REPRESENTATIVE_CHAIR_ID], legacyOffice['chair-2-1'])
+assert.equal(migratedOffice.layout['chair-2-1'], undefined)
+assert.equal(migrateRepresentativeFurniture(migratedOffice.layout, migratedOffice.removedIds).changed, false, 'migration is idempotent')
+const removedOffice = migrateRepresentativeFurniture({}, new Set(['desk-2-1', 'chair-2-1']))
+assert.deepEqual([...removedOffice.removedIds].sort(), [REPRESENTATIVE_CHAIR_ID, REPRESENTATIVE_DESK_ID].sort(), 'deleted representative furniture stays deleted')
+const actualStaffDesk = { 'desk-2-1': { x: 560, y: 720 }, 'chair-2-1': { x: 576, y: 752 } }
+assert.deepEqual(migrateRepresentativeFurniture(actualStaffDesk, new Set()).layout, actualStaffDesk, 'a genuine staff pair outside the room keeps its identity')
+const preferredOffice = migrateRepresentativeFurniture({ ...legacyOffice, [REPRESENTATIVE_DESK_ID]: { x: 864, y: 848 } }, new Set())
+assert.deepEqual(preferredOffice.layout[REPRESENTATIVE_DESK_ID], { x: 864, y: 848 }, 'canonical saved furniture wins over an obsolete alias')
+assert.ok(isInRepresentativeRoom({ x: 880, y: 896 }))
+assert.ok(!isInRepresentativeRoom({ x: 688, y: 896 }))
+assert.ok(!isInRepresentativeRoom({ x: 832, y: 624 }))
+assert.ok(isOfficePositionWalkable(WAYPOINTS.representativeDoor, OFFICE_WALL_COLLISIONS), 'the representative doorway lies in the visible wall opening')
+
+const ownership = createScene()
+assert.deepEqual(ownership.computeDeskCounts(), [1, 1, 1], 'the representative desk is never Antigravity capacity')
+assert.equal(ownership.furniture.has('desk-2-1'), false)
+assert.equal(ownership.furniture.has('chair-2-1'), false)
+const subAgent = actor('antigravity-child', 2, 'working', 1)
+assert.equal(ownership.actorDestination(subAgent, 0).seated, false)
+assert.ok(!isInRepresentativeRoom(ownership.actorDestination(subAgent, 0).point), 'a child without its own chair waits outside the representative room')
+for (let team = 0; team < 3; team++) {
+  const member = actor(`owner-${team}`, team, 'working')
+  for (let other = 0; other < 3; other++) {
+    const chair = ownership.furniture.get(`chair-${other}-0`)
+    assert.equal(ownership.actorCanUseChair(member, chair), team === other)
+    assert.equal(ownership.representativeChairAvailable(chair), false, 'empty staff seats cannot be borrowed by the representative')
+  }
+  assert.equal(ownership.actorCanUseChair(member, ownership.furniture.get(REPRESENTATIVE_CHAIR_ID)), false)
+  const guest = { ...member, presence: 'meeting' }
+  assert.equal(ownership.actorCanUseChair(guest, ownership.furniture.get(REPRESENTATIVE_MEETING_CHAIR_ID)), false)
+  const meetingChair = ownership.furniture.get('custom-1787984561211-12')
+  assert.equal(ownership.actorCanUseChair(guest, meetingChair), true)
+  assert.equal(ownership.actorCanUseChair(member, meetingChair), false, 'meeting chairs do not become work desks')
+}
+assert.equal(ownership.representativeChairAvailable(ownership.furniture.get(REPRESENTATIVE_CHAIR_ID)), true)
+assert.equal(ownership.representativeChairAvailable(ownership.furniture.get(REPRESENTATIVE_MEETING_CHAIR_ID)), true)
+ownership.addFurniture('custom-private-desk', 10, 816, 736, 64, 64)
+assert.deepEqual(ownership.computeDeskCounts(), [1, 1, 1], 'custom desks in the representative room do not create employee slots')
+const relocatedChair = ownership.furniture.get('chair-2-0')
+relocatedChair.image.setPosition(800, 880)
+assert.equal(ownership.actorCanUseChair(actor('moved-owner', 2), relocatedChair), false, 'moving an employee chair into the private room cannot bypass its boundary')
+ownership.furniture.get('desk-2-0').image.setPosition(800, 832)
+assert.deepEqual(ownership.computeDeskCounts(), [1, 1, 0], 'moving a staff desk inside the representative room removes its staff capacity')
+console.log('PASS representative-room boundaries, saved identity migration, deletion, private capacity and exclusive chair permissions')
+
+for (const forbiddenId of ['chair-1-0', REPRESENTATIVE_CHAIR_ID, REPRESENTATIVE_MEETING_CHAIR_ID]) {
+  const stale = createScene()
+  const forbiddenChair = stale.furniture.get(forbiddenId)
+  stale.actorDestination = () => ({ point: position(forbiddenChair.image), seated: true, chairId: forbiddenId })
+  snapshot(stale, [actor('stale-seat', 0, 'meeting')])
+  advance(stale, 15)
+  assert.equal(stale.actors.get('stale-seat').settled, false, `arrival rechecks ownership: ${forbiddenId}`)
+}
+console.log('PASS stale destinations cannot seat employees in someone else\'s chair or either representative seat')
 
 const stable = createScene()
 const lead = actor()
@@ -592,7 +656,7 @@ assert.deepEqual(position(ceo), officeGoal)
 assert.equal(ceo.anims.isPlaying, false)
 assert.equal(player.representativeDestination.visible, false)
 assert.ok(ceo.depth > player.furniture.get('desk-0-0').image.depth, 'walking south of a desk renders in front of it')
-assert.ok(ceo.depth < player.furniture.get('desk-2-1').image.depth, 'walking north of a desk renders behind it')
+assert.ok(ceo.depth < player.furniture.get(REPRESENTATIVE_DESK_ID).image.depth, 'walking north of a desk renders behind it')
 const restoredPlayer = createScene()
 restoredPlayer.createRepresentativeActor()
 assert.deepEqual(position(restoredPlayer.representativeSprite), officeGoal, 'arrival survives a scene reload')
@@ -667,8 +731,8 @@ function seatingScene(rotation = 0, frame = 12) {
   storage.delete(OFFICE_REPRESENTATIVE_SAVE_KEY)
   storage.set(OFFICE_REPRESENTATIVE_SAVE_KEY, JSON.stringify({ x: 480, y: 600 }))
   const scene = createScene({
-    'chair-0-0': { x: 400, y: 480, rotation, frame, zOrder: 1 },
-    'custom-chair': { x: 560, y: 480, frame: 12, zOrder: 2 }
+    'representative-chair': { x: 400, y: 480, rotation, frame, zOrder: 1 },
+    'custom-chair': { x: 560, y: 288, frame: 12, zOrder: 2 }
   })
   scene.createRepresentativeActor()
   return scene
@@ -784,17 +848,17 @@ console.log('PASS representative pantry command replacement, modifiers, movement
 
 const pantrySeat = seatingScene()
 pantrySeat.addFurniture('test-coffee', 0, 600, 640, 64, 64)
-furnitureClick(pantrySeat, 'chair-0-0')
+furnitureClick(pantrySeat, 'representative-chair')
 advance(pantrySeat, 4)
 assert.ok(pantrySeat.representativeSeat)
 furnitureClick(pantrySeat, 'test-coffee')
 assert.equal(pantrySeat.representativeSeat, null, 'a pantry click safely stands up from a chair')
 awaitRepresentativeBreak(pantrySeat)
-furnitureClick(pantrySeat, 'chair-0-0')
+furnitureClick(pantrySeat, 'representative-chair')
 assert.equal(pantrySeat.representativePantryAction, undefined)
 assert.equal(pantrySeat.representativeSpeechBubble.visible, false)
 advance(pantrySeat, 8)
-assert.equal(pantrySeat.representativeSeat?.chairId, 'chair-0-0')
+assert.equal(pantrySeat.representativeSeat?.chairId, 'representative-chair')
 console.log('PASS representative seated departure to pantry and chair interruption of consumption')
 
 const livePantry = representativeScene({ x: 480, y: 600 })
@@ -909,13 +973,13 @@ for (const [rotation, direction] of [[0, 'front'], [90, 'right'], [180, 'back'],
   const sprite = sitting.representativeSprite
   const before = position(sprite)
   const depths = [...sitting.furniture.values()].map(({ image }) => image.depth)
-  chairClick(sitting, 'chair-0-0')
+  chairClick(sitting, 'representative-chair')
   assert.deepEqual(position(sprite), before, 'clicking a distant chair must first walk there')
-  assert.equal(sitting.representativeChairTarget, 'chair-0-0')
+  assert.equal(sitting.representativeChairTarget, 'representative-chair')
   advance(sitting, 4, () => {
     if (!sitting.representativeSeat) assert.ok(isOfficePositionWalkable(sprite, sitting.collisionRects()))
   })
-  assert.equal(sitting.representativeSeat?.chairId, 'chair-0-0')
+  assert.equal(sitting.representativeSeat?.chairId, 'representative-chair')
   assert.equal(sprite.frame, `ceo-sit-${direction}`)
   assert.equal(sprite.textureKey, 'ceo-seated-sheet-frames')
   assert.equal(sprite.anims.isPlaying, false)
@@ -923,7 +987,7 @@ for (const [rotation, direction] of [[0, 'front'], [90, 'right'], [180, 'back'],
   assert.equal(sitting.representativeDestination.visible, false)
   assert.deepEqual([...sitting.furniture.values()].map(({ image }) => image.depth), depths, 'sitting never reorders furniture')
   const seatedPosition = position(sprite)
-  chairClick(sitting, 'chair-0-0')
+  chairClick(sitting, 'representative-chair')
   floorClick(sitting, { x: 4, y: 4 })
   advance(sitting, 0.2)
   assert.deepEqual(position(sprite), seatedPosition, 'reclicking the same seat or a wall does not stand up')
@@ -941,20 +1005,20 @@ console.log('PASS chair clicks, real approach, all chair rotations/types, static
 // chair used to hide the seated CEO's head behind its monitor.
 for (const rotation of [0, 90, 180, 270]) {
   const composition = seatingScene(rotation)
-  composition.addFurniture('desk-0-0', 10, 400, 432, 144, 72)
+  composition.addFurniture('representative-desk', 10, 400, 432, 144, 72)
   composition.setLayoutEditing(true)
-  composition.selectFurniture('desk-0-0')
+  composition.selectFurniture('representative-desk')
   const layout = JSON.parse(storage.get('pixel-office-layout-v1'))
   composition.setLayoutEditing(false)
   for (const candidate of [composition, createScene(layout)]) {
     if (!candidate.representativeSprite) candidate.createRepresentativeActor()
     const depths = [...candidate.furniture.values()].map(({ id, image }) => [id, image.depth])
-    assert.equal(candidate.sitRepresentativeOn('chair-0-0'), true)
+    assert.equal(candidate.sitRepresentativeOn('representative-chair'), true)
     advance(candidate, 10)
     const body = candidate.representativeSprite
     const head = candidate.representativeSeatedForeground
-    const chair = candidate.furniture.get('chair-0-0').image
-    const desk = candidate.furniture.get('desk-0-0').image
+    const chair = candidate.furniture.get('representative-chair').image
+    const desk = candidate.furniture.get('representative-desk').image
     assert.equal(head.visible, true, 'the seated head needs a visible pass above the foreground desk')
     assert.ok(head.depth > desk.depth, 'the monitor cannot cover the head')
     assertSeatedLayers(candidate, chair, body, head.depth)
@@ -1046,14 +1110,14 @@ for (const direction of ['front', 'back', 'left', 'right']) {
   assert.equal(lapSkin, 0, `${direction}: both hands leave the lap in the new typing posture`)
 }
 const typing = seatingScene()
-typing.addFurniture('desk-0-0', 10, 400, 432, 144, 72)
-typing.sitRepresentativeOn('chair-0-0')
+typing.addFurniture('representative-desk', 10, 400, 432, 144, 72)
+typing.sitRepresentativeOn('representative-chair')
 advance(typing, 8)
 assert.equal(typing.representativeSeatedForeground.texture.key, REPRESENTATIVE_WORK_TEXTURE)
-typing.furniture.get('desk-0-0').image.setPosition(650, 750)
+typing.furniture.get('representative-desk').image.setPosition(650, 750)
 advance(typing, 0.1)
 assert.equal(typing.representativeSeatedForeground.texture.key, 'ceo-seated-sheet-frames', 'moving the desk away restores resting hands')
-typing.furniture.get('desk-0-0').image.setPosition(400, 432)
+typing.furniture.get('representative-desk').image.setPosition(400, 432)
 advance(typing, 0.2)
 assert.equal(typing.representativeSeatedForeground.texture.key, REPRESENTATIVE_WORK_TEXTURE)
 typing.setLayoutEditing(true)
@@ -1073,7 +1137,7 @@ for (const north of [true, false]) {
     const scene = createScene(arrangement)
     if (employee) {
       scene.worldSave.actors = [{ profileId: 'meeting-depth', x: 480, y: 600 }]
-      snapshot(scene, [actor('meeting-depth')])
+      snapshot(scene, [actor('meeting-depth', 0, 'meeting')])
     } else {
       storage.set(OFFICE_REPRESENTATIVE_SAVE_KEY, JSON.stringify({ x: 480, y: 600 }))
       scene.createRepresentativeActor()
@@ -1130,17 +1194,17 @@ console.log('PASS original Codex torso pixels, no crop or alpha mask, seat conta
 
 const seats = seatingScene()
 for (const options of [{ button: 'right' }, { event: { shiftKey: true } }, { event: { ctrlKey: true } }]) {
-  chairClick(seats, 'chair-0-0', options)
+  chairClick(seats, 'representative-chair', options)
   assert.equal(seats.representativeChairTarget, null)
 }
-chairClick(seats, 'chair-0-0')
+chairClick(seats, 'representative-chair')
 advance(seats, 0.2)
 chairClick(seats, 'custom-chair')
 advance(seats, 4)
 assert.equal(seats.representativeSeat?.chairId, 'custom-chair', 'latest chair click replaces a pending destination')
-chairClick(seats, 'chair-0-0')
+chairClick(seats, 'representative-chair')
 advance(seats, 4)
-assert.equal(seats.representativeSeat?.chairId, 'chair-0-0', 'a seated player can switch chairs')
+assert.equal(seats.representativeSeat?.chairId, 'representative-chair', 'a seated player can switch chairs')
 seats.setLayoutEditing(true)
 assert.equal(seats.representativeSeat, null, 'entering the editor stands up before moving furniture')
 chairClick(seats, 'custom-chair')
@@ -1148,7 +1212,7 @@ assert.equal(seats.representativeChairTarget, null, 'editing selects a chair ins
 seats.setLayoutEditing(false)
 chairClick(seats, 'custom-chair')
 seats.setLayoutEditing(true)
-seats.furniture.get('custom-chair').image.setPosition(560, 560)
+seats.furniture.get('custom-chair').image.setPosition(560, 304)
 seats.refreshNavigationLayout()
 seats.setLayoutEditing(false)
 advance(seats, 4)
@@ -1156,8 +1220,8 @@ assert.equal(seats.representativeSeat?.chairId, 'custom-chair')
 assertSeatContact(seats, seats.furniture.get('custom-chair').image, seats.representativeSprite, seats.representativeSprite)
 seats.setLayoutEditing(true)
 seats.setLayoutEditing(false)
-chairClick(seats, 'chair-0-0')
-seats.furniture.delete('chair-0-0')
+chairClick(seats, 'representative-chair')
+seats.furniture.delete('representative-chair')
 seats.refreshNavigationLayout()
 advance(seats, 4)
 assert.equal(seats.representativeSeat, null)
@@ -1165,40 +1229,35 @@ assert.equal(seats.representativeChairTarget, null, 'deleting the destination sa
 console.log('PASS modified clicks, switching seats, edit selection, moved chairs, and deleted destinations')
 
 const removedBackSeat = seatingScene(180)
-chairClick(removedBackSeat, 'chair-0-0')
+chairClick(removedBackSeat, 'representative-chair')
 advance(removedBackSeat, 4)
-removedBackSeat.furniture.delete('chair-0-0')
+removedBackSeat.furniture.delete('representative-chair')
 assert.equal(removedBackSeat.moveRepresentativeTo({ x: 480, y: 600 }), true)
 advance(removedBackSeat, 4)
 assert.deepEqual(position(removedBackSeat.representativeSprite), { x: 480, y: 600 })
 assert.equal(removedBackSeat.representativeSprite.visible, true, 'removing an occupied chair restores visible walking')
 
-const occupiedSeat = seatingScene()
+const occupiedSeat = representativeScene({ x: 480, y: 600 })
 snapshot(occupiedSeat, [actor('owner')])
 assert.equal(occupiedSeat.sitRepresentativeOn('chair-0-0'), false, 'a worker walking to a chair reserves it')
 advance(occupiedSeat, 15)
 assert.equal(occupiedSeat.sitRepresentativeOn('chair-0-0'), false, 'an occupied chair rejects seating')
 snapshot(occupiedSeat, [actor('owner', 0, 'offDuty')])
-assert.equal(occupiedSeat.sitRepresentativeOn('chair-0-0'), true)
-advance(occupiedSeat, 4)
+assert.equal(occupiedSeat.sitRepresentativeOn('chair-0-0'), false, 'an empty employee seat still belongs to its owner')
 snapshot(occupiedSeat, [actor('returning-owner')])
 advance(occupiedSeat, 15)
 const returningOwner = occupiedSeat.actors.get('returning-owner')
-assert.equal(returningOwner.blocked, true, 'a returning worker waits while the representative owns the seat')
-assert.notDeepEqual(position(returningOwner.container), { x: 400, y: 480 })
-floorClick(occupiedSeat, { x: 480, y: 600 })
-advance(occupiedSeat, 12)
-assert.equal(returningOwner.settled, true, 'a worker can sit after the representative leaves')
-assert.deepEqual(position(returningOwner.container), { x: 400, y: 480 })
+assert.equal(returningOwner.settled, true, 'the owner can return to their exclusive seat')
+assert.deepEqual(position(returningOwner.container), position(occupiedSeat.furniture.get('chair-0-0').image))
 
 const inaccessible = seatingScene()
 // Enclose the chair with other furniture; the final seat step cannot ignore it.
 for (const [id, x, y] of [['north', 400, 416], ['south', 400, 544], ['west', 336, 480], ['east', 464, 480]]) {
   inaccessible.addFurniture(id, 12, x, y, 64, 64)
 }
-assert.equal(inaccessible.sitRepresentativeOn('chair-0-0'), false, 'a chair enclosed by furniture is unreachable')
+assert.equal(inaccessible.sitRepresentativeOn('representative-chair'), false, 'a chair enclosed by furniture is unreachable')
 assert.equal(inaccessible.representativeChairTarget, null)
-console.log('PASS occupied/reserved seats, returning employee waiting and resuming, and inaccessible chairs')
+console.log('PASS occupied and empty employee seat ownership, returning employees and inaccessible chairs')
 
 for (const [id, saved] of Object.entries(DEFAULT_LAYOUT_SEED).filter(([, saved]) =>
   saved.frame === 12 && saved.y < 336)) {

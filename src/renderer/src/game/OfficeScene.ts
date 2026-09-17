@@ -52,6 +52,7 @@ import {
 } from './officeGrid'
 import { intersectsAabb, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
 import { distanceToRoute, findYieldRoute } from './officeTraffic'
+import { REPRESENTATIVE_ROOM, isInMeetingRoom, isInRepresentativeRoom, isInStaffArea } from './officeRooms'
 import { measureFurnitureBounds } from './furnitureBounds'
 import { seatedFrameAnchor, seatedSpriteFoot } from './seatAnchors'
 import {
@@ -59,6 +60,9 @@ import {
   OFFICE_LAYOUT_SAVE_KEY,
   OFFICE_REMOVED_DESKS_KEY,
   REPRESENTATIVE_MEETING_CHAIR_ID,
+  REPRESENTATIVE_CHAIR_ID,
+  REPRESENTATIVE_DESK_ID,
+  migrateRepresentativeFurniture,
   parseOfficeLayout,
   parseRemovedIds,
   type OfficeLayoutSave,
@@ -232,6 +236,8 @@ function furnitureDisplaySize(frame: number, columns: number, rows: number): { w
 // A desk/chair pair is meant to sit close together (the chair tucks under
 // the desk), so they should never push each other away as a "collision".
 function pairedFurnitureId(id: string): string | null {
+  if (id === REPRESENTATIVE_DESK_ID) return REPRESENTATIVE_CHAIR_ID
+  if (id === REPRESENTATIVE_CHAIR_ID) return REPRESENTATIVE_DESK_ID
   const deskMatch = /^desk-(\d+-\d+)$/.exec(id)
   if (deskMatch) return `chair-${deskMatch[1]}`
   const chairMatch = /^chair-(\d+-\d+)$/.exec(id)
@@ -439,8 +445,14 @@ export class OfficeScene extends Phaser.Scene {
     this.worldSave = parseOfficeWorldSave(localStorage.getItem(OFFICE_WORLD_SAVE_KEY))
     // The seed only fills in ids the saved layout has no opinion on, so any
     // further edit the user makes always wins and persists exactly as before.
-    this.layoutSave = { ...DEFAULT_LAYOUT_SEED, ...parseOfficeLayout(localStorage.getItem(OFFICE_LAYOUT_SAVE_KEY)) }
-    this.removedDeskIds = parseRemovedIds(localStorage.getItem(OFFICE_REMOVED_DESKS_KEY))
+    const saved = migrateRepresentativeFurniture(parseOfficeLayout(localStorage.getItem(OFFICE_LAYOUT_SAVE_KEY)),
+      parseRemovedIds(localStorage.getItem(OFFICE_REMOVED_DESKS_KEY)))
+    this.layoutSave = { ...DEFAULT_LAYOUT_SEED, ...saved.layout }
+    this.removedDeskIds = saved.removedIds
+    if (saved.changed) {
+      localStorage.setItem(OFFICE_LAYOUT_SAVE_KEY, JSON.stringify(saved.layout))
+      localStorage.setItem(OFFICE_REMOVED_DESKS_KEY, JSON.stringify([...saved.removedIds]))
+    }
     this.zOrderById = new Map(
       Object.entries(this.layoutSave)
         .filter((entry): entry is [string, SavedFurniture & { zOrder: number }] => typeof entry[1].zOrder === 'number')
@@ -505,7 +517,8 @@ export class OfficeScene extends Phaser.Scene {
     this.createRoom(8, 8, 280, 205, '탕비실')
     this.createRoom(296, 8, 370, 205, '회의실')
     this.createRoom(674, 8, 278, 205, '출입구')
-    this.createRoom(709, 645, 243, 227, '대표실')
+    const room = REPRESENTATIVE_ROOM
+    this.createRoom(room.left + 5, room.top + 5, room.right - room.left, room.bottom - room.top, '대표실')
 
     // Pantry/meeting/representative-room decoration stays stripped per
     // request. Desks are back: capacity is now driven by how many are
@@ -891,7 +904,7 @@ export class OfficeScene extends Phaser.Scene {
     const { id, frame, image } = view
 
     if (frame === DESK_FURNITURE_FRAME) {
-      const templateId = this.teamTemplateIds[this.deskZone(id, image.x)]
+      const templateId = this.teamTemplateIds[this.deskZone(id, image)]
       const allowed = templateId ? await window.api.teamCapacity.canRemoveDesk(templateId) : true
       // The piece can be gone by the time the IPC round trip resolves (e.g.
       // already removed as another desk's paired chair in the same batch).
@@ -962,8 +975,11 @@ export class OfficeScene extends Phaser.Scene {
 
   private restoreCustomFurniture(): void {
     Object.entries(this.layoutSave).forEach(([id, saved]) => {
-      if (!id.startsWith('custom-') || saved.frame === undefined) return
-      this.addFurniture(id, saved.frame, saved.x, saved.y, saved.width ?? 64, saved.height ?? 64)
+      if (this.furniture.has(id) || this.removedDeskIds.has(id)) return
+      const frame = id.startsWith('custom-') ? saved.frame
+        : /^desk-\d+-\d+$/.test(id) ? DESK_FURNITURE_FRAME : /^chair-\d+-\d+$/.test(id) ? 12 : undefined
+      if (frame === undefined) return
+      this.addFurniture(id, frame, saved.x, saved.y, saved.width ?? 64, saved.height ?? 64)
     })
   }
 
@@ -1248,15 +1264,21 @@ export class OfficeScene extends Phaser.Scene {
     TEAM_DESKS.forEach((team, teamIndex) => team.forEach((_point, slotIndex) => {
       this.ensureDeskPair(teamIndex, slotIndex)
     }))
+    for (const [id, frame] of [[REPRESENTATIVE_DESK_ID, DESK_FURNITURE_FRAME], [REPRESENTATIVE_CHAIR_ID, 12]] as const) {
+      if (this.removedDeskIds.has(id) || this.furniture.has(id)) continue
+      const point = DEFAULT_LAYOUT_SEED[id]
+      this.addFurniture(id, frame, point.x, point.y, 64, 64)
+    }
   }
 
   /** Default desks keep their teamIndex in the id (collision avoidance can
    *  nudge one off its column, which would misclassify it under pure
    *  position lookup); only custom-added desks - which carry no team of
    *  their own - go by which column their x position currently falls in. */
-  private deskZone(id: string, x: number): number {
+  private deskZone(id: string, point: WorldPoint): number {
+    if (id === REPRESENTATIVE_DESK_ID || !isInStaffArea(point)) return -1
     const defaultMatch = /^desk-(\d+)-\d+$/.exec(id)
-    return defaultMatch ? Number(defaultMatch[1]) : teamIndexForX(x)
+    return defaultMatch ? Number(defaultMatch[1]) : teamIndexForX(point.x)
   }
 
   /** Every desk-frame piece (default or custom-added), grouped by team -
@@ -1264,8 +1286,8 @@ export class OfficeScene extends Phaser.Scene {
   private computeDeskCounts(): number[] {
     const counts = [0, 0, 0]
     this.furniture.forEach(({ id, frame, image }) => {
-      if (frame !== DESK_FURNITURE_FRAME || id === 'representative-desk') return
-      const zone = this.deskZone(id, image.x)
+      if (frame !== DESK_FURNITURE_FRAME) return
+      const zone = this.deskZone(id, image)
       if (zone >= 0 && zone < counts.length) counts[zone] += 1
     })
     return counts
@@ -1529,6 +1551,8 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private representativeChairAvailable(chair: FurnitureView, checkReservations = false): boolean {
+    if (![12, 13, 14].includes(chair.frame) || !(chair.id === REPRESENTATIVE_CHAIR_ID ||
+      chair.id === REPRESENTATIVE_MEETING_CHAIR_ID || isInRepresentativeRoom(chair.image) || isInMeetingRoom(chair.image))) return false
     return ![...this.actors.values()].some((view) =>
       intersectsAabb(actorCollisionRect(view.container), actorCollisionRect(chair.image)) ||
       (checkReservations && view.seatedGoal && view.goal &&
@@ -2074,14 +2098,24 @@ export class OfficeScene extends Phaser.Scene {
   // the static TEAM_DESKS default, so characters keep finding their seat
   // after a desk is dragged elsewhere.
   private deskSeatPoint(actor: OfficeGameActor): WorldPoint {
-    const chair = this.furniture.get('chair-' + actor.teamIndex + '-' + actor.slotIndex)
+    const chair = this.assignedDeskChair(actor)
     if (chair) return { x: chair.image.x, y: chair.image.y }
-    const desks = [...this.furniture.values()].filter(({ id, frame, image }) =>
-      frame === DESK_FURNITURE_FRAME && id !== 'representative-desk' && this.deskZone(id, image.x) === actor.teamIndex)
-    const desk = desks[actor.slotIndex]
-    if (desk) return { x: desk.image.x, y: desk.image.y + 64 }
+    const desk = this.furniture.get(`desk-${actor.teamIndex}-${actor.slotIndex}`)
+    if (desk && this.deskZone(desk.id, desk.image) === actor.teamIndex) return { x: desk.image.x, y: desk.image.y + 64 }
     // Distinct waiting points for a team that currently has no physical seat.
     return { x: 352 + actor.teamIndex * 96, y: 592 + actor.slotIndex * 40 }
+  }
+
+  private actorCanUseChair(actor: OfficeGameActor, chair: FurnitureView): boolean {
+    if (![12, 13, 14].includes(chair.frame) || chair.id === REPRESENTATIVE_CHAIR_ID ||
+      chair.id === REPRESENTATIVE_MEETING_CHAIR_ID || isInRepresentativeRoom(chair.image)) return false
+    if (isInMeetingRoom(chair.image)) return actor.presence === 'meeting'
+    return chair.id === `chair-${actor.teamIndex}-${actor.slotIndex}` && isInStaffArea(chair.image)
+  }
+
+  private assignedDeskChair(actor: OfficeGameActor): FurnitureView | undefined {
+    const chair = this.furniture.get(`chair-${actor.teamIndex}-${actor.slotIndex}`)
+    return chair && !isInMeetingRoom(chair.image) && this.actorCanUseChair(actor, chair) ? chair : undefined
   }
 
   private meetingDestination(actor: OfficeGameActor): ActorDestination {
@@ -2095,8 +2129,8 @@ export class OfficeScene extends Phaser.Scene {
       const collisions = this.collisionRects()
       const entry = nearestOfficePosition(WAYPOINTS.meetingDoor, collisions) ?? WAYPOINTS.meetingDoor
       const chairs = [...this.furniture.values()].filter(({ id, frame, image }) =>
-        id !== REPRESENTATIVE_MEETING_CHAIR_ID && id !== representativeChair &&
-        [12, 13, 14].includes(frame) && image.x > 304 && image.x < 656 && image.y > 32 && image.y < 336
+        id !== REPRESENTATIVE_MEETING_CHAIR_ID && id !== REPRESENTATIVE_CHAIR_ID && id !== representativeChair &&
+        [12, 13, 14].includes(frame) && isInMeetingRoom(image)
       ).sort((a, b) => a.image.y - b.image.y || a.image.x - b.image.x || a.id.localeCompare(b.id))
         .filter((chair) => findOfficePath(entry, chair.image, collisions, {
           goalRadius: SEAT_ACCESS_RADIUS, goalCollisions: this.chairAccessCollisions(chair, undefined, false)
@@ -2131,9 +2165,9 @@ export class OfficeScene extends Phaser.Scene {
       return this.meetingDestination(actor)
     }
     const point = targetPoint(actor, actorIndex, (candidate) => this.deskSeatPoint(candidate)) ?? this.deskSeatPoint(actor)
-    const seated = ['working', 'deskIdle', 'arriving', 'requestingHelp', 'error'].includes(actor.presence) &&
-      this.furniture.has('chair-' + actor.teamIndex + '-' + actor.slotIndex)
-    return { point, seated, chairId: seated ? 'chair-' + actor.teamIndex + '-' + actor.slotIndex : undefined }
+    const chair = this.assignedDeskChair(actor)
+    const seated = ['working', 'deskIdle', 'arriving', 'requestingHelp', 'error'].includes(actor.presence) && Boolean(chair)
+    return { point, seated, chairId: seated ? chair?.id : undefined }
   }
 
   private actorObstacles(except?: ActorView, includeRepresentative = true): CollisionRect[] {
@@ -2274,7 +2308,7 @@ export class OfficeScene extends Phaser.Scene {
   private updateActor(view: ActorView, actor: OfficeGameActor, actorIndex: number): void {
     if (this.layoutEditing || !view.stateMachine.requestPresence(actor.presence)) return
     const destination = this.actorDestination(actor, actorIndex)
-    const key = [actor.presence, destination.point.x, destination.point.y, this.navigationRevision].join(':')
+    const key = [actor.presence, destination.point.x, destination.point.y, destination.chairId, destination.seated, this.navigationRevision].join(':')
     const previousChair = view.settled && view.seatedGoal && view.chairId && this.furniture.get(view.chairId)
     if (previousChair && Math.hypot(destination.point.x - view.container.x, destination.point.y - view.container.y) > 0.5) {
       const departure = this.actorDeparturePoint(view, previousChair, destination)
@@ -2302,8 +2336,7 @@ export class OfficeScene extends Phaser.Scene {
     view.settled = false
     view.goal = destination.point
     view.seatedGoal = destination.seated
-    view.chairId = destination.seated ? destination.chairId ?? [...this.furniture.values()].find(({ frame, image }) =>
-      [12, 13, 14].includes(frame) && Math.hypot(image.x - destination.point.x, image.y - destination.point.y) < 0.5)?.id ?? null : null
+    view.chairId = destination.seated ? destination.chairId ?? this.assignedDeskChair(actor)?.id ?? null : null
     const labels: Partial<Record<OfficeGameActor['presence'], string>> = {
       working: '업무 중', meeting: '회의', requestingHelp: '도움 필요!', error: '오류!'
     }
@@ -2425,7 +2458,7 @@ export class OfficeScene extends Phaser.Scene {
     }
     if (view.seatedGoal && view.goal) {
       const chair = view.chairId && this.furniture.get(view.chairId)
-      if (!chair || chair.id === REPRESENTATIVE_MEETING_CHAIR_ID || Math.hypot(view.container.x - view.goal.x, view.container.y - view.goal.y) > SEAT_ACCESS_RADIUS ||
+      if (!chair || !this.actorCanUseChair(view.actor, chair) || Math.hypot(view.container.x - view.goal.x, view.container.y - view.goal.y) > SEAT_ACCESS_RADIUS ||
         !hasOfficeLineOfSight(view.container, view.goal, this.chairAccessCollisions(chair, view, false))) {
         this.blockActor(view, false)
         return
