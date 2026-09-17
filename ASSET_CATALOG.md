@@ -35,6 +35,8 @@ pixel-office/
 
 ## Furniture
 
+- `conference-table-v1.png` / `conference-table-side-v1.png`: 대형 회의탁자. 기존 네 조각과 같은 256×144 영역(16×9칸)을 한 가구로 편집한다. 내장 이미지 생성 도구로 만든 투명 PNG이며 회전 시 옆 방향 에셋을 사용한다. 프롬프트는 `furniture/conference-table-v1.md`에 기록했다.
+
 | 파일 | 용도 | 점유 칸 |
 | --- | --- | --- |
 | `coffee-machine-v2.png` | 정면형 탕비실 커피 머신 | 4×6 |

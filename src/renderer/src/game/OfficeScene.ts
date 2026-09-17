@@ -14,6 +14,8 @@ import refrigeratorAsset from '../assets/pixel-office/furniture/refrigerator-v2.
 import pantryCabinetAsset from '../assets/pixel-office/furniture/pantry-cabinet-v1.png'
 import presentationScreenAsset from '../assets/pixel-office/furniture/presentation-screen-v1.png'
 import longTableAsset from '../assets/pixel-office/furniture/long-table-v1.png'
+import conferenceTableAsset from '../assets/pixel-office/furniture/conference-table-v1.png'
+import conferenceTableSideAsset from '../assets/pixel-office/furniture/conference-table-side-v1.png'
 import laptopAsset from '../assets/pixel-office/furniture/laptop-v1.png'
 import workstationDeskAsset from '../assets/pixel-office/furniture/workstation-desk-v1.png'
 import officeChairAsset from '../assets/pixel-office/furniture/office-chair-v2.png'
@@ -58,12 +60,15 @@ import { measureFurnitureBounds } from './furnitureBounds'
 import { seatedFrameAnchor, seatedSpriteFoot } from './seatAnchors'
 import {
   DEFAULT_LAYOUT_SEED,
+  CONFERENCE_TABLE_FRAME,
+  CONFERENCE_TABLE_ID,
   OFFICE_LAYOUT_SAVE_KEY,
   OFFICE_REMOVED_DESKS_KEY,
   REPRESENTATIVE_MEETING_CHAIR_ID,
   REPRESENTATIVE_CHAIR_ID,
   REPRESENTATIVE_DESK_ID,
   migrateRepresentativeFurniture,
+  migrateMeetingTable,
   parseOfficeLayout,
   parseRemovedIds,
   type OfficeLayoutSave,
@@ -144,7 +149,7 @@ const FURNITURE_TEXTURES: Record<number, string> = {
   5: 'furniture-presentation-screen', 6: 'furniture-long-table', 7: 'furniture-laptop', 10: 'furniture-workstation-desk',
   12: 'furniture-office-chair', 13: 'furniture-office-chair', 14: 'furniture-office-chair',
   15: 'furniture-office-plant', 16: 'furniture-side-table', 17: 'furniture-office-sofa',
-  18: 'furniture-floor-lamp', 19: 'furniture-bookcase'
+  18: 'furniture-floor-lamp', 19: 'furniture-bookcase', [CONFERENCE_TABLE_FRAME]: 'furniture-conference-table'
 }
 const FURNITURE_ASSET_NAMES: Record<number, string> = {
   0: 'coffee-machine', 1: 'refrigerator', 2: 'pantry-cabinet', 5: 'presentation-screen',
@@ -155,6 +160,7 @@ const FURNITURE_ASSET_NAMES: Record<number, string> = {
 const FURNITURE_DIRECTIONS = ['front', 'right', 'back', 'left'] as const
 const STACKABLE_FURNITURE_FRAMES = new Set([7])
 const DESK_FURNITURE_FRAME = 10
+const TABLETOP_FURNITURE_FRAMES = new Set([DESK_FURNITURE_FRAME, 6, 16, CONFERENCE_TABLE_FRAME])
 // Keep the monitor wider than a seated character's head so its edges remain visible.
 const DESK_ASSET_SCALE = 1
 const CHAIR_ASSET_SCALE = 1.33
@@ -187,6 +193,7 @@ export const PALETTE_ITEMS: Array<{ frame: number; label: string; asset: string 
   { frame: 2, label: '탕비장', asset: pantryCabinetAsset },
   { frame: 5, label: '스크린', asset: presentationScreenAsset },
   { frame: 6, label: '긴 테이블', asset: longTableAsset },
+  { frame: CONFERENCE_TABLE_FRAME, label: '대형 회의탁자', asset: conferenceTableAsset },
   { frame: 7, label: '노트북', asset: laptopAsset },
   { frame: 10, label: '책상', asset: workstationDeskAsset },
   { frame: 12, label: '의자', asset: officeChairAsset },
@@ -434,6 +441,8 @@ export class OfficeScene extends Phaser.Scene {
       ['furniture-coffee-machine', coffeeMachineAsset], ['furniture-refrigerator', refrigeratorAsset],
       ['furniture-pantry-cabinet', pantryCabinetAsset], ['furniture-presentation-screen', presentationScreenAsset],
       ['furniture-long-table', longTableAsset], ['furniture-laptop', laptopAsset],
+      ['furniture-conference-table-source', conferenceTableAsset],
+      ['furniture-conference-table-side-source', conferenceTableSideAsset],
       ['furniture-workstation-desk', workstationDeskAsset],
       ['furniture-office-chair', officeChairAsset], ['furniture-office-plant', officePlantAsset],
       ['furniture-side-table', sideTableAsset], ['furniture-office-sofa', officeSofaAsset],
@@ -463,10 +472,11 @@ export class OfficeScene extends Phaser.Scene {
     // further edit the user makes always wins and persists exactly as before.
     const saved = migrateRepresentativeFurniture(parseOfficeLayout(localStorage.getItem(OFFICE_LAYOUT_SAVE_KEY)),
       parseRemovedIds(localStorage.getItem(OFFICE_REMOVED_DESKS_KEY)))
-    this.layoutSave = { ...DEFAULT_LAYOUT_SEED, ...saved.layout }
+    const meetingTable = migrateMeetingTable(saved.layout, saved.removedIds)
+    this.layoutSave = { ...DEFAULT_LAYOUT_SEED, ...meetingTable.layout }
     this.removedDeskIds = saved.removedIds
-    if (saved.changed) {
-      localStorage.setItem(OFFICE_LAYOUT_SAVE_KEY, JSON.stringify(saved.layout))
+    if (saved.changed || meetingTable.changed) {
+      localStorage.setItem(OFFICE_LAYOUT_SAVE_KEY, JSON.stringify(meetingTable.layout))
       localStorage.setItem(OFFICE_REMOVED_DESKS_KEY, JSON.stringify([...saved.removedIds]))
     }
     this.zOrderById = new Map(
@@ -482,6 +492,7 @@ export class OfficeScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#17221f')
       .setZoom(OFFICE_RENDER_SCALE)
       .centerOn(OFFICE_WORLD_WIDTH / 2, OFFICE_WORLD_HEIGHT / 2)
+    this.createConferenceTableTextures()
     this.createWorld()
     this.createLayoutEditor()
     this.createRosterFrames()
@@ -940,7 +951,7 @@ export class OfficeScene extends Phaser.Scene {
     // text object floating on the floor once that desk is gone.
     this.teamLabels.get(id)?.destroy()
     this.teamLabels.delete(id)
-    if (!id.startsWith('custom-')) {
+    if (!id.startsWith('custom-') || id === CONFERENCE_TABLE_ID) {
       this.removedDeskIds.add(id)
       const paired = pairedFurnitureId(id)
       const pairedView = paired ? this.furniture.get(paired) : undefined
@@ -1009,7 +1020,7 @@ export class OfficeScene extends Phaser.Scene {
     for (const [id, furniture] of this.furniture) {
       furniture.image.destroy()
       this.furniture.delete(id)
-      if (!id.startsWith('custom-')) this.removedDeskIds.add(id)
+      if (!id.startsWith('custom-') || id === CONFERENCE_TABLE_ID) this.removedDeskIds.add(id)
     }
     this.teamLabels.forEach((label) => label.destroy())
     this.teamLabels.clear()
@@ -1129,13 +1140,26 @@ export class OfficeScene extends Phaser.Scene {
     for (const { id, image } of this.furniture.values()) {
       image.setDepth(image.y + this.furnitureDepthBonus(id))
     }
+    // The head chair tucks under the table's end, even when its center is
+    // slightly south of the combined tabletop's center. Cover its seat and
+    // the seated person's lap, while keeping the southern chairs in front.
+    const headChair = this.furniture.get(REPRESENTATIVE_MEETING_CHAIR_ID)
+    if (headChair) {
+      const chairBounds = this.furnitureWalkCollision(headChair.image, 0)
+      for (const { frame, image } of this.furniture.values()) {
+        if ((frame === 6 || frame === CONFERENCE_TABLE_FRAME) &&
+          intersectsAabb(chairBounds, this.furnitureWalkCollision(image, 0))) {
+          image.setDepth(Math.max(image.depth, headChair.image.depth + 0.5))
+        }
+      }
+    }
     // A laptop rests on the tabletop, even when its center is further north
     // than the table's center. It must not jump in front of unrelated furniture.
     for (const { frame, image } of this.furniture.values()) {
       if (!STACKABLE_FURNITURE_FRAMES.has(frame)) continue
       const propBounds = this.furnitureWalkCollision(image, 0)
       for (const support of this.furniture.values()) {
-        if (![DESK_FURNITURE_FRAME, 6, 16].includes(support.frame)) continue
+        if (!TABLETOP_FURNITURE_FRAMES.has(support.frame)) continue
         const bounds = this.furnitureWalkCollision(support.image, 0)
         if (intersectsAabb(propBounds, bounds)) {
           image.setDepth(Math.max(image.depth, support.image.depth + 0.25))
@@ -1189,6 +1213,10 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private directionalFurnitureTexture(frame: number, angle: number): string {
+    if (frame === CONFERENCE_TABLE_FRAME) {
+      return Math.abs(Math.round(angle / 90)) % 2 === 1
+        ? 'furniture-conference-table-side' : 'furniture-conference-table'
+    }
     const assetName = FURNITURE_ASSET_NAMES[frame]
     if (!assetName) return FURNITURE_TEXTURES[frame] ?? 'furniture-workstation-desk'
     const direction = this.furnitureDirection(angle)
@@ -1196,6 +1224,30 @@ export class OfficeScene extends Phaser.Scene {
     // front view. Generated cardinal variants are only used after rotation.
     if (direction === 'front') return FURNITURE_TEXTURES[frame] ?? 'furniture-workstation-desk'
     return `furniture-directional-${assetName}-${direction}`
+  }
+
+  private createConferenceTableTextures(): void {
+    // Fit the generated alpha silhouettes into the former four-table bounds.
+    // Original PNGs stay intact; opposite views share this symmetric furniture.
+    for (const [key, width, height, x, y, artWidth, artHeight] of [
+      ['furniture-conference-table', 256, 144, 22, 28, 212, 105],
+      ['furniture-conference-table-side', 144, 256, 20, 22, 105, 212]
+    ] as const) {
+      if (this.textures.exists(key)) continue
+      const source = this.textures.get(`${key}-source`).getSourceImage() as HTMLImageElement
+      const canvas = document.createElement('canvas')
+      canvas.width = source.width
+      canvas.height = source.height
+      const context = canvas.getContext('2d', { willReadFrequently: true })!
+      context.drawImage(source, 0, 0)
+      const bounds = measureFurnitureBounds(context.getImageData(0, 0, source.width, source.height).data,
+        source.width, source.height)
+      const texture = this.textures.createCanvas(key, width, height)!
+      texture.context.imageSmoothingEnabled = false
+      texture.context.drawImage(source, Math.round(bounds.x * source.width), Math.round(bounds.y * source.height),
+        Math.round(bounds.width * source.width), Math.round(bounds.height * source.height), x, y, artWidth, artHeight)
+      texture.refresh()
+    }
   }
 
   private createRoom(x: number, y: number, width: number, height: number, label: string): void {
@@ -1597,7 +1649,7 @@ export class OfficeScene extends Phaser.Scene {
     // tabletop permits the short seating step; every other object still blocks it.
     for (const view of this.furniture.values()) {
       const bounds = this.furnitureWalkCollision(view.image, 0)
-      if ([DESK_FURNITURE_FRAME, 6, 16].includes(view.frame) &&
+      if (TABLETOP_FURNITURE_FRAMES.has(view.frame) &&
         (intersectsAabb(seat, bounds) || intersectsAabb(actorCollisionRect(chair.image), bounds))) {
         excluded.add(view.id)
       }

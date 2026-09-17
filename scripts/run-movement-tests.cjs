@@ -37,6 +37,7 @@ const {
   findOfficePath, hasOfficeLineOfSight, isOfficePositionWalkable, routeFor, WAYPOINTS,
   DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS, REPRESENTATIVE_MEETING_CHAIR_ID,
   REPRESENTATIVE_CHAIR_ID, REPRESENTATIVE_DESK_ID, migrateRepresentativeFurniture, isInRepresentativeRoom,
+  CONFERENCE_TABLE_ID, CONFERENCE_TABLE_FRAME, migrateMeetingTable,
   OFFICE_REPRESENTATIVE_SAVE_KEY, parseRepresentativePosition, measureFurnitureBounds,
   STAFF_PANTRY_SHEETS, measureWalkSheet, measureSeatedSheet, measureCharacterSheet, measurePantrySheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS,
   REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_CYCLE_MS, REPRESENTATIVE_WORK_FRAME_WIDTH,
@@ -107,6 +108,9 @@ const furnitureFiles = fs.readdirSync(furnitureDirectory)
 const textureBounds = new Map()
 function furnitureTextureBounds(image) {
   const key = image.texture.key
+  // These two runtime canvases fit the source PNG alpha into the old table's bounds.
+  if (key === 'furniture-conference-table') return { x: 22 / 256, y: 28 / 144, width: 212 / 256, height: 105 / 144 }
+  if (key === 'furniture-conference-table-side') return { x: 20 / 144, y: 22 / 256, width: 105 / 144, height: 212 / 256 }
   if (!textureBounds.has(key)) {
     const file = key.startsWith('furniture-directional-')
       ? `directional/${key.slice('furniture-directional-'.length)}-v1.png`
@@ -299,6 +303,27 @@ const legacyOffice = {
   'desk-2-1': { x: 848, y: 832, rotation: 90, zOrder: 800 },
   'chair-2-1': { x: 880, y: 864, rotation: 180, zOrder: 801 }
 }
+const legacyMeetingTable = Object.fromEntries([
+  [CONFERENCE_TABLE_ID, 224], ['custom-1787984530441-9', 208],
+  ['custom-1787984545290-10', 176], ['custom-1787984553858-11', 192]
+].map(([id, y]) => [id, { x: 480, y, rotation: 0, frame: 6, width: 256, height: 96, zOrder: 648 }]))
+const joinedMeetingTable = migrateMeetingTable(legacyMeetingTable, new Set())
+assert.equal(joinedMeetingTable.changed, true)
+assert.deepEqual(Object.keys(joinedMeetingTable.layout), [CONFERENCE_TABLE_ID], 'four overlapping table pieces become one editable object')
+assert.deepEqual(joinedMeetingTable.layout[CONFERENCE_TABLE_ID], {
+  x: 480, y: 200, rotation: 0, frame: CONFERENCE_TABLE_FRAME, width: 256, height: 144, zOrder: 648
+}, 'the combined table preserves the original group center and canvas bounds')
+assert.equal(Object.keys(legacyMeetingTable).length, 4, 'migration does not mutate the original saved layout')
+assert.equal(migrateMeetingTable(joinedMeetingTable.layout, new Set()).changed, false, 'table migration is idempotent')
+const translatedTables = Object.fromEntries(Object.entries(legacyMeetingTable).map(([id, table]) => [id, { ...table, x: table.x + 32, y: table.y + 48 }]))
+assert.equal(migrateMeetingTable(translatedTables, new Set()).layout[CONFERENCE_TABLE_ID].y, 248, 'a moved intact group keeps its location')
+assert.equal(migrateMeetingTable(legacyMeetingTable, new Set(['custom-1787984530441-9'])).changed, false, 'deleted table pieces stay deleted')
+for (const edit of [{ x: 496 }, { rotation: 90 }, { width: 128 }]) {
+  const edited = { ...legacyMeetingTable, [CONFERENCE_TABLE_ID]: { ...legacyMeetingTable[CONFERENCE_TABLE_ID], ...edit } }
+  assert.deepEqual(migrateMeetingTable(edited, new Set()).layout, edited, 'individually edited tables are preserved')
+}
+console.log('PASS single conference table migration, translated groups, repeat loads and preservation of user edits')
+
 const migratedOffice = migrateRepresentativeFurniture(legacyOffice, new Set())
 assert.deepEqual(migratedOffice.layout[REPRESENTATIVE_DESK_ID], legacyOffice['desk-2-1'])
 assert.deepEqual(migratedOffice.layout[REPRESENTATIVE_CHAIR_ID], legacyOffice['chair-2-1'])

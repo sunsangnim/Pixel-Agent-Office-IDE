@@ -37,7 +37,7 @@ export const FURNITURE_FOOTPRINTS: Record<number, TileFootprint> = {
   5: { columns: 10, rows: 2 }, 6: { columns: 16, rows: 6 }, 7: { columns: 3, rows: 2 }, 10: { columns: 12, rows: 6 },
   12: { columns: 4, rows: 4 }, 13: { columns: 4, rows: 4 }, 14: { columns: 4, rows: 4 },
   15: { columns: 2, rows: 4 }, 16: { columns: 4, rows: 2 }, 17: { columns: 8, rows: 4 },
-  18: { columns: 2, rows: 2 }, 19: { columns: 4, rows: 8 }
+  18: { columns: 2, rows: 2 }, 19: { columns: 4, rows: 8 }, 20: { columns: 16, rows: 9 }
 }
 
 export function rotatedFootprint(frame: number, angle: number): TileFootprint {

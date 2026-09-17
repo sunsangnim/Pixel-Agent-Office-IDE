@@ -10,6 +10,33 @@ export const REPRESENTATIVE_CHAIR_ID = 'representative-chair'
 export interface SavedFurniture extends WorldPoint { frame?: number; width?: number; height?: number; rotation?: number; zOrder?: number }
 export type OfficeLayoutSave = Record<string, SavedFurniture>
 
+export const CONFERENCE_TABLE_FRAME = 20
+export const CONFERENCE_TABLE_ID = 'custom-1787984477840-5'
+const LEGACY_MEETING_TABLE_PARTS = [
+  [CONFERENCE_TABLE_ID, 0],
+  ['custom-1787984530441-9', -16],
+  ['custom-1787984545290-10', -48],
+  ['custom-1787984553858-11', -32]
+] as const
+
+/** Replace only the intact four-piece table, including a translated group.
+ * Independently edited, rotated or deleted pieces retain their saved layout. */
+export function migrateMeetingTable(layout: OfficeLayoutSave, removedIds: ReadonlySet<string>) {
+  const anchor = layout[CONFERENCE_TABLE_ID]
+  if (!anchor || !LEGACY_MEETING_TABLE_PARTS.every(([id, offsetY]) => {
+    const part = layout[id]
+    return part && !removedIds.has(id) && part.frame === 6 &&
+      (part.rotation ?? 0) === 0 && (part.width ?? 256) === 256 && (part.height ?? 96) === 96 &&
+      part.x === anchor.x && part.y === anchor.y + offsetY
+  })) return { layout, changed: false }
+  const migrated = { ...layout }
+  for (const [id] of LEGACY_MEETING_TABLE_PARTS) delete migrated[id]
+  migrated[CONFERENCE_TABLE_ID] = {
+    ...anchor, y: anchor.y - 24, frame: CONFERENCE_TABLE_FRAME, width: 256, height: 144
+  }
+  return { layout: migrated, changed: true }
+}
+
 // The shipped representative desk was accidentally labelled as Antigravity's
 // first child. Rename its saved identity without moving or recreating furniture.
 export function migrateRepresentativeFurniture(layout: OfficeLayoutSave, removedIds: Set<string>) {
@@ -62,13 +89,10 @@ export const DEFAULT_LAYOUT_SEED: OfficeLayoutSave = {
   'custom-1787984435417-2': { x: 144, y: 96, rotation: 0, zOrder: 66, frame: 2, width: 128, height: 64 },
   'custom-1787984442155-3': { x: 240, y: 80, rotation: 0, zOrder: 64, frame: 1, width: 64, height: 128 },
   'custom-1787984453381-4': { x: 48, y: 112, rotation: 0, zOrder: 70, frame: 16, width: 64, height: 32 },
-  'custom-1787984477840-5': { x: 480, y: 224, rotation: 0, zOrder: 648, frame: 6, width: 256, height: 96 },
+  [CONFERENCE_TABLE_ID]: { x: 480, y: 200, rotation: 0, zOrder: 648, frame: CONFERENCE_TABLE_FRAME, width: 256, height: 144 },
   'custom-1787984480720-6': { x: 464, y: 48, rotation: 0, zOrder: 631, frame: 5, width: 160, height: 32 },
   'custom-1787984492714-7': { x: 448, y: 160, rotation: 0, zOrder: 653, frame: 12, width: 85.12, height: 85.12 },
   'custom-1787984505669-8': { x: 528, y: 160, rotation: 0, zOrder: 655, frame: 12, width: 85.12, height: 85.12 },
-  'custom-1787984530441-9': { x: 480, y: 208, rotation: 0, zOrder: 647, frame: 6, width: 256, height: 96 },
-  'custom-1787984545290-10': { x: 480, y: 176, rotation: 0, zOrder: 644, frame: 6, width: 256, height: 96 },
-  'custom-1787984553858-11': { x: 480, y: 192, rotation: 0, zOrder: 645, frame: 6, width: 256, height: 96 },
   'custom-1787984561211-12': { x: 528, y: 240, rotation: 180, zOrder: 651, frame: 12, width: 85.12, height: 85.12 },
   'custom-1787984561774-13': { x: 448, y: 240, rotation: 180, zOrder: 650, frame: 12, width: 85.12, height: 85.12 },
   'custom-1787984571110-14': { x: 368, y: 208, rotation: 90, zOrder: 646, frame: 12, width: 85.12, height: 85.12 },
