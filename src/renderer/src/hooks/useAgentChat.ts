@@ -76,6 +76,10 @@ export function useAgentChat(
     ])
   }
 
+  const addAgentMessage = (message: ChatMessage): void => {
+    setMessages(previous => previous.some(item => item.id === message.id) ? previous : [...previous, message])
+  }
+
   const flushGlobalAggregation = (): void => {
     const aggregation = globalAggregationRef.current
     if (!aggregation || aggregation.summaries.size < aggregation.expectedLeadIds.size) return
@@ -475,5 +479,5 @@ export function useAgentChat(
     }
   }
 
-  return { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, cancelPlanning, trackRestoredTasks }
+  return { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, addAgentMessage, cancelPlanning, trackRestoredTasks }
 }

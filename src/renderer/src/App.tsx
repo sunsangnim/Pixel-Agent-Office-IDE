@@ -8,6 +8,8 @@ import ChatPanel from './components/ChatPanel'
 import WorkspacePanel from './components/WorkspacePanel'
 import ResumeProjectDialog from './components/ResumeProjectDialog'
 import { resolveResumeRequest } from './lib/resumeCommands'
+import { MEETING_LEADS, isMeetingQuestion, pendingMeetingQuestions, type MeetingDraft } from '@shared/meetingNotes'
+import { MEETING_NOTES_KEY, readMeetingDraft } from './lib/meetingNotes'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
 import { useAgentChat, type PlanReadyPayload } from './hooks/useAgentChat'
 import { planTask } from './lib/taskRouter'
@@ -21,12 +23,11 @@ import {
   MEETING_CHECKPOINT_KEY,
   MEETING_QUEUE_KEY,
   presenceForRuntime,
-  readStoredJson,
-  type HeldMeetingPrompt,
   type MeetingCheckpoint
 } from './lib/meetingCheckpoint'
 
 interface PendingPlan {
+  title?: string
   taskId: string
   instanceIds: string[]
   readyIds: Set<string>
@@ -56,9 +57,13 @@ function App() {
   const [conversationProfileId, setConversationProfileId] = useState<string | null>(null)
   const recoveredCommand = useRef(false)
   const instancesLoaded = useRef(false)
-  const [heldPrompts, setHeldPrompts] = useState<HeldMeetingPrompt[]>(() =>
-    readStoredJson(localStorage.getItem(MEETING_QUEUE_KEY), [])
-  )
+  const [meetingDraft, setMeetingDraft] = useState<MeetingDraft | null>(() => readMeetingDraft(localStorage))
+  const draftRef = useRef(meetingDraft)
+  const meetingActiveRef = useRef(meetingActive)
+  const closingMeeting = useRef(false)
+  const submittingMeeting = useRef(false)
+  const [meetingSubmitting, setMeetingSubmitting] = useState(false)
+  const submitMeetingRef = useRef<(draft: MeetingDraft) => void>(() => {})
   const [pendingPlan, setPendingPlan] = useState<PendingPlan | null>(null)
   const [trackedTasks, setTrackedTasks] = useState<TrackedTask[]>([])
   const restoredBoot = useRef<string | null>(null)
@@ -75,7 +80,7 @@ function App() {
     })
   }
 
-  const { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, cancelPlanning, trackRestoredTasks } =
+  const { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, addAgentMessage, cancelPlanning, trackRestoredTasks } =
     useAgentChat(instances, templates, handlePlanReady)
 
   useEffect(() => {
@@ -208,11 +213,13 @@ function App() {
   }, [])
 
   const chooseFolder = async (): Promise<void> => {
+    if (meetingActiveRef.current) { setError('회의를 마친 뒤 프로젝트 폴더를 변경해주세요.'); return }
     const folder = await window.api.workspace.chooseWorkFolder()
     setWorkFolder(folder)
   }
 
   const resumeProject = async (projectPath: string): Promise<void> => {
+    if (meetingActiveRef.current) { setError('회의 중에는 발언을 기록합니다. 프로젝트 이어가기는 회의가 끝난 뒤 선택해주세요.'); return }
     setResumeOpen(false)
     setError(null)
     try {
@@ -318,6 +325,7 @@ function App() {
     }
 
     setPendingPlan({
+      title: taskWorkspace.title,
       taskId: taskWorkspace.taskId,
       instanceIds: planInstanceIds,
       readyIds: new Set(),
@@ -398,13 +406,91 @@ function App() {
     void sendPlanningPrompt(revisionPrompt, plan.instanceIds, plan.taskId, plan.specPath, instances, `[반려] ${feedback}`, plan.mode).catch(e => setError(String(e)))
   }
 
+  const saveMeeting = (draft: MeetingDraft | null): void => {
+    draftRef.current = draft
+    setMeetingDraft(draft)
+    if (draft) localStorage.setItem(MEETING_NOTES_KEY, JSON.stringify(draft))
+    else localStorage.removeItem(MEETING_NOTES_KEY)
+    localStorage.removeItem(MEETING_QUEUE_KEY)
+  }
+
+  const submitMeeting = async (draft: MeetingDraft): Promise<void> => {
+    if (submittingMeeting.current || !draft.endedAt || pendingMeetingQuestions(draft).length) return
+    submittingMeeting.current = true
+    setMeetingSubmitting(true)
+    setError(null)
+    try {
+      const result = await window.api.tasks.planMeeting(draft)
+      setWorkFolder(draft.projectPath)
+      setInstances(result.instances)
+      setTrackedTasks(result.tasks)
+      trackRestoredTasks(result.tasks, result.instances)
+      addSystemMessage('회의 발언과 에이전트 답변을 모아 Claude 부장에게 통합 SRS 작성을 요청했습니다. 작성 후 검토·승인을 기다립니다.')
+      result.notices.filter(notice => notice.includes('대기:')).forEach(addSystemMessage)
+      if (draftRef.current?.meetingId === draft.meetingId) saveMeeting(null)
+      closingMeeting.current = false
+    } catch (e) { setError(`${String(e)} 회의 기록은 보관되어 있습니다.`) }
+    finally { submittingMeeting.current = false; setMeetingSubmitting(false) }
+  }
+  submitMeetingRef.current = draft => { void submitMeeting(draft) }
+
+  useEffect(() => window.api.meetings?.onReply(event => {
+    setInstances(event.instances)
+    const draft = draftRef.current
+    if (!draft || draft.meetingId !== event.meetingId || !draft.questions.includes(event.questionId)) return
+    if (!event.entry && !event.error) return
+    const key = `${event.questionId}:${event.templateId}`
+    const errors = { ...draft.errors }
+    if (event.error) errors[key] = event.error
+    else delete errors[key]
+    const next = { ...draft, errors, entries: event.entry && !draft.entries.some(entry => entry.id === event.entry!.id) ? [...draft.entries, event.entry] : draft.entries }
+    saveMeeting(next)
+    if (event.entry) addAgentMessage({ id: `meeting:${event.entry.id}`, kind: 'agent', authorName: event.entry.author,
+      authorColor: '#6ea8fe', authorSeed: event.instances.find(instance => instance.profileId === `${event.templateId}:lead`)?.instanceId ?? `${event.templateId}:lead`, text: event.entry.text })
+    if (event.error) addSystemMessage(event.error)
+    if (closingMeeting.current && next.endedAt && !pendingMeetingQuestions(next).length) submitMeetingRef.current(next)
+  }), [])
+
+  const askMeeting = async (draft: MeetingDraft, questionId: string): Promise<void> => {
+    try { await window.api.meetings.ask(draft, questionId) }
+    catch (e) {
+      const current = draftRef.current
+      if (!current || current.meetingId !== draft.meetingId) return
+      const errors = { ...current.errors }
+      for (const templateId of MEETING_LEADS) if (!current.entries.some(entry => entry.questionId === questionId && entry.templateId === templateId)) errors[`${questionId}:${templateId}`] = String(e)
+      saveMeeting({ ...current, errors })
+      setError('질문 전달에 실패했습니다. 회의 기록은 보관되어 있으니 답변 다시 받기를 눌러주세요.')
+    }
+  }
+
+  const retryMeeting = (): void => {
+    const draft = draftRef.current
+    if (!draft) return
+    closingMeeting.current = Boolean(draft.endedAt)
+    setError(null)
+    saveMeeting({ ...draft, errors: {} })
+    const pending = pendingMeetingQuestions(draft)
+    if (pending.length) for (const questionId of pending) void askMeeting(draft, questionId)
+    else if (draft.endedAt) void submitMeeting(draft)
+  }
+
   const handleMeetingCommand = async (command: MeetingCommand): Promise<void> => {
     setError(null)
     if (command === 'start') {
-      if (meetingActive) {
+      if (meetingActiveRef.current) {
         addSystemMessage('이미 전체 회의가 진행 중입니다.')
         return
       }
+      if (draftRef.current?.entries.length) { setError('저장된 회의의 답변·SRS 작성을 먼저 마무리해주세요.'); return }
+      if (!workFolder) { setError('회의할 프로젝트 폴더를 먼저 선택해주세요.'); return }
+      const draft: MeetingDraft = { meetingId: crypto.randomUUID(), projectPath: workFolder, startedAt: new Date().toISOString(), entries: [], questions: [], errors: {} }
+      saveMeeting(draft)
+      closingMeeting.current = false
+      meetingActiveRef.current = true
+      setMeetingActive(true)
+      setRepresentativeVisitors(new Set())
+      localStorage.setItem(MEETING_CHECKPOINT_KEY, JSON.stringify({ startedAt: draft.startedAt, sessions: [] }))
+      addSystemMessage('회의를 시작합니다. 상석은 대표님 자리입니다. 발언을 기록하고, 질문에는 세 팀장이 각각 답변합니다. 회의 종료 후 전체 내용을 SRS 하나로 정리합니다.')
       const sessions = await Promise.all(instances.map(async (instance) => {
         const runtimeState = runtimeStates[instance.ptyId]?.state ?? 'idle'
         const buffer = await window.api.pty.getBuffer(instance.ptyId).catch(() => '')
@@ -417,21 +503,22 @@ function App() {
           bufferLength: buffer.length
         }
       }))
-      const checkpoint: MeetingCheckpoint = { startedAt: new Date().toISOString(), sessions }
-      setRepresentativeVisitors(new Set())
-      localStorage.setItem(MEETING_CHECKPOINT_KEY, JSON.stringify(checkpoint))
-      setMeetingActive(true)
-      addSystemMessage('회의를 시작합니다. 에이전트들이 회의실로 이동합니다. 상석은 대표님 자리로 비워둡니다.')
+      const checkpoint: MeetingCheckpoint = { startedAt: draft.startedAt, sessions }
+      if (meetingActiveRef.current && draftRef.current?.meetingId === draft.meetingId) localStorage.setItem(MEETING_CHECKPOINT_KEY, JSON.stringify(checkpoint))
       return
     }
 
-    const queued = [...heldPrompts]
+    if (!meetingActiveRef.current) { addSystemMessage('진행 중인 회의가 없습니다.'); return }
+    meetingActiveRef.current = false
     setMeetingActive(false)
-    setHeldPrompts([])
     localStorage.removeItem(MEETING_CHECKPOINT_KEY)
-    localStorage.removeItem(MEETING_QUEUE_KEY)
-    addSystemMessage(`회의를 마쳤습니다. 각자 자리로 복귀합니다.${queued.length ? ` 보류한 지시 ${queued.length}건을 이어서 처리합니다.` : ''}`)
-    for (const prompt of queued) await executePrompt(prompt.text, prompt.targetIds)
+    const current = draftRef.current
+    if (!current?.entries.length) { saveMeeting(null); addSystemMessage('회의를 마쳤습니다. 기록된 발언이 없어 SRS는 만들지 않습니다.'); return }
+    const draft = { ...current, projectPath: current.projectPath || workFolder || '', endedAt: new Date().toISOString() }
+    saveMeeting(draft)
+    closingMeeting.current = true
+    if (pendingMeetingQuestions(draft).length) addSystemMessage('회의를 마쳤습니다. 남은 에이전트 답변을 받은 뒤 전체 내용을 SRS 하나로 정리합니다.')
+    else await submitMeeting(draft)
   }
 
   useEffect(() => {
@@ -445,7 +532,7 @@ function App() {
     void handleMeetingCommand(command)
   }, [pendingPlan])
 
-  const sendPromptToSelected = async (text: string): Promise<void> => {
+  const sendPromptToSelected = async (text: string, askAgents = false): Promise<void> => {
     text = text.trim()
     if (!text) return
     // Record at the input boundary, before local commands, validation, or
@@ -475,18 +562,21 @@ function App() {
       return
     }
 
+    if (meetingActiveRef.current) {
+      const current = draftRef.current ?? { meetingId: crypto.randomUUID(), projectPath: workFolder || '', startedAt: new Date().toISOString(), entries: [], questions: [], errors: {} }
+      const id = crypto.randomUUID()
+      const question = askAgents || isMeetingQuestion(text)
+      const next: MeetingDraft = { ...current, projectPath: current.projectPath || workFolder || '', entries: [...current.entries,
+        { id, text, author: '대표', createdAt: new Date().toISOString(), ...(question ? { questionId: id } : {}) }], questions: question ? [...current.questions, id] : current.questions }
+      saveMeeting(next)
+      if (question) { addSystemMessage('Claude·Codex·Antigravity에게 각각 의견을 요청했습니다.'); void askMeeting(next, id) }
+      return
+    }
+
     if (typeof window.api.tasks.resume === 'function') {
       const resume = resolveResumeRequest(text, trackedTasks)
       if (resume.kind === 'project') { await resumeProject(resume.projectPath!); return }
       if (resume.kind === 'select') { setResumeOpen(true); return }
-    }
-
-    if (meetingActive) {
-      const next = [...heldPrompts, { text, targetIds: Array.from(selectedTargetIds) }]
-      setHeldPrompts(next)
-      localStorage.setItem(MEETING_QUEUE_KEY, JSON.stringify(next))
-      addSystemMessage(`회의 중 지시 보류: 회의 종료 후 전송합니다. (대기 ${next.length}건)`)
-      return
     }
 
     await executePrompt(text)
@@ -503,7 +593,7 @@ function App() {
       const status = planningStatus(pendingPlan.instanceIds, instances, runtimeStates)
       requests.push({ id: `plan:${pendingPlan.taskId}:${ready ? 'approval' : 'progress'}`, profileId: instance.profileId,
         kind: ready ? 'approval' : 'planning', ptyId: instance.ptyId,
-        text: ready ? `“${pendingPlan.originalText}” 기획을 확인해주세요. 승인해주시면 작업을 시작하겠습니다.` : `요청: ${pendingPlan.originalText}\n${status.text}`,
+        text: ready ? `“${pendingPlan.title ?? pendingPlan.originalText}” 기획을 확인해주세요. 승인해주시면 작업을 시작하겠습니다.` : `요청: ${pendingPlan.title ?? pendingPlan.originalText}\n${status.text}`,
         specText: pendingPlan.specText ?? undefined, onCancel: cancelPlan,
         onApprove: ready ? () => { void approvePlan() } : undefined, onReject: ready ? rejectPlan : undefined })
     }
@@ -513,6 +603,13 @@ function App() {
     <div className="app-root">
       <div className="main-column">
         {error && <p className="error-banner">{error}</p>}
+        {meetingDraft && <div className="meeting-notes-bar" role="status">
+          <span>{meetingActive ? '회의 기록 중' : '회의 정리'} · 발언 {meetingDraft.entries.filter(entry => !entry.templateId).length}개 · 답변 {meetingDraft.entries.filter(entry => entry.templateId).length}/{meetingDraft.questions.length * 3}개</span>
+          {meetingActive && <button onClick={() => { void handleMeetingCommand('end') }}>회의 끝내고 SRS 작성</button>}
+          {pendingMeetingQuestions(meetingDraft).length > 0 && <button onClick={retryMeeting}>답변 다시 받기</button>}
+          {!meetingActive && !pendingMeetingQuestions(meetingDraft).length && <button disabled={meetingSubmitting} onClick={retryMeeting}>{meetingSubmitting ? 'SRS 요청 중…' : '회의 SRS 작성'}</button>}
+          {Object.keys(meetingDraft.errors).length > 0 && <span className="meeting-answer-error">일부 답변이 중단되었습니다. CLI 상태를 확인하고 다시 받아주세요.</span>}
+        </div>}
         {trackedTasks.some(task => !['completed', 'cancelled'].includes(task.stage)) && <div className="resume-task-bar">
           <span>저장된 미완료 작업이 있습니다.</span><button onClick={() => setResumeOpen(true)}>프로젝트 이어가기</button>
         </div>}
@@ -556,6 +653,7 @@ function App() {
         onOpenFolder={() => { void window.api.workspace.openFolder().catch((e) => setError(String(e))) }}
         messages={messages}
         selectedTargetIds={selectedTargetIds}
+        meetingActive={meetingActive}
         onSend={sendPromptToSelected}
       />
 

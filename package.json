@@ -18,6 +18,7 @@
     "test:workspace-ui": "node scripts/run-workspace-ui-tests.cjs",
     "test:recovery": "node scripts/run-recovery-tests.cjs",
     "test:recovery-ui": "node scripts/run-recovery-ui-tests.cjs",
+    "test:meeting-ui": "node scripts/run-meeting-ui-tests.cjs",
     "test:office-ui": "node scripts/run-office-ui-tests.cjs"
   },
   "devDependencies": {

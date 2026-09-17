@@ -70,7 +70,16 @@ const api: PreloadApi = {
     revealFile: (path: string) => ipcRenderer.invoke('workspace:reveal-file', path),
     createFolder: (parent: string, name: string) => ipcRenderer.invoke('workspace:create-folder', parent, name)
   },
+  meetings: {
+    ask: (draft, questionId) => ipcRenderer.invoke('meetings:ask', draft, questionId),
+    onReply: callback => {
+      const listener = (_event: Electron.IpcRendererEvent, reply: import('../shared/types').MeetingReplyEvent) => callback(reply)
+      ipcRenderer.on('meetings:reply', listener)
+      return () => ipcRenderer.removeListener('meetings:reply', listener)
+    }
+  },
   tasks: {
+    planMeeting: draft => ipcRenderer.invoke('tasks:plan-meeting', draft),
     prepare: (request: string) => ipcRenderer.invoke('tasks:prepare', request),
     readSpec: (specPath: string): Promise<string> => ipcRenderer.invoke('tasks:read-spec', specPath),
     dispatch: request => ipcRenderer.invoke('tasks:dispatch', request),

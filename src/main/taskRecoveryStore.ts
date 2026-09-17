@@ -69,9 +69,9 @@ export class TaskRecoveryStore {
     task.updatedAt = new Date().toISOString()
   }
 
-  register(workspace: TaskWorkspace, request: string, projectPath: string): void {
+  register(workspace: TaskWorkspace, request: string, projectPath: string, sourceId?: string): void {
     const task: TrackedTask = { ...workspace, request, projectPath: this.files.path(projectPath),
-      stage: 'planning', mode: 'simple', commands: [], updatedAt: new Date().toISOString() }
+      stage: 'planning', mode: 'simple', commands: [], updatedAt: new Date().toISOString(), sourceId }
     this.validatePaths(task)
     this.tasks.push(task)
     this.record(task, '작업 등록', request)
