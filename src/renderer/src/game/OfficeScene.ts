@@ -5,7 +5,7 @@ import row3 from '../assets/pixel-office/characters/corporate-roster-row-3-v1.pn
 import row4 from '../assets/pixel-office/characters/corporate-roster-row-4-v1.png'
 import ceoAnimationSheet from '../assets/pixel-office/characters/ceo-walk-cycle-v3.png'
 import ceoSeatedSheet from '../assets/pixel-office/characters/ceo-seated-v1.png'
-import ceoDeskWorkSheet from '../assets/pixel-office/characters/ceo-desk-work-v1.png'
+import ceoDeskWorkSheet from '../assets/pixel-office/characters/ceo-desk-work-v3.png'
 import ceoPantrySheet from '../assets/pixel-office/characters/ceo-pantry-actions-v1.png'
 import speechBubbleAsset from '../assets/pixel-office/ui/speech-bubble-v1.png'
 import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-v2.png'
@@ -65,7 +65,8 @@ import {
 import { ActorStateMachine, actionForPresence } from './actorStateMachine'
 import { pantryPoseAt, type PantryAnimation } from './pantryAnimation'
 import {
-  REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_POSES, representativeWorkPixels, representativeWorkPoseAt
+  REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_POSES, REPRESENTATIVE_WORK_FRAME_WIDTH,
+  REPRESENTATIVE_WORK_FRAME_PADDING, representativeWorkPixels, representativeWorkPoseAt
 } from './representativeWorkAnimation'
 import { IdleActivity } from './idleActivity'
 import { CharacterGait, type CharacterPose } from './characterGait'
@@ -1737,7 +1738,7 @@ export class OfficeScene extends Phaser.Scene {
     const frame = `ceo-work-${direction}-${pose}`
     if (foreground.texture.key !== REPRESENTATIVE_WORK_TEXTURE || foreground.frame.name !== frame) {
       foreground.setTexture(REPRESENTATIVE_WORK_TEXTURE, frame)
-        .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
+        .setDisplaySize(ACTOR_SPRITE_WIDTH * REPRESENTATIVE_WORK_FRAME_WIDTH / CHARACTER_FRAME_WIDTH, ACTOR_SPRITE_HEIGHT)
     }
   }
 
@@ -1840,14 +1841,16 @@ export class OfficeScene extends Phaser.Scene {
     const measured = measureCharacterSheet(originalContext.getImageData(0, 0, seated.width, seated.height).data,
       seated.width, 'ceo-seated-sheet')
     const normalized = document.createElement('canvas')
-    normalized.width = CHARACTER_FRAME_WIDTH
+    normalized.width = REPRESENTATIVE_WORK_FRAME_WIDTH
     normalized.height = CHARACTER_FRAME_HEIGHT
     const input = normalized.getContext('2d')!
     input.imageSmoothingEnabled = false
     const texture = this.textures.createCanvas(REPRESENTATIVE_WORK_TEXTURE,
-      CHARACTER_FRAME_WIDTH * REPRESENTATIVE_WORK_POSES, CHARACTER_FRAME_HEIGHT * FURNITURE_DIRECTIONS.length)
+      REPRESENTATIVE_WORK_FRAME_WIDTH * REPRESENTATIVE_WORK_POSES, CHARACTER_FRAME_HEIGHT * FURNITURE_DIRECTIONS.length)
     if (!texture) throw new Error('Could not create representative work frames')
     const context = texture.getContext()
+    const seatedFrames = this.textures.get('ceo-seated-sheet-frames')
+    const headContext = (seatedFrames.getSourceImage() as HTMLCanvasElement).getContext('2d')!
     FURNITURE_DIRECTIONS.forEach((direction, row) => {
       const index = ['front', 'left', 'back', 'right'].indexOf(direction)
       const { source, destination } = measured[index]
@@ -1858,18 +1861,20 @@ export class OfficeScene extends Phaser.Scene {
       const scaleY = destination.height / source.height
       const cellX = (index % 2) * seated.width / 2
       const cellY = Math.floor(index / 2) * seated.height / 2
-      input.clearRect(0, 0, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
+      input.clearRect(0, 0, REPRESENTATIVE_WORK_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
       input.drawImage(work, cellX, cellY, seated.width / 2, seated.height / 2,
-        destination.x + (cellX - source.x) * scaleX, destination.y + (cellY - source.y) * scaleY,
+        REPRESENTATIVE_WORK_FRAME_PADDING + destination.x + (cellX - source.x) * scaleX, destination.y + (cellY - source.y) * scaleY,
         seated.width / 2 * scaleX, seated.height / 2 * scaleY)
-      const pixels = input.getImageData(0, 0, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
+      const pixels = input.getImageData(0, 0, REPRESENTATIVE_WORK_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
+      const seatedFrame = seatedFrames.get(`ceo-sit-${direction}`)
+      const head = headContext.getImageData(seatedFrame.cutX, seatedFrame.cutY, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT).data
       for (let pose = 0; pose < REPRESENTATIVE_WORK_POSES; pose += 1) {
-        const output = context.createImageData(CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
-        output.data.set(representativeWorkPixels(pixels.data, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT, direction, pose))
-        const x = pose * CHARACTER_FRAME_WIDTH
+        const output = context.createImageData(REPRESENTATIVE_WORK_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
+        output.data.set(representativeWorkPixels(pixels.data, REPRESENTATIVE_WORK_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT, direction, pose, head))
+        const x = pose * REPRESENTATIVE_WORK_FRAME_WIDTH
         const y = row * CHARACTER_FRAME_HEIGHT
         context.putImageData(output, x, y)
-        texture.add(`ceo-work-${direction}-${pose}`, 0, x, y, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
+        texture.add(`ceo-work-${direction}-${pose}`, 0, x, y, REPRESENTATIVE_WORK_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
       }
     })
     texture.refresh()

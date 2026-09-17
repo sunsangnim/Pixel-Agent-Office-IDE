@@ -36,7 +36,8 @@ const {
   DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS,
   OFFICE_REPRESENTATIVE_SAVE_KEY, parseRepresentativePosition, measureFurnitureBounds,
   STAFF_PANTRY_SHEETS, measureWalkSheet, measureSeatedSheet, measureCharacterSheet, measurePantrySheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS,
-  REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_CYCLE_MS, representativeWorkPixels, representativeWorkPoseAt
+  REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_CYCLE_MS, REPRESENTATIVE_WORK_FRAME_WIDTH,
+  REPRESENTATIVE_WORK_FRAME_PADDING, representativeWorkPixels, representativeWorkPoseAt
 } = require(outputFile)
 const seatedRenderer = require('./fixtures/seated-renderer.cjs').createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seatedFrameAnchor })
 const installSeatedRenderer = seatedRenderer.install
@@ -939,22 +940,56 @@ assert.equal(representativeWorkPoseAt(360), 3)
 assert.equal(representativeWorkPoseAt(1700), 0, 'typing pauses between bursts')
 assert.equal(representativeWorkPoseAt(REPRESENTATIVE_WORK_CYCLE_MS + 90), 1)
 for (const direction of ['front', 'back', 'left', 'right']) {
+  const width = REPRESENTATIVE_WORK_FRAME_WIDTH
+  const padding = REPRESENTATIVE_WORK_FRAME_PADDING
   const source = seatedRenderer.workFrame(direction)
+  const previousPose = seatedRenderer.workFrame(direction, 'v1')
+  const head = seatedRenderer.characterFrame('ceo-seated-sheet-frames', `ceo-sit-${direction}`).source.image.data
+  const handCenter = pixels => {
+    let totalX = 0, totalY = 0, count = 0
+    for (let y = 100; y < 250; y++) for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4
+      if (y < 174 && x >= padding && x < padding + 312 && head[(y * 312 + x - padding) * 4 + 3] > 0) continue
+      if (pixels[i + 3] > 127 && pixels[i] > 180 && pixels[i + 1] > 90 && pixels[i + 2] < 150 &&
+        pixels[i] > pixels[i + 1] * 1.2) { totalX += x; totalY += y; count++ }
+    }
+    assert.ok(count > 10, 'both poses retain visible skin on the hands')
+    return { x: totalX / count, y: totalY / count, count }
+  }
+  const beforeReach = handCenter(previousPose)
+  const afterReach = handCenter(source)
+  const movement = direction === 'back' ? beforeReach.y - afterReach.y
+    : direction === 'front' ? afterReach.y - beforeReach.y
+      : direction === 'left' ? beforeReach.x - afterReach.x : afterReach.x - beforeReach.x
+  assert.ok(movement > 10, `${direction}: the authored wrists reach clearly farther toward the keyboard`)
   const original = new Uint8ClampedArray(source)
-  assert.deepEqual(representativeWorkPixels(source, 312, 360, direction, 0), source, 'rest preserves every original pixel')
+  assert.deepEqual(representativeWorkPixels(source, width, 360, direction, 0, head), source, 'pauses keep the hands over the keyboard')
+  for (let y = 0; y < 360; y++) {
+    assert.ok(source[(y * width) * 4 + 3] < 128 && source[(y * width + width - 1) * 4 + 3] < 128,
+      'the wider work frame must not cut off the extended fingertips')
+  }
   const poses = new Set()
   for (let pose = 1; pose < 5; pose += 1) {
-    const output = representativeWorkPixels(source, 312, 360, direction, pose)
+    const output = representativeWorkPixels(source, width, 360, direction, pose, head)
     assert.notDeepEqual(output, source, `${direction} hands visibly move`)
-    assert.deepEqual(output.slice(0, 144 * 312 * 4), source.slice(0, 144 * 312 * 4), 'the head stays unchanged above the raised hands')
-    assert.deepEqual(output.slice(230 * 312 * 4), source.slice(230 * 312 * 4), 'lap, hips, legs and feet stay unchanged')
+    assert.deepEqual(output.slice(0, 100 * width * 4), source.slice(0, 100 * width * 4), 'no hair outlines are copied above the head')
+    let changedHeadPixels = 0
+    for (let y = 0; y < 174; y++) for (let x = 0; x < 312; x++) {
+      const i = (y * width + x + padding) * 4
+      if (head[(y * 312 + x) * 4 + 3] > 0 && [0, 1, 2, 3].some(channel => output[i + channel] !== source[i + channel])) changedHeadPixels++
+    }
+    assert.equal(changedHeadPixels, 0, 'the original head silhouette remains fixed in front of the reaching wrists')
+    let changedAlphaPixels = 0
+    for (let i = 3; i < source.length; i += 4) if (output[i] !== source[i]) changedAlphaPixels++
+    assert.equal(changedAlphaPixels, 0, 'typing never tears holes, disconnects the sleeves, or copies extra outlines')
+    assert.deepEqual(output.slice(250 * width * 4), source.slice(250 * width * 4), 'lap, hips, legs and feet stay unchanged')
     poses.add(Buffer.from(output).toString('base64'))
   }
   assert.equal(poses.size, 4, 'left and right hand motions produce distinct poses')
   assert.deepEqual(source, original, 'animation never mutates the seated source')
   let lapSkin = 0
-  for (let y = 230; y < 285; y++) for (let x = 0; x < 312; x++) {
-    const i = (y * 312 + x) * 4
+  for (let y = 250; y < 285; y++) for (let x = 0; x < width; x++) {
+    const i = (y * width + x) * 4
     if (source[i + 3] > 127 && source[i] > 180 && source[i + 1] > 90 && source[i + 2] < 150 &&
       source[i] > source[i + 1] * 1.2) lapSkin++
   }
