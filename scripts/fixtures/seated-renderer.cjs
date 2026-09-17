@@ -24,7 +24,7 @@ function rasterCanvas(width, height) {
   return { pixels, getContext: () => context }
 }
 
-function createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seatedFrameAnchor }) {
+function createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seatedFrameAnchor, measureStaffWorkSheet }) {
   const root = path.join(process.cwd(), 'src/renderer/src/assets/pixel-office')
   const images = new Map()
   const frames = new Map()
@@ -83,7 +83,24 @@ function createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seate
     scene.renderSeatedForeground = (sprite, ...rest) => render.call(scene,
       { ...sprite, frame: characterFrame(sprite.texture.key, sprite.frame) }, ...rest)
   }
-  return { install, characterFrame, furniturePixels, workFrame }
+  function staffWorkFrame(team, column, direction) {
+    const original = read(`characters/seated-v1/staff-${team}-seated-v1.png`)
+    const work = read(`characters/work-v1/staff-${team}-work-v1.png`)
+    if (work.width !== original.width || work.height !== original.height) throw new Error('Staff work grid size changed')
+    const row = ['front', 'back', 'left'].indexOf(direction)
+    const frame = measureStaffWorkSheet(original.data, work.data, original.width, original.height, team)[row * 5 + column]
+    const { region: r, workDestination: d, hands } = frame
+    const data = new Uint8ClampedArray(384 * 360 * 4)
+    for (let y = 0; y < 360; y++) for (let x = 0; x < 384; x++) {
+      const sx = Math.floor(r.x + (x + 0.5 - d.x) * r.width / d.width)
+      const sy = Math.floor(r.y + (y + 0.5 - d.y) * r.height / d.height)
+      if (sx < r.x || sx >= r.x + r.width || sy < r.y || sy >= r.y + r.height) continue
+      const from = (sy * work.width + sx) * 4
+      data.set(work.data.subarray(from, from + 4), (y * 384 + x) * 4)
+    }
+    return { data, hands }
+  }
+  return { install, characterFrame, furniturePixels, workFrame, staffWorkFrame }
 }
 
 module.exports = { createSeatedRenderer }

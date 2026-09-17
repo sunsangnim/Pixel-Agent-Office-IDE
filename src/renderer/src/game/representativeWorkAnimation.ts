@@ -8,7 +8,7 @@ export const REPRESENTATIVE_WORK_FRAME_PADDING = (REPRESENTATIVE_WORK_FRAME_WIDT
 
 // Atlas pixels (the 312 x 360 frame is displayed at 104 x 120). The forward
 // reach is authored in ceo-desk-work-v3; never stretch or cut the upper arms.
-interface HandRegion { x: number; y: number; rx: number; ry: number }
+export interface HandRegion { x: number; y: number; rx: number; ry: number }
 const HANDS: Record<SeatFacing, readonly [HandRegion, HandRegion]> = {
   front: [{ x: 96, y: 213, rx: 33, ry: 24 }, { x: 213, y: 213, rx: 33, ry: 24 }],
   back: [{ x: 67, y: 134, rx: 24, ry: 20 }, { x: 248, y: 134, rx: 24, ry: 20 }],
@@ -45,10 +45,14 @@ export function representativeWorkPoseAt(elapsedMs: number): number {
 // disconnected sleeve/shoulder seams can appear during the typing cycle.
 export function representativeWorkPixels(source: Uint8ClampedArray, width: number, height: number,
   facing: SeatFacing, pose: number, head: Uint8ClampedArray): Uint8ClampedArray {
+  return workHandPixels(source, width, height, HANDS[facing], pose, head)
+}
+
+export function workHandPixels(source: Uint8ClampedArray, width: number, height: number,
+  hands: readonly HandRegion[], pose: number, head: Uint8ClampedArray): Uint8ClampedArray {
   const output = new Uint8ClampedArray(source)
   const lifts = HAND_LIFTS[pose]
   if (!lifts || pose === 0) return output
-  const hands = HANDS[facing]
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const target = (y * width + x) * 4

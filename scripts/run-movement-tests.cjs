@@ -16,6 +16,7 @@ buildSync({
       "export * from './src/renderer/src/game/characterFrames'",
       "export * from './src/renderer/src/game/seatAnchors'",
       "export * from './src/renderer/src/game/representativeWorkAnimation'",
+      "export * from './src/renderer/src/game/staffWorkAnimation'",
       "export * from './src/renderer/src/game/layoutPersistence'",
       "export * from './src/renderer/src/game/idleActivity'",
       "export * from './src/renderer/src/game/actorStateMachine'",
@@ -37,9 +38,9 @@ const {
   OFFICE_REPRESENTATIVE_SAVE_KEY, parseRepresentativePosition, measureFurnitureBounds,
   STAFF_PANTRY_SHEETS, measureWalkSheet, measureSeatedSheet, measureCharacterSheet, measurePantrySheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS,
   REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_CYCLE_MS, REPRESENTATIVE_WORK_FRAME_WIDTH,
-  REPRESENTATIVE_WORK_FRAME_PADDING, representativeWorkPixels, representativeWorkPoseAt
+  REPRESENTATIVE_WORK_FRAME_PADDING, representativeWorkPixels, representativeWorkPoseAt, workHandPixels, measureStaffWorkSheet, staffWorkTexture
 } = require(outputFile)
-const seatedRenderer = require('./fixtures/seated-renderer.cjs').createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seatedFrameAnchor })
+const seatedRenderer = require('./fixtures/seated-renderer.cjs').createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seatedFrameAnchor, measureStaffWorkSheet })
 const installSeatedRenderer = seatedRenderer.install
 
 const storage = new Map()
@@ -1009,7 +1010,7 @@ assert.equal(typing.representativeSeatedForeground.texture.key, REPRESENTATIVE_W
 typing.setLayoutEditing(true)
 assert.equal(typing.representativeSeatedForeground.visible, false, 'editing stops typing and stands up')
 assert.equal(typing.representativeWorkElapsedMs, 0)
-console.log('PASS representative-only work motion, local arm pixels, stable body/seat, brief pauses, desk changes and editor interruption')
+console.log('PASS representative work motion, local arm pixels, stable body/seat, brief pauses, desk changes and editor interruption')
 
 // A north-side sitter must stay behind the meeting table even if the chair
 // was edited last. Test both CEO and employee composition with actual arrival.
@@ -1035,7 +1036,7 @@ for (const north of [true, false]) {
     const sitter = employee ? view.seatedForeground : scene.representativeSeatedForeground
     const table = scene.furniture.get('custom-meeting-table').image
     assert.equal(sitter.visible, true)
-    if (!employee) assert.equal(sitter.texture.key, 'ceo-seated-sheet-frames', 'meeting seats do not type')
+    assert.equal(sitter.texture.key, employee ? 'staff-seated-0-frames' : 'ceo-seated-sheet-frames', 'meeting seats do not type')
     assert.ok(north ? sitter.depth < table.depth : sitter.depth > table.depth,
       north ? 'front table hides the northern sitter lap' : 'southern sitter remains in front of the table')
     assert.equal(sitter.crop, null, 'occlusion uses asset layering, without cropping character pixels')
@@ -1057,16 +1058,16 @@ const torsoView = torsoScene.actors.get('torso')
 const torsoChair = torsoScene.furniture.get('chair-1-0').image
 assertSeatedLayers(torsoScene, torsoChair, torsoView.sprite, torsoView.seatedForeground.depth)
 const torsoTextureKey = torsoView.seatedForeground.texture.key
-assert.equal(torsoTextureKey, 'staff-seated-1-frames', 'the renderer uses the original unmodified character texture')
+assert.equal(torsoTextureKey, 'staff-work-1-frames', 'desk typing uses a complete authored pose')
 assert.equal(torsoView.seatedForeground.crop, null, 'no crop removes the lower half of the character')
-const torsoPixels = seatedRenderer.characterFrame(torsoTextureKey, torsoView.seatedForeground.frame).source.image.data
+const torsoPixels = seatedRenderer.staffWorkFrame(1, 0, 'back').data
 for (let y = 190; y <= 250; y++) {
-  const offset = (y * 312 + 156) * 4
+  const offset = (y * 384 + 192) * 4
   assert.ok(torsoPixels[offset + 3] > 240, 'the complete center of the coat remains opaque')
   assert.ok(torsoPixels[offset] > torsoPixels[offset + 1] + 40 &&
     torsoPixels[offset + 1] > torsoPixels[offset + 2] + 25, 'visible torso pixels belong to the brown coat')
 }
-assert.ok(torsoPixels[(280 * 312 + 156) * 4 + 3] > 240, 'the original lower torso is not punched out by a chair mask')
+assert.ok(torsoPixels[(280 * 384 + 192) * 4 + 3] > 240, 'the lower torso is not punched out by a chair mask')
 assertSeatContact(torsoScene, torsoScene.furniture.get('chair-1-0').image, torsoView.sprite, torsoView.seatedForeground)
 const resizedChair = torsoScene.furniture.get('chair-1-0').image
 resizedChair.setDisplaySize(resizedChair.displayWidth * 1.1, resizedChair.displayHeight * 1.1)
@@ -1260,6 +1261,19 @@ for (let team = 0; team < 3; team++) {
     advance(seated, 8)
     assert.equal(view.settled, true)
     assert.equal(view.sprite.textureKey, `staff-seated-${team}-frames`)
+    const frozenPose = view.seatedForeground.frame, frozenTime = view.workElapsedMs
+    seated.setLayoutEditing(true)
+    advance(seated, 0.3)
+    assert.equal(view.seatedForeground.frame, frozenPose, 'editing pauses the current typing pose')
+    assert.equal(view.workElapsedMs, frozenTime, 'editing does not advance typing time')
+    seated.setLayoutEditing(false)
+    const desk = seated.furniture.get(deskId).image
+    desk.setPosition(800, 800)
+    seated.updateActorWorkAnimation(view, 0)
+    assert.equal(view.seatedForeground.texture.key, `staff-seated-${team}-frames`, 'a chair without its nearby desk does not type')
+    desk.setPosition(400, 432)
+    seated.updateActorWorkAnimation(view, 0)
+    assert.equal(view.seatedForeground.texture.key, staffWorkTexture(team), 'typing resumes at the restored desk')
     const prefix = `actor-${team}-${team === 0 && slot === 0 ? 4 : slot}-sit-`
     const approach = { ...view.approachPoint }
     const depths = [...seated.furniture.values()].map(({ image }) => image.depth)
@@ -1273,6 +1287,8 @@ for (let team = 0; team < 3; team++) {
       assert.equal(view.sprite.visible, false)
       assert.ok(view.seatedForeground.depth > seated.furniture.get(deskId).image.depth)
       assert.ok(view.overlay.depth > view.seatedForeground.depth)
+      assert.equal(view.seatedForeground.texture.key, ['working', 'deskIdle'].includes(presence)
+        ? staffWorkTexture(team) : `staff-seated-${team}-frames`, 'help/error pause desk typing')
     }
     for (const [rotation, direction] of [[0, 'front'], [90, 'left'], [180, 'back'], [270, 'left']]) {
       seated.setLayoutEditing(true)
@@ -1282,7 +1298,18 @@ for (let team = 0; team < 3; team++) {
       seated.setLayoutEditing(false)
       assert.equal(view.sprite.frame, prefix + direction)
       assert.equal(view.sprite.flipX, rotation === 90)
-      if (rotation !== 180) assert.equal(view.seatedForeground.frame, view.sprite.frame)
+      assert.match(view.seatedForeground.frame, new RegExp(`^${prefix.replace('-sit-', '-work-')}${direction}-[0-4]$`))
+      const contact = position(view.seatedForeground)
+      const workFrames = new Set()
+      for (let tick = 0; tick < 23; tick++) {
+        seated.updateActorWorkAnimation(view, 90)
+        workFrames.add(view.seatedForeground.frame)
+        assert.deepEqual(position(view.seatedForeground), contact, 'typing keeps the seat contact fixed')
+      }
+      assert.equal(workFrames.size, 5, 'every staff identity types in all four directions')
+      const elapsed = view.workElapsedMs
+      snapshot(seated, [{ ...employee, presence: 'deskIdle' }])
+      assert.equal(view.workElapsedMs, elapsed, 'routine snapshots do not restart the typing loop')
       assert.equal(view.seatedForeground.flipX, view.sprite.flipX)
       assertSeatedLayers(seated, seated.furniture.get(chairId).image, view.sprite,
         view.seatedForeground.visible ? view.seatedForeground.depth : view.container.depth)
@@ -1311,6 +1338,43 @@ for (let team = 0; team < 3; team++) {
   }
 }
 console.log('PASS all 15 employees: actual sitting, four chair directions, work/help/error, safe standing, selection, and cleanup')
+
+for (let team = 0; team < 3; team++) {
+  const root = 'src/renderer/src/assets/pixel-office/characters'
+  const original = PNG.sync.read(fs.readFileSync(`${root}/seated-v1/staff-${team}-seated-v1.png`))
+  const work = PNG.sync.read(fs.readFileSync(`${root}/work-v1/staff-${team}-work-v1.png`))
+  for (const { region } of measureStaffWorkSheet(original.data, work.data, work.width, work.height, team)) {
+    for (let y = region.y; y < region.y + region.height; y++) {
+      for (const x of [region.x, region.x + region.width - 1]) {
+        assert.ok(work.data[(y * work.width + x) * 4 + 3] <= 127, 'column splits must stay in transparent gaps, never through a neighboring fingertip')
+      }
+    }
+  }
+}
+
+for (let team = 0; team < 3; team++) for (let column = 0; column < 5; column++) {
+  for (const direction of ['front', 'back', 'left']) {
+    const { data, hands } = seatedRenderer.staffWorkFrame(team, column, direction)
+    const head = seatedRenderer.characterFrame(`staff-seated-${team}-frames`, `actor-${team}-${column}-sit-${direction}`).source.image.data
+    const untouched = new Uint8ClampedArray(data)
+    const distinct = new Set()
+    for (let pose = 0; pose < 5; pose++) {
+      const output = workHandPixels(data, 384, 360, hands, pose, head)
+      distinct.add(require('node:crypto').createHash('sha256').update(output).digest('hex'))
+      for (let y = 0; y < 360; y++) for (let x = 0; x < 384; x++) {
+        const p = (y * 384 + x) * 4
+        assert.equal(output[p + 3], data[p + 3], 'typing never tears sleeves or changes any silhouette alpha')
+        if (y < 100 || y >= 250) assert.deepEqual(output.subarray(p, p + 4), data.subarray(p, p + 4), 'hair and lower body stay fixed')
+      }
+    }
+    assert.equal(distinct.size, 5, `${team}-${column} ${direction}: all five hand poses are visually distinct`)
+    assert.deepEqual(data, untouched, 'shared source artwork remains unchanged')
+    for (let y = 0; y < 360; y++) {
+      assert.ok(data[(y * 384) * 4 + 3] < 128 && data[(y * 384 + 383) * 4 + 3] < 128, 'reaching fingertips fit the wider frame')
+    }
+  }
+}
+console.log('PASS 45 staff work views: five distinct finger poses, intact alpha/edges, stable hair/feet and unclipped reach')
 
 const meeting = createScene()
 const attendees = Array.from({ length: 5 }, (_, index) => actor(`meeting-${index}`, index % 3, 'meeting', index))
