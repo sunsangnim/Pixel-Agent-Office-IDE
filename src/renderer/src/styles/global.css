@@ -643,16 +643,30 @@ textarea {
 
 .layout-editor-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px;
 }
 
+.layout-editor-undo-btn,
+.layout-editor-redo-btn,
 .layout-editor-remove-btn,
 .layout-editor-reset-btn {
   font-size: 11px;
   padding: 6px 12px;
   border-radius: 6px;
   color: #ffffff;
+}
+
+.layout-editor-undo-btn,
+.layout-editor-redo-btn {
+  background: #2f4a6e;
+}
+
+.layout-editor-undo-btn:disabled,
+.layout-editor-redo-btn:disabled {
+  background: #33383f;
+  color: #7d838c;
+  cursor: not-allowed;
 }
 
 .layout-editor-remove-btn {

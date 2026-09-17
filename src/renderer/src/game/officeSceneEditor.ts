@@ -1,11 +1,71 @@
-import type { OfficeScene } from './OfficeScene'
+import type { OfficeScene, LayoutSnapshot } from './OfficeScene'
 import Phaser from 'phaser'
-import { CONFERENCE_TABLE_FRAME, CONFERENCE_TABLE_ID, OFFICE_LAYOUT_SAVE_KEY, OFFICE_REMOVED_DESKS_KEY, REPRESENTATIVE_MEETING_CHAIR_ID } from './layoutPersistence'
+import { CONFERENCE_TABLE_FRAME, CONFERENCE_TABLE_ID, OFFICE_LAYOUT_SAVE_KEY, OFFICE_REMOVED_DESKS_KEY, REPRESENTATIVE_MEETING_CHAIR_ID, type SavedFurniture } from './layoutPersistence'
 import { DESK_FURNITURE_FRAME, EditorState, FloorTexture, FurnitureView, OFFICE_FLOOR_SAVE_KEY, STACKABLE_FURNITURE_FRAMES, TABLETOP_FURNITURE_FRAMES, furnitureDisplaySize, pairedFurnitureId } from './OfficeScene'
 import { OFFICE_WORLD_HEIGHT, OFFICE_WORLD_WIDTH } from './officeWorld'
 import { intersectsAabb } from './collisionResolution'
 import { isInStaffArea } from './officeRooms'
 import { rotatedFootprint, snapFurniturePoint } from './officeGrid'
+
+const MAX_UNDO_HISTORY = 50
+
+function snapshotLayout(scene: OfficeScene): LayoutSnapshot {
+  return { layout: structuredClone(scene.layoutSave), removedDeskIds: [...scene.removedDeskIds] }
+}
+
+/** Call before any furniture-layout mutation so it can be undone. A fresh
+ *  action always invalidates whatever was previously available to redo. */
+function pushUndo(scene: OfficeScene): void {
+  scene.undoStack.push(snapshotLayout(scene))
+  if (scene.undoStack.length > MAX_UNDO_HISTORY) scene.undoStack.shift()
+  scene.redoStack = []
+}
+
+/** Rebuilds every furniture piece from a saved snapshot - the same
+ *  destroy-and-recreate path `create()` itself uses on a fresh load. */
+function applyLayoutSnapshot(scene: OfficeScene, snapshot: LayoutSnapshot): void {
+  for (const view of scene.furniture.values()) view.image.destroy()
+  scene.furniture.clear()
+  scene.teamLabels.forEach((label) => label.destroy())
+  scene.teamLabels.clear()
+  scene.clearMultiSelection()
+  scene.selectedFurniture = null
+  scene.selectionOutline?.destroy()
+  scene.selectionOutline = undefined
+
+  scene.layoutSave = structuredClone(snapshot.layout)
+  scene.removedDeskIds = new Set(snapshot.removedDeskIds)
+  scene.zOrderById = new Map(
+    Object.entries(scene.layoutSave)
+      .filter((entry): entry is [string, SavedFurniture & { zOrder: number }] => typeof entry[1].zOrder === 'number')
+      .map(([id, saved]) => [id, saved.zOrder])
+  )
+  scene.nextZOrder = 1 + Math.max(0, ...scene.zOrderById.values())
+
+  scene.createDesks()
+  scene.restoreCustomFurniture()
+  localStorage.setItem(OFFICE_LAYOUT_SAVE_KEY, JSON.stringify(scene.layoutSave))
+  localStorage.setItem(OFFICE_REMOVED_DESKS_KEY, JSON.stringify([...scene.removedDeskIds]))
+  scene.refreshNavigationLayout()
+  scene.reportDeskCounts()
+  scene.notifyEditorState()
+}
+
+export function undoLayoutChange(scene: OfficeScene): void {
+  if (!scene.layoutEditing) return
+  const snapshot = scene.undoStack.pop()
+  if (!snapshot) return
+  scene.redoStack.push(snapshotLayout(scene))
+  applyLayoutSnapshot(scene, snapshot)
+}
+
+export function redoLayoutChange(scene: OfficeScene): void {
+  if (!scene.layoutEditing) return
+  const snapshot = scene.redoStack.pop()
+  if (!snapshot) return
+  scene.undoStack.push(snapshotLayout(scene))
+  applyLayoutSnapshot(scene, snapshot)
+}
 
 export function addFurniture(scene: OfficeScene, id: string, frame: number, x: number, y: number, _width: number, _height: number): Phaser.GameObjects.Image {
   const saved = scene.layoutSave[id]
@@ -73,6 +133,7 @@ export function addFurniture(scene: OfficeScene, id: string, frame: number, x: n
   image.on('dragstart', () => {
     // Input remains bound outside editing; that must not change layer order.
     if (!scene.layoutEditing) return
+    pushUndo(scene)
     image.setData({ dragStartX: image.x, dragStartY: image.y })
     // Resolve equal-position ties without lifting rear furniture over the front.
     scene.bringFurnitureToFront(id)
@@ -144,6 +205,14 @@ export function createLayoutEditor(scene: OfficeScene): void {
   // A plain click selects; movement starts a drag separately.
   scene.input.dragDistanceThreshold = 4
   scene.input.keyboard?.on('keydown-DELETE', () => scene.deleteSelectedFurniture())
+  scene.input.keyboard?.on('keydown-Z', (event: KeyboardEvent) => {
+    if (!(event.ctrlKey || event.metaKey)) return
+    if (event.shiftKey) scene.redoLayoutChange()
+    else scene.undoLayoutChange()
+  })
+  scene.input.keyboard?.on('keydown-Y', (event: KeyboardEvent) => {
+    if (event.ctrlKey || event.metaKey) scene.redoLayoutChange()
+  })
   scene.createMarqueeSelect()
 }
 // Shift + drag draws a rectangle and multi-selects every piece whose
@@ -292,6 +361,7 @@ export function toggleFurnitureSelection(scene: OfficeScene, id: string): void {
 }
 export function addFurnitureFromPalette(scene: OfficeScene, frame: number): void {
   if (!scene.layoutEditing) return
+  pushUndo(scene)
   const id = `custom-${Date.now()}-${scene.nextFurnitureId++}`
   const point = scene.findFreeFurniturePoint(frame)
   const image = scene.addFurniture(id, frame, point.x, point.y, 64, 64)
@@ -302,6 +372,8 @@ export function addFurnitureFromPalette(scene: OfficeScene, frame: number): void
 }
 export async function deleteSelectedFurniture(scene: OfficeScene): Promise<void> {
   if (!scene.layoutEditing) return
+  if (!scene.selectedFurniture && scene.multiSelectedIds.size === 0) return
+  pushUndo(scene)
   if (scene.multiSelectedIds.size > 0) {
     // Snapshot the ids up front - deleting a desk also removes its paired
     // chair mid-loop, so a later id in this same batch may already be gone
@@ -366,6 +438,7 @@ export async function deleteFurnitureView(scene: OfficeScene, view: FurnitureVie
 }
 export function rotateSelectedFurniture(scene: OfficeScene, delta: number): void {
   if (!scene.layoutEditing || !scene.selectedFurniture) return
+  pushUndo(scene)
   const { id, image } = scene.selectedFurniture
   scene.bringFurnitureToFront(id)
   const nextAngle = Phaser.Math.Wrap(scene.furnitureRotation(image) + delta, 0, 360)
@@ -407,6 +480,9 @@ export function restoreCustomFurniture(scene: OfficeScene): void {
 // desk/chair and custom piece goes - rather than restoring the furnished
 // defaults, matching the stripped-down office this is meant to reset to.
 export function resetFurnitureLayout(scene: OfficeScene): void {
+  if (!scene.layoutEditing) return
+  if (!window.confirm('오피스의 모든 가구와 데스크를 지웁니다. (편집 중 Ctrl+Z로 되돌릴 수 있습니다) 계속할까요?')) return
+  pushUndo(scene)
   scene.layoutSave = {}
   scene.zOrderById.clear()
   scene.nextZOrder = 1
@@ -499,7 +575,9 @@ export function refreshTeamLabels(scene: OfficeScene): void {
 export function editorState(scene: OfficeScene): EditorState {
   return {
     hasSelection: Boolean(scene.selectedFurniture) || scene.multiSelectedIds.size > 0,
-    floor: scene.selectedFloor
+    floor: scene.selectedFloor,
+    canUndo: scene.undoStack.length > 0,
+    canRedo: scene.redoStack.length > 0
   }
 }
 export function notifyEditorState(scene: OfficeScene): void {

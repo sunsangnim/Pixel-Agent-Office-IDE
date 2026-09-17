@@ -6,7 +6,9 @@ interface LayoutEditorPanelProps {
 }
 
 function LayoutEditorPanel({ scene }: LayoutEditorPanelProps) {
-  const [state, setState] = useState<EditorState>({ hasSelection: false, floor: 'floor-plain-gray' })
+  const [state, setState] = useState<EditorState>({
+    hasSelection: false, floor: 'floor-plain-gray', canUndo: false, canRedo: false
+  })
 
   useEffect(() => {
     if (!scene) return
@@ -53,6 +55,12 @@ function LayoutEditorPanel({ scene }: LayoutEditorPanelProps) {
       </div>
 
       <div className="layout-editor-actions">
+        <button type="button" className="layout-editor-undo-btn" disabled={!state.canUndo} onClick={() => scene?.undoLayoutChange()}>
+          되돌리기
+        </button>
+        <button type="button" className="layout-editor-redo-btn" disabled={!state.canRedo} onClick={() => scene?.redoLayoutChange()}>
+          다시 실행
+        </button>
         <button
           type="button"
           className="layout-editor-remove-btn"
