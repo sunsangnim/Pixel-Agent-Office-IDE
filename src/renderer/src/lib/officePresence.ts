@@ -5,10 +5,6 @@ export function resolveOfficePresence(
   meetingActive: boolean, manuallyOffDutyIds: Set<string>, representativeVisitors: Set<string> = new Set()
 ): Record<string, OfficePresence> {
   const byProfile = new Map(instances.map((instance) => [instance.profileId, instance]))
-  const attendees = new Set(profiles.filter((profile) =>
-    !manuallyOffDutyIds.has(profile.profileId) &&
-    (profile.rank === 'teamLead' || byProfile.has(profile.profileId))
-  ).slice(0, 8).map((profile) => profile.profileId))
   return Object.fromEntries(profiles.map((profile) => {
     const id = profile.profileId
     const instance = byProfile.get(id)
@@ -18,7 +14,7 @@ export function resolveOfficePresence(
     else if (representativeVisitors.has(id)) presence = 'representativeVisit'
     else if (state === 'error') presence = 'error'
     else if (state === 'waiting') presence = 'requestingHelp'
-    else if (meetingActive && attendees.has(id)) presence = 'meeting'
+    else if (meetingActive && profile.rank === 'teamLead') presence = 'meeting'
     else if (state === 'working' || state === 'starting') presence = 'working'
     return [id, presence]
   }))

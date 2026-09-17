@@ -1,8 +1,9 @@
 import { createHash } from 'crypto'
 import { execFile } from 'child_process'
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync, mkdirSync, realpathSync } from 'fs'
 import { basename, join } from 'path'
 import { workspaceFiles } from './workspaceStore'
+import { ensureTaskFeatureWorktree } from './taskFeatureWorktree'
 import type { GitDiffFile, GitDiffFileStatus, GitDiffHunk, GitDiffLine, GitDiffResult, GitMergeResult } from '../shared/types'
 
 function run(args: string[], cwd: string): Promise<string> {
@@ -28,8 +29,8 @@ function worktreesRoot(repoRoot: string): string {
 
 export async function isGitRepo(repoRoot: string): Promise<boolean> {
   try {
-    const out = await run(['rev-parse', '--is-inside-work-tree'], repoRoot)
-    return out.trim() === 'true'
+    const top = (await run(['rev-parse', '--show-toplevel'], repoRoot)).trim()
+    return realpathSync(top) === realpathSync(repoRoot)
   } catch {
     return false
   }
@@ -45,6 +46,9 @@ export interface DeskWorktree {
 export async function ensureDeskWorktree(repoRoot: string, deskKey: string): Promise<DeskWorktree | null> {
   repoRoot = workspaceFiles().path(repoRoot)
   if (!(await isGitRepo(repoRoot))) return null
+
+  const featureBranch = (await run(['config', '--default', '', '--get', 'office.featureBranch'], repoRoot)).trim()
+  if (featureBranch) return ensureTaskFeatureWorktree(workspaceFiles(), repoRoot, featureBranch)
 
   const branch = `desk/${deskKey}`
   const path = workspaceFiles().path(join(worktreesRoot(repoRoot), deskKey))

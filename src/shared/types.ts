@@ -198,6 +198,13 @@ export interface TaskWorkspace {
 }
 
 export type TaskStage = 'planning' | 'review' | 'execution' | 'completed' | 'cancelled'
+export interface ProjectRepository {
+  name: string
+  featureBranch?: string
+  owner?: string
+  url?: string
+  ready: boolean
+}
 export interface TaskCommand {
   id: string
   attemptId: string
@@ -214,6 +221,9 @@ export interface TaskCommand {
 }
 export interface TrackedTask extends TaskWorkspace {
   sourceId?: string
+  gitCoordinatorProfileId?: string
+  sourceProjectPath?: string
+  repository?: ProjectRepository
   request: string
   projectPath: string
   stage: TaskStage
@@ -236,7 +246,7 @@ export interface TaskRestoreResult {
 
 export interface TaskApi {
   planMeeting(draft: import('./meetingNotes').MeetingDraft): Promise<TaskRestoreResult>
-  prepare(request: string): Promise<TaskWorkspace>
+  prepare(request: string): Promise<TrackedTask>
   readSpec(specPath: string): Promise<string>
   dispatch(request: TaskDispatch): Promise<void>
   approve(taskId: string): Promise<void>

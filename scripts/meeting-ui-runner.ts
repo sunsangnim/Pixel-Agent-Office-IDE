@@ -6,9 +6,13 @@ import { registerIpcHandlers } from '../src/main/ipc'
 import { workspaceFiles, workspaceStore } from '../src/main/workspaceStore'
 import { ptyManager } from '../src/main/ptyManager'
 import { taskRecovery } from '../src/main/taskRecovery'
+import { repositoryCommands } from '../src/main/projectRepository'
+import { repositoryFixture } from './fixtures/project-repository'
 import { MEETING_LEADS, isMeetingQuestion, meetingPlanningRequest, pendingMeetingQuestions, type MeetingDraft } from '../src/shared/meetingNotes'
 
 const fixture = mkdtempSync(resolve('out/meeting-ui-'))
+const github = repositoryFixture(fixture)
+repositoryCommands.run = github.run
 const profile = join(fixture, 'profile'), desktop = join(fixture, 'desktop'), records = join(fixture, 'workers')
 for (const directory of [profile, desktop, records]) mkdirSync(directory)
 app.setPath('userData', profile)
@@ -85,6 +89,11 @@ app.whenReady().then(async () => {
   await wait('window.api.tasks.list().then(tasks=>tasks.length===1 && tasks[0].stage==="review")')
   await wait(`${draftCode}===null`)
   const task = taskRecovery.list()[0]
+  assert.notEqual(task.projectPath, project, 'the meeting creates its own new project repository')
+  assert.equal(task.sourceProjectPath, project)
+  assert.equal(task.repository?.ready, true)
+  assert.equal(workspaceStore.get(), task.projectPath)
+  assert.equal(github.created.length, 1)
   const spec = readFileSync(task.specPath, 'utf8')
   for (const text of ['로그인 화면과 검색', '로그인은 취소', '회의 테스트 이어서 하자', 'claude-code 의견', 'codex-cli 의견', 'antigravity-cli 의견', '정정·취소', '미정 사항']) assert.ok(spec.includes(text), text)
   assert.equal(task.commands.length, 1, 'one meeting produces one planning request')
@@ -99,12 +108,27 @@ app.whenReady().then(async () => {
   await Promise.all([js(`window.api.tasks.planMeeting(${JSON.stringify(completedDraft)})`), js(`window.api.tasks.planMeeting(${JSON.stringify(completedDraft)})`)])
   assert.equal(taskRecovery.list().length, 1, 'duplicate delivery or retries reuse the same task')
   assert.equal(taskRecovery.list()[0].commands.length, 1)
+  assert.equal(github.created.length, 1, 'repeated meeting submission reuses the private repository')
   await send('회의 종료')
   assert.equal(taskRecovery.list().length, 1, 'repeated end does not create another document')
   await send('회의하자')
   await send('회의 끝')
   assert.equal(taskRecovery.list().length, 1, 'empty meetings create no document')
   console.log('PASS pending replies before SRS, complete transcript and corrections, one Claude SRS, explicit implementation approval, duplicate/empty end guards')
+  await js(`window.api.tasks.cancel(${JSON.stringify(task.taskId)})`)
+  await delay(100)
+  await send('새 작업: 별도 메모장 화면을 만들어줘')
+  await wait('window.api.tasks.list().then(tasks=>tasks.length===2 && tasks[1].stage==="review")')
+  const nextTask = taskRecovery.list()[1]
+  assert.notEqual(nextTask.projectPath, task.projectPath)
+  assert.notEqual(nextTask.repository?.url, task.repository?.url)
+  assert.equal(nextTask.commands.length, 1)
+  assert.ok(nextTask.commands[0].prompt.includes(nextTask.projectPath), 'planning prompt uses the newly created project immediately')
+  assert.ok(!nextTask.commands[0].prompt.includes(task.projectPath), 'the previous project never leaks into the new planning prompt')
+  assert.equal(workspaceStore.get(), nextTask.projectPath)
+  assert.equal((await js('window.api.instances.list()')).find((item: { templateId: string }) => item.templateId === 'claude-code').repoRoot, nextTask.projectPath)
+  assert.equal(github.created.length, 2)
+  console.log('PASS ordinary chat starts a distinct private repository and moves its planner into the new project')
   console.log(`Screenshot: ${join(fixture, 'meeting-answers.png')}`)
   taskRecovery.checkpoint()
   ptyManager.killAll()

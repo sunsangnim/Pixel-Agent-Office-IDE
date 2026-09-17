@@ -5,11 +5,11 @@ import { agentTemplateStore } from './agentStore'
 import { workspaceFiles, workspaceStore } from './workspaceStore'
 import { instanceManager } from './instanceManager'
 import { openSettingsWindow } from './windowManager'
-import { taskWorkspaceManager } from './taskWorkspaceManager'
 import { taskRecovery } from './taskRecovery'
 import { meetingDiscussion } from './meetingDiscussion'
 import type { MeetingDraft } from '../shared/meetingNotes'
 import { diffAgainstBase, mergeDeskBranch } from './gitWorktreeManager'
+import { mergeTaskFeature } from './taskFeatureWorktree'
 import { teamCapacityStore } from './teamCapacityStore'
 import { buildAgentProfiles } from '../shared/agentProfiles'
 import { TASK_DOCUMENTS_FOLDER, WORKSPACE_FOLDERS } from '../shared/workspaceLayout'
@@ -128,19 +128,17 @@ export function registerIpcHandlers(): void {
     return folder
   })
 
-  ipcMain.handle('tasks:prepare', (_event, request: string) => {
-    const workspace = workspaceStore.get()
-    if (!workspace) throw new Error('작업 폴더를 먼저 지정해주세요.')
-    const privateTaskRoot = workspaceFiles().path(TASK_DOCUMENTS_FOLDER)
-    const task = taskWorkspaceManager.prepare(privateTaskRoot, request)
-    taskRecovery.register(task, request, workspace)
+  ipcMain.handle('tasks:prepare', async (_event, request: string) => {
+    const task = await taskRecovery.prepare(request)
+    workspaceStore.set(task.projectPath)
     return task
   })
 
   ipcMain.handle('tasks:list', () => taskRecovery.list())
   ipcMain.handle('tasks:plan-meeting', async (event, draft: MeetingDraft) => {
     const result = await taskRecovery.planMeeting(draft, event.sender)
-    workspaceStore.set(draft.projectPath)
+    const task = result.tasks.find(item => item.sourceId === draft.meetingId)
+    if (task) workspaceStore.set(task.projectPath)
     return result
   })
   ipcMain.handle('meetings:ask', (event, draft: MeetingDraft, questionId: string) => meetingDiscussion.ask(draft, questionId, event.sender))
@@ -244,6 +242,15 @@ export function registerIpcHandlers(): void {
     const run = instanceManager.getRun(runId)
     if (!run || !run.worktreeBranch) {
       return { ok: false, message: 'Git 저장소가 아니어서 병합할 수 없습니다.' }
+    }
+    if (run.worktreeBranch.startsWith('feature/')) {
+      const task = taskRecovery.list().find(item => item.projectPath === run.repoRoot && item.repository?.featureBranch === run.worktreeBranch)
+      if (!task || task.stage !== 'completed' || !task.repository?.url) {
+        return { ok: false, message: '모든 Phase와 검증이 최종 완료된 뒤 main에 병합할 수 있습니다.' }
+      }
+      try {
+        return { ok: true, message: await mergeTaskFeature(workspaceFiles(), run.repoRoot, run.cwd, run.worktreeBranch, task.repository.url) }
+      } catch (error) { return { ok: false, message: String(error) } }
     }
     return mergeDeskBranch(run.repoRoot, run.cwd, run.worktreeBranch)
   })

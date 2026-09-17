@@ -9,9 +9,13 @@ import { ptyManager } from '../src/main/ptyManager'
 import { taskRecovery } from '../src/main/taskRecovery'
 import { instanceManager } from '../src/main/instanceManager'
 import { TaskRecoveryStore } from '../src/main/taskRecoveryStore'
+import { repositoryCommands } from '../src/main/projectRepository'
+import { repositoryFixture } from './fixtures/project-repository'
 import type { TaskCommand, TrackedTask } from '../src/shared/types'
 
 const fixture = process.argv[2]
+const github = repositoryFixture(fixture)
+repositoryCommands.run = github.run
 const stage = process.argv[3]
 const desktop = join(fixture, 'desktop')
 const profile = join(fixture, 'profile')
@@ -52,28 +56,43 @@ app.whenReady().then(async () => {
     await js(`document.querySelector('button[aria-label="메시지 전송"]').click()`)
   }
   if (stage === 'save') {
-    const projects = ['테트리스', '오목'].map(name => files.path(`프로젝트/${name}`))
-    for (const project of projects) {
-      mkdirSync(project)
-      const git = (...args: string[]) => execFileSync('git', args, { cwd: project, encoding: 'utf8' })
-      git('init'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.invalid')
-      writeFileSync(join(project, 'game.txt'), 'base code')
-      git('add', 'game.txt'); git('commit', '-m', 'initial project')
-    }
-    workspaceStore.set(projects[0])
+    const projects: string[] = []
     await win.loadFile(resolve('out/renderer/index.html'))
     await wait('!!document.querySelector(".chat-compose textarea")')
     const saved: Record<string, any> = { bootId: taskRecovery.bootId, projects }
-    for (let index = 0; index < projects.length; index++) {
+    for (let index = 0; index < 2; index++) {
       if (index) {
         taskRecovery.checkpoint()
         for (const instance of instanceManager.list()) instanceManager.detach(instance.instanceId)
       }
-      workspaceStore.set(projects[index])
-      const task = await js(`window.api.tasks.prepare(${JSON.stringify(index ? '오목 돌 놓기' : '블록 낙하 구현')})`)
+      const task = await js(`window.api.tasks.prepare(${JSON.stringify(index ? '오목' : '테트리스')})`)
+      const project = task.projectPath
+      projects.push(project)
+      const git = (...args: string[]) => execFileSync('git', args, { cwd: project, encoding: 'utf8' })
+      git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.invalid')
+      writeFileSync(join(project, 'game.txt'), 'base code')
+      git('add', 'game.txt'); git('commit', '-m', 'initial project')
       const template = 'claude-code'
       const instances = await js(`window.api.instances.create(${JSON.stringify(template)})`)
       const instance = instances.find((item: any) => item.templateId === template)
+      assert.equal(instance.worktreeBranch, task.repository.featureBranch)
+      assert.ok(instance.worktreeBranch.startsWith('feature/'))
+      if (index === 0) {
+        const childInstances = await js(`window.api.instances.createChild(${JSON.stringify(instance.instanceId)})`)
+        const child = childInstances.find((item: any) => item.parentInstanceId === instance.instanceId)
+        const withCodex = await js(`window.api.instances.create('codex-cli')`)
+        const codex = withCodex.find((item: any) => item.templateId === 'codex-cli')
+        assert.equal(child.cwd, instance.cwd)
+        assert.equal(codex.cwd, instance.cwd)
+        assert.equal(codex.worktreeBranch, instance.worktreeBranch)
+        writeFileSync(join(instance.cwd, 'preserved.txt'), 'shared work remains after colleagues leave')
+        await js(`window.api.instances.remove(${JSON.stringify(child.instanceId)})`)
+        await js(`window.api.instances.remove(${JSON.stringify(codex.instanceId)})`)
+        assert.equal(readFileSync(join(instance.cwd, 'preserved.txt'), 'utf8'), 'shared work remains after colleagues leave')
+        const earlyMerge = await js(`window.api.git.merge(${JSON.stringify(instance.instanceId)})`)
+        assert.equal(earlyMerge.ok, false)
+        assert.match(earlyMerge.message, /최종 완료/)
+      }
       await js(`window.api.tasks.dispatch(${JSON.stringify({ taskId: task.taskId, stage: 'planning', mode: 'simple', assignments: [{ instanceId: instance.instanceId, role: '기획 작성', prompt: 'plan fixture' }] })})`)
       await wait(`window.api.tasks.list().then(tasks=>tasks.find(t=>t.taskId===${JSON.stringify(task.taskId)}).commands.at(-1).status==='running')`)
       let tracked = taskRecovery.list().find(item => item.taskId === task.taskId)!
@@ -107,7 +126,7 @@ app.whenReady().then(async () => {
     await wait('document.querySelector(".resume-project-dialog")?.open')
     assert.equal(await js('document.querySelectorAll(".resume-project-option").length'), 2)
     assert.equal(await js('window.api.instances.list().then(items=>items.length)'), 0, 'ambiguous text only opens the picker')
-    await js(`[...document.querySelectorAll('.resume-project-option')].find(el=>el.querySelector('strong').textContent==='테트리스').click()`)
+    await js(`[...document.querySelectorAll('.resume-project-option')].find(el=>el.querySelector('strong').textContent.includes('테트리스')).click()`)
     await wait('window.api.instances.list().then(items=>items.length===1)')
     await wait(`window.api.tasks.list().then(tasks=>tasks.find(t=>t.taskId===${JSON.stringify(saved.a.taskId)}).commands.at(-1).status==='running')`)
     const instance = (await js('window.api.instances.list()'))[0]
@@ -149,6 +168,7 @@ app.whenReady().then(async () => {
     await reloaded
     await wait('!!document.querySelector(".chat-thread")')
     assert.ok(await js('document.querySelector(".chat-thread").textContent.includes("오목 하자")'), 'renderer reload keeps this boot conversation')
+    assert.equal(github.created.length, 0, 'resume and reload never create a new remote repository')
     writeFileSync(join(fixture, 'recovery-ui.png'), (await win.webContents.capturePage()).toPNG())
     console.log('PASS second IDE process: empty chat, no automatic agents, ambiguous project picker, selected-project-only fresh CLI, docs+Git handoff, intact uncommitted code, journal completion, preserved approval gate, same-boot reload')
     console.log(`Screenshot: ${join(fixture, 'recovery-ui.png')}`)

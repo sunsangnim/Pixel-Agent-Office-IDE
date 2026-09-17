@@ -24,6 +24,7 @@ buildSync({
       "export * from './src/renderer/src/game/worldPersistence'",
       "export * from './src/renderer/src/game/characterGait'",
       "export * from './src/renderer/src/game/staffWalkSheets'",
+      "export { BUILT_IN_AGENT_PROFILES } from './src/shared/agentProfiles'",
       "export * from './src/renderer/src/lib/officePresence'"
     ].join('\n'), resolveDir: process.cwd(), loader: 'ts'
   },
@@ -33,7 +34,7 @@ buildSync({
   banner: { js: 'function emptyAssetGlob() { return {} }' }, logLevel: 'silent'
 })
 const {
-  OfficeScene, IdleActivity, PantrySchedule, PANTRY_VISIT_INTERVAL_MS, ActorStateMachine, CharacterGait, actionForPresence, resolveOfficePresence,
+  OfficeScene, IdleActivity, PantrySchedule, PANTRY_VISIT_INTERVAL_MS, ActorStateMachine, CharacterGait, actionForPresence, resolveOfficePresence, BUILT_IN_AGENT_PROFILES,
   findOfficePath, hasOfficeLineOfSight, isOfficePositionWalkable, routeFor, WAYPOINTS,
   DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS, REPRESENTATIVE_MEETING_CHAIR_ID,
   REPRESENTATIVE_CHAIR_ID, REPRESENTATIVE_DESK_ID, migrateRepresentativeFurniture, isInRepresentativeRoom,
@@ -244,6 +245,28 @@ assert.equal(resolveOfficePresence(profiles, [instance], { pty: { state: 'workin
 assert.equal(resolveOfficePresence(profiles, [instance], { pty: { state: 'waiting' } }, true, new Set()).lead, 'requestingHelp')
 assert.equal(resolveOfficePresence(profiles, [], {}, true, new Set()).lead, 'meeting')
 assert.equal(resolveOfficePresence(profiles, [], {}, true, new Set(['lead'])).lead, 'offDuty')
+const fullRoster = BUILT_IN_AGENT_PROFILES
+const rosterInstances = fullRoster.map(profile => ({ profileId: profile.profileId, ptyId: profile.profileId }))
+const rosterStates = Object.fromEntries(rosterInstances.map(instance => [instance.ptyId, { state: 'working' }]))
+const meetingPresence = resolveOfficePresence(fullRoster, rosterInstances, rosterStates, true, new Set())
+assert.deepEqual(Object.keys(meetingPresence).filter(id => meetingPresence[id] === 'meeting'), [
+  'claude-code:lead', 'codex-cli:lead', 'antigravity-cli:lead'
+], 'all three leads attend even when every subordinate has an active session')
+for (const profile of fullRoster.filter(profile => profile.rank === 'subAgent')) {
+  assert.equal(meetingPresence[profile.profileId], 'working', 'summoning a meeting leaves employees at work')
+}
+const childInstance = { profileId: 'child', ptyId: 'child-pty' }
+for (const [state, expected] of Object.entries({
+  starting: 'working', working: 'working', idle: 'deskIdle', completed: 'deskIdle',
+  waiting: 'requestingHelp', error: 'error', exited: 'offDuty'
+})) {
+  assert.equal(resolveOfficePresence(profiles, [childInstance], { 'child-pty': { state } }, true, new Set()).child, expected,
+    `meetings preserve the employee's ${state} state`)
+}
+assert.equal(resolveOfficePresence(profiles, [childInstance], {}, true, new Set(['child'])).child, 'offDuty')
+assert.ok(Object.values(resolveOfficePresence(fullRoster, rosterInstances, rosterStates, false, new Set())).every(presence => presence === 'working'),
+  'ending the meeting returns leads to work and leaves employee work unchanged')
+console.log('PASS meetings summon only ranked leads; employees retain their work, idle, help and off-duty states')
 const routine = new IdleActivity(() => 0)
 assert.equal(routine.update('deskIdle', 0, 'deskIdle'), 'deskIdle')
 assert.equal(routine.update('deskIdle', 299_999, 'deskIdle'), 'deskIdle')

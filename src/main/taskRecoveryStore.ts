@@ -2,8 +2,9 @@ import { randomUUID } from 'crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'fs'
 import { dirname, join, relative, isAbsolute } from 'path'
 import { execFile } from 'child_process'
-import type { AgentInstance, TaskCommand, TaskDispatch, TaskWorkspace, TrackedTask } from '../shared/types'
+import type { AgentInstance, ProjectRepository, TaskCommand, TaskDispatch, TaskWorkspace, TrackedTask } from '../shared/types'
 import { WorkspaceFiles } from './workspaceFiles'
+import { taskGitPolicy } from '../shared/taskGitPolicy'
 
 export async function taskGitContext(cwd: string): Promise<string> {
   const run = (args: string[]) => new Promise<string>((resolve) => {
@@ -47,6 +48,7 @@ export class TaskRecoveryStore {
   private validatePaths(task: TrackedTask): void {
     const root = this.files.path(task.rootPath)
     this.files.path(task.projectPath)
+    if (task.sourceProjectPath) this.files.path(task.sourceProjectPath)
     for (const document of [task.specPath, task.phasesPath, task.readmePath, task.developmentLogPath]) {
       const rel = relative(root, this.files.path(document))
       if (!rel || rel.startsWith('..') || isAbsolute(rel)) throw new Error('작업 문서가 해당 작업 폴더 밖에 있습니다.')
@@ -69,17 +71,24 @@ export class TaskRecoveryStore {
     task.updatedAt = new Date().toISOString()
   }
 
-  register(workspace: TaskWorkspace, request: string, projectPath: string, sourceId?: string): void {
+  register(workspace: TaskWorkspace, request: string, projectPath: string,
+    details: Pick<TrackedTask, 'sourceId' | 'sourceProjectPath' | 'repository'> = {}): void {
     const task: TrackedTask = { ...workspace, request, projectPath: this.files.path(projectPath),
-      stage: 'planning', mode: 'simple', commands: [], updatedAt: new Date().toISOString(), sourceId }
+      stage: 'planning', mode: 'simple', commands: [], updatedAt: new Date().toISOString(), ...details }
     this.validatePaths(task)
     this.tasks.push(task)
     this.record(task, '작업 등록', request)
     this.save()
   }
 
+  setRepository(taskId: string, repository: ProjectRepository): void {
+    this.get(taskId).repository = repository
+    this.save()
+  }
+
   enqueue(request: TaskDispatch, instances: AgentInstance[]): TaskCommand[] {
     const task = this.get(request.taskId)
+    if (task.repository && !task.repository.ready) throw new Error('작업의 GitHub 비공개 저장소 준비를 먼저 완료해주세요.')
     if (task.stage === 'cancelled') throw new Error('취소된 작업입니다.')
     if (request.stage === 'execution' && !['execution', 'completed'].includes(task.stage)) throw new Error('기획 승인 후 작업을 실행할 수 있습니다.')
     if (request.stage === 'planning' && !['planning', 'review'].includes(task.stage)) throw new Error('이미 승인된 작업입니다.')
@@ -95,6 +104,10 @@ export class TaskRecoveryStore {
         role: assignment.role, stage: request.stage, status: 'queued' as const, startedAt: new Date().toISOString() }
     })
     if (!commands.length || new Set(commands.map(command => command.profileId)).size !== commands.length) throw new Error('작업 대상이 없거나 중복되었습니다.')
+    if (request.stage === 'execution' && !task.gitCoordinatorProfileId) {
+      task.gitCoordinatorProfileId = commands.find(command => command.profileId === 'claude-code:lead')?.profileId ??
+        commands.find(command => instances.some(instance => instance.profileId === command.profileId && instance.rank === 'teamLead'))?.profileId ?? commands[0].profileId
+    }
     task.stage = request.stage
     task.mode = request.mode ?? task.mode
     task.commands.push(...commands)
@@ -156,12 +169,14 @@ export class TaskRecoveryStore {
     mkdirSync(dirname(receipt), { recursive: true })
     const git = await taskGitContext(command.cwd)
     return `[${command.recovered ? '새 세션 작업 인수인계' : '작업 및 개발 기록 규칙'}]\n작업 위치: ${command.cwd}\n통합 SRS: ${task.specPath}\n개발 기록: ${task.developmentLogPath}\nPhase: ${task.phasesPath}\n\n` +
+      `프로젝트 저장소: ${task.projectPath}\n${task.repository?.url ? `GitHub 비공개 저장소: ${task.repository.url}\n` : ''}코드는 이 프로젝트의 작업본에서만 수정하세요. IDE나 다른 작업의 저장소를 사용하지 마세요.\n\n` +
       `작업 전에 반드시 통합 SRS → 개발 기록 → git log 및 git status/git diff 순서로 읽고 현재 업무와 완료/미완료 범위를 먼저 정리하세요. 필요하면 관련 커밋을 git show로 확인하세요. 이전 세션 대화는 사용하지 않습니다. 기존 미커밋 변경을 보존하고 이미 끝난 작업을 반복하지 마세요.\n${git}\n\n` +
       `${command.stage === 'planning' ? '기획 단계입니다. 문서 작성까지만 진행하고 구현은 사용자 승인을 기다리세요.' : '사용자 승인을 받은 구현 단계입니다. 남은 작업을 이어서 수행하세요.'}\n\n` +
       `각 명령·작업(테스트 포함)이 끝날 때마다 ${task.developmentLogPath}에 수행 내용, 변경 파일, 검증 명령과 결과, 관련 커밋, 미커밋 변경, 남은 일과 다음 단계를 추가하세요. 기록을 덮어쓰거나 마지막까지 미루지 마세요.\n` +
       `이번 지시를 마치면 개발 기록을 먼저 갱신하고 ${receipt}에 아래 JSON을 저장하세요. 실제 검증으로 완료를 확인한 경우에만 outcome을 completed로 쓰세요. 미완료는 incomplete, 막힘은 blocked입니다. 이 파일이 없으면 IDE는 작업이 끝났다고 판단하지 않습니다.\n` +
       JSON.stringify({ commandId: command.id, attemptId: command.attemptId, outcome: 'completed', summary: '수행 결과', changedFiles: [], checks: [], nextSteps: [], reviewed: { srs: true, developmentLog: true, git: true } }) +
-      `\n작업실 밖에는 파일을 생성하거나 수정하지 마세요.\n\n[원래 요청]\n${task.request}\n\n[이번 지시]\n${command.prompt}`
+      `\n작업실 밖에는 파일을 생성하거나 수정하지 마세요.\n\n[원래 요청]\n${task.request}\n\n[이번 지시]\n${command.prompt}` +
+      (command.stage === 'execution' ? `\n\n${taskGitPolicy(task.taskId, task.repository?.featureBranch, task.gitCoordinatorProfileId)}` : '')
   }
 
   async acceptReceipt(taskId: string, commandId: string): Promise<boolean> {

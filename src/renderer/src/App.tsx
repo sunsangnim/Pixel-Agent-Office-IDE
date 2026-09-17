@@ -13,6 +13,7 @@ import { MEETING_NOTES_KEY, readMeetingDraft } from './lib/meetingNotes'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
 import { useAgentChat, type PlanReadyPayload } from './hooks/useAgentChat'
 import { planTask } from './lib/taskRouter'
+import { taskGitPolicy } from '@shared/taskGitPolicy'
 import { leadTitleFor, SUB_AGENT_TITLE } from '@shared/agentProfiles'
 import { parseMeetingCommand, type MeetingCommand } from './lib/meetingCommands'
 import { parseAttendanceCommand } from './lib/attendanceCommands'
@@ -29,6 +30,7 @@ import {
 interface PendingPlan {
   title?: string
   taskId: string
+  projectPath: string
   instanceIds: string[]
   readyIds: Set<string>
   rootPath: string
@@ -68,6 +70,7 @@ function App() {
   const [trackedTasks, setTrackedTasks] = useState<TrackedTask[]>([])
   const restoredBoot = useRef<string | null>(null)
   const taskStages = useRef(new Map<string, string>())
+  const preparingTask = useRef(false)
   const { deskStatuses: statuses, runtimeStates } = usePtyStatuses()
 
   const handlePlanReady = ({ instanceId, taskId }: PlanReadyPayload): void => {
@@ -213,12 +216,14 @@ function App() {
   }, [])
 
   const chooseFolder = async (): Promise<void> => {
+    if (preparingTask.current) { setError('새 작업 저장소를 만든 뒤 프로젝트를 변경해주세요.'); return }
     if (meetingActiveRef.current) { setError('회의를 마친 뒤 프로젝트 폴더를 변경해주세요.'); return }
     const folder = await window.api.workspace.chooseWorkFolder()
     setWorkFolder(folder)
   }
 
   const resumeProject = async (projectPath: string): Promise<void> => {
+    if (preparingTask.current) { setError('새 작업 저장소를 만든 뒤 다른 프로젝트를 이어가주세요.'); return }
     if (meetingActiveRef.current) { setError('회의 중에는 발언을 기록합니다. 프로젝트 이어가기는 회의가 끝난 뒤 선택해주세요.'); return }
     setResumeOpen(false)
     setError(null)
@@ -256,13 +261,28 @@ function App() {
   }
 
   const buildWorkflowPrompt = (plan: PendingPlan): string =>
-    `[실행 단계 — 기획이 승인되었습니다]\n프로젝트 폴더: ${workFolder}\n비공개 작업 문서 폴더: ${plan.rootPath}\n1. 구현을 시작하기 전에 프로젝트 폴더에서 feature/${plan.taskId} 브랜치가 이미 있으면(다른 팀원이 먼저 만들었을 수 있습니다) 그 브랜치로 체크아웃하고, 없으면 최신 main에서 새로 만들어 체크아웃한 뒤 그 위에서 작업하세요. 팀장·하위 세션 모두 같은 프로젝트 폴더를 공유하므로 이 브랜치 하나로만 작업하고, main에는 직접 커밋하지 마세요.\n2. 승인된 기획서(${plan.specPath})와 Phase 문서(${plan.phasesPath})를 바탕으로 Phase 1부터 순서대로 구현하세요. 한 번에 한 Phase만 수행하세요.\n3. 코드는 프로젝트 폴더에서 작업하고, 문서 갱신은 비공개 작업 문서 폴더에서만 하세요.\n4. API 키·토큰·로그인 정보·세션·PTY 버퍼·로컬 절대경로·사용자 작업 문서는 Git에 추가하지 마세요.\n5. 각 Phase 완료 시 테스트와 빌드를 실행하고 공개 가능한 코드·자산만 feature 브랜치에 커밋하세요. feature 브랜치의 원격 푸시는 저장소 공개 범위와 사용자 승인을 확인한 경우에만 수행하세요.\n6. 전체 작업 완료 시 ${plan.readmePath}에 최종 결과물, 실행법, 검증 결과, 변경 이력을 완성하세요.\n7. 모든 Phase와 인수 조건이 끝나면 최신 main을 다시 받아 충돌을 해결한 뒤 feature 브랜치를 main에 병합(--no-ff)하세요. main 병합·푸시는 저장소 공개 범위와 사용자 승인을 확인한 경우에만 수행하고, 완료 후 병합 결과를 보고하세요.\n8. 직접 지정된 팀장은 하위 세션 사용 여부와 작업 방법을 자율적으로 결정하세요.\n\n[사용자 요청]\n${plan.originalText}`
+    `[실행 단계 — 기획이 승인되었습니다]
+프로젝트 저장소: ${plan.projectPath}
+비공개 작업 문서 폴더: ${plan.rootPath}
+1. 현재 세션의 공용 feature 작업본에서 Git 저장소와 origin을 확인하세요. 팀장과 사원은 같은 작업본에서 파일별 담당을 나누세요.
+2. 승인된 기획서(${plan.specPath})와 Phase 문서(${plan.phasesPath})를 바탕으로 Phase 1부터 순서대로 구현하세요. 한 번에 한 Phase만 수행하세요.
+3. 코드는 이 프로젝트의 작업본에서 작업하고, 문서 갱신은 비공개 작업 문서 폴더에서만 하세요. IDE 저장소나 다른 작업의 저장소를 사용하지 마세요.
+4. API 키·토큰·로그인 정보·세션·PTY 버퍼·로컬 절대경로·사용자 작업 문서는 Git에 추가하지 마세요.
+5. 각 Phase 완료 시 테스트와 빌드를 실행하고 아래 Git 작업수칙에 따라 추가 확인 없이 커밋·푸시하세요.
+6. 전체 작업 완료 시 ${plan.readmePath}에 최종 결과물, 실행법, 검증 결과, 변경 이력을 완성하세요.
+7. 모든 Phase와 인수 조건이 끝나면 아래 Git 작업수칙에 따라 main에 최종 병합·푸시하고 결과를 보고하세요.
+8. 직접 지정된 팀장은 하위 세션 사용 여부와 작업 방법을 자율적으로 결정하세요.
+
+${taskGitPolicy(plan.taskId, undefined,
+  instances.find(instance => plan.instanceIds.includes(instance.instanceId) && instance.profileId === 'claude-code:lead')?.profileId ??
+  instances.find(instance => plan.instanceIds.includes(instance.instanceId) && instance.rank === 'teamLead')?.profileId ??
+  instances.find(instance => plan.instanceIds.includes(instance.instanceId))?.profileId)}
+
+[사용자 요청]
+${plan.originalText}`
 
   const executePrompt = async (text: string, targetIds = Array.from(selectedTargetIds)): Promise<void> => {
-    if (!workFolder) {
-      setError('작업을 시작하려면 작업 폴더를 먼저 지정해주세요.')
-      return
-    }
+    if (preparingTask.current) { setError('새 작업 저장소를 만들고 있습니다. 잠시 기다려주세요.'); return }
     if (pendingPlan) {
       setError('진행 중인 기획 검토가 있습니다. 승인 또는 반려 후 다시 시도해주세요.')
       return
@@ -270,15 +290,19 @@ function App() {
 
     setError(null)
     let taskWorkspace
+    preparingTask.current = true
     try {
+      addSystemMessage('새 작업의 폴더와 GitHub 비공개 저장소를 만들고 있습니다.')
       taskWorkspace = await window.api.tasks.prepare(text)
+      setWorkFolder(taskWorkspace.projectPath)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+      preparingTask.current = false
       return
     }
-    addSystemMessage(`작업 폴더와 기획 문서 생성 완료: ${taskWorkspace.taskId}`)
+    addSystemMessage(`새 작업 저장소 생성 완료: ${taskWorkspace.repository?.url ?? taskWorkspace.projectPath}`)
 
-    const planningPrompt = `[기획 단계]\n프로젝트 폴더: ${workFolder}\n비공개 작업 문서 폴더: ${taskWorkspace.rootPath}\n1. ${taskWorkspace.specPath}에 아래 요청에 대한 SRS·PRD·화면설계를 구체화하세요.\n2. ${taskWorkspace.phasesPath}에 작업을 Phase로 나누세요.\n3. 이번 단계에서는 코드를 작성하지 마세요 — 기획서 작성까지만 수행합니다.\n4. 완료되면 "기획 완료"라고 짧게 보고하세요.\n\n[사용자 요청]\n${text}`
+    const planningPrompt = `[기획 단계]\n프로젝트 폴더: ${taskWorkspace.projectPath}\n비공개 작업 문서 폴더: ${taskWorkspace.rootPath}\n1. ${taskWorkspace.specPath}에 아래 요청에 대한 SRS·PRD·화면설계를 구체화하세요.\n2. ${taskWorkspace.phasesPath}에 작업을 Phase로 나누세요.\n3. 이번 단계에서는 코드를 작성하지 마세요 — 기획서 작성까지만 수행합니다.\n4. 완료되면 "기획 완료"라고 짧게 보고하세요.\n\n[사용자 요청]\n${text}`
 
     let planInstanceIds: string[] = []
     let mode: PendingPlan['mode'] = 'manual'
@@ -317,6 +341,8 @@ function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       return
+    } finally {
+      preparingTask.current = false
     }
 
     if (planInstanceIds.length === 0) {
@@ -327,6 +353,7 @@ function App() {
     setPendingPlan({
       title: taskWorkspace.title,
       taskId: taskWorkspace.taskId,
+      projectPath: taskWorkspace.projectPath,
       instanceIds: planInstanceIds,
       readyIds: new Set(),
       rootPath: taskWorkspace.rootPath,
@@ -421,10 +448,12 @@ function App() {
     setError(null)
     try {
       const result = await window.api.tasks.planMeeting(draft)
-      setWorkFolder(draft.projectPath)
+      const task = result.tasks.find(item => item.sourceId === draft.meetingId)
+      if (task) setWorkFolder(task.projectPath)
       setInstances(result.instances)
       setTrackedTasks(result.tasks)
       trackRestoredTasks(result.tasks, result.instances)
+      if (task?.repository?.url) addSystemMessage(`회의 작업의 GitHub 비공개 저장소: ${task.repository.url}`)
       addSystemMessage('회의 발언과 에이전트 답변을 모아 Claude 부장에게 통합 SRS 작성을 요청했습니다. 작성 후 검토·승인을 기다립니다.')
       result.notices.filter(notice => notice.includes('대기:')).forEach(addSystemMessage)
       if (draftRef.current?.meetingId === draft.meetingId) saveMeeting(null)
@@ -476,9 +505,10 @@ function App() {
 
   const handleMeetingCommand = async (command: MeetingCommand): Promise<void> => {
     setError(null)
+    if (preparingTask.current) { setError('새 작업 저장소를 만든 뒤 회의를 시작해주세요.'); return }
     if (command === 'start') {
       if (meetingActiveRef.current) {
-        addSystemMessage('이미 전체 회의가 진행 중입니다.')
+        addSystemMessage('이미 회의가 진행 중입니다.')
         return
       }
       if (draftRef.current?.entries.length) { setError('저장된 회의의 답변·SRS 작성을 먼저 마무리해주세요.'); return }
@@ -490,7 +520,7 @@ function App() {
       setMeetingActive(true)
       setRepresentativeVisitors(new Set())
       localStorage.setItem(MEETING_CHECKPOINT_KEY, JSON.stringify({ startedAt: draft.startedAt, sessions: [] }))
-      addSystemMessage('회의를 시작합니다. 상석은 대표님 자리입니다. 발언을 기록하고, 질문에는 세 팀장이 각각 답변합니다. 회의 종료 후 전체 내용을 SRS 하나로 정리합니다.')
+      addSystemMessage('팀장 회의를 시작합니다. 사원은 기존 업무를 계속합니다. 상석은 대표님 자리입니다. 발언을 기록하고, 질문에는 세 팀장이 각각 답변합니다. 회의 종료 후 전체 내용을 SRS 하나로 정리합니다.')
       const sessions = await Promise.all(instances.map(async (instance) => {
         const runtimeState = runtimeStates[instance.ptyId]?.state ?? 'idle'
         const buffer = await window.api.pty.getBuffer(instance.ptyId).catch(() => '')
