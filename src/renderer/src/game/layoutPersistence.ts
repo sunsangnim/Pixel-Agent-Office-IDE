@@ -90,7 +90,7 @@ export const DEFAULT_LAYOUT_SEED: OfficeLayoutSave = {
   'custom-1787984442155-3': { x: 240, y: 80, rotation: 0, zOrder: 64, frame: 1, width: 64, height: 128 },
   'custom-1787984453381-4': { x: 48, y: 112, rotation: 0, zOrder: 70, frame: 16, width: 64, height: 32 },
   [CONFERENCE_TABLE_ID]: { x: 480, y: 200, rotation: 0, zOrder: 648, frame: CONFERENCE_TABLE_FRAME, width: 256, height: 144 },
-  'custom-1787984480720-6': { x: 464, y: 48, rotation: 0, zOrder: 631, frame: 5, width: 160, height: 32 },
+  'custom-1787984480720-6': { x: 464, y: 48, rotation: 0, zOrder: 631, frame: 5, width: 160, height: 80 },
   'custom-1787984492714-7': { x: 448, y: 160, rotation: 0, zOrder: 653, frame: 12, width: 85.12, height: 85.12 },
   'custom-1787984505669-8': { x: 528, y: 160, rotation: 0, zOrder: 655, frame: 12, width: 85.12, height: 85.12 },
   'custom-1787984561211-12': { x: 528, y: 240, rotation: 180, zOrder: 651, frame: 12, width: 85.12, height: 85.12 },

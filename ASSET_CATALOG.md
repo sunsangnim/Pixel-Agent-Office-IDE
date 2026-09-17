@@ -48,7 +48,7 @@ pixel-office/
 | `workstation-desk-v1.png` | 팀/대표 업무 책상 | 12×6 |
 | `office-chair-v2.png` | 정면형 사무용 의자 | 4×4 |
 | `office-plant-v1.png` | 실내 화분 | 2×4 |
-| `side-table-v2.png` | 정면형 대표실 사이드 테이블 | 4×2 |
+| `side-table-v2.png` | 빈 상판의 대표실 사이드 테이블 (4방향 모두 책 제거) | 4×2 |
 | `office-sofa-v1.png` | 대표실 소파 | 8×4 |
 | `floor-lamp-v1.png` | 대표실 램프 | 2×2 |
 | `bookcase-v2.png` | 정면형 대표실 책장 | 4×8 |

@@ -164,6 +164,7 @@ const TABLETOP_FURNITURE_FRAMES = new Set([DESK_FURNITURE_FRAME, 6, 16, CONFEREN
 // Keep the monitor wider than a seated character's head so its edges remain visible.
 const DESK_ASSET_SCALE = 1
 const CHAIR_ASSET_SCALE = 1.33
+const SCREEN_HEIGHT_SCALE = 2.5
 const FURNITURE_WALK_CLEARANCE = 2
 type FurnitureDirection = typeof FURNITURE_DIRECTIONS[number]
 const directionalFurnitureAssets = import.meta.glob('../assets/pixel-office/furniture/directional/*.png', {
@@ -236,6 +237,11 @@ const ACTOR_SPRITE_Y_OFFSET = -64
 const SEAT_ACCESS_RADIUS = 144
 
 function furnitureDisplaySize(frame: number, columns: number, rows: number): { width: number; height: number } {
+  // Grow the screen's short axis while preserving its width and wall placement.
+  // Cardinal side views swap that axis when the furniture is rotated.
+  if (frame === 5) return columns >= rows
+    ? { width: columns * 16, height: rows * 16 * SCREEN_HEIGHT_SCALE }
+    : { width: columns * 16 * SCREEN_HEIGHT_SCALE, height: rows * 16 }
   const scale = frame === DESK_FURNITURE_FRAME ? DESK_ASSET_SCALE
     : [12, 13, 14].includes(frame) ? CHAIR_ASSET_SCALE : 1
   return { width: columns * 16 * scale, height: rows * 16 * scale }
@@ -1153,10 +1159,11 @@ export class OfficeScene extends Phaser.Scene {
         }
       }
     }
-    // A laptop rests on the tabletop, even when its center is further north
-    // than the table's center. It must not jump in front of unrelated furniture.
+    // Coffee machines and laptops rest on the tabletop, even when their
+    // centers are further north. This only changes drawing order: the coffee
+    // machine remains a solid obstacle and an interactive pantry destination.
     for (const { frame, image } of this.furniture.values()) {
-      if (!STACKABLE_FURNITURE_FRAMES.has(frame)) continue
+      if (frame !== 0 && !STACKABLE_FURNITURE_FRAMES.has(frame)) continue
       const propBounds = this.furnitureWalkCollision(image, 0)
       for (const support of this.furniture.values()) {
         if (!TABLETOP_FURNITURE_FRAMES.has(support.frame)) continue
