@@ -61,7 +61,7 @@ function App() {
     })
   }
 
-  const { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage } =
+  const { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage } =
     useAgentChat(instances, templates, handlePlanReady)
 
   useEffect(() => {
@@ -160,7 +160,7 @@ function App() {
       if (targetIds.length > 0) {
         mode = 'manual'
         planInstanceIds = targetIds
-        sendPlanningPrompt(planningPrompt, targetIds, taskWorkspace.taskId, taskWorkspace.specPath, instances, text)
+        sendPlanningPrompt(planningPrompt, targetIds, taskWorkspace.taskId, taskWorkspace.specPath, instances, null)
       } else {
         const plan = planTask(text)
         addSystemMessage(`작업 계획: ${plan.reason}`)
@@ -187,7 +187,7 @@ function App() {
           taskWorkspace.taskId,
           taskWorkspace.specPath,
           availableInstances,
-          text
+          null
         )
       }
     } catch (e) {
@@ -281,6 +281,11 @@ function App() {
   }
 
   const sendPromptToSelected = async (text: string): Promise<void> => {
+    text = text.trim()
+    if (!text) return
+    // Record at the input boundary, before local commands, validation, or
+    // asynchronous session work can return. Queue replay does not record twice.
+    addUserMessage(text)
     const attendanceCommand = parseAttendanceCommand(text)
     if (attendanceCommand) {
       const leadProfileIds = attendanceCommand.templateIds.map((templateId) => `${templateId}:lead`)
@@ -316,7 +321,7 @@ function App() {
       const checkpoint: MeetingCheckpoint = { startedAt: new Date().toISOString(), sessions }
       localStorage.setItem(MEETING_CHECKPOINT_KEY, JSON.stringify(checkpoint))
       setMeetingActive(true)
-      addSystemMessage(`전체 회의 시작: ${sessions.length}개 CLI 세션과 PTY 버퍼 위치를 보존했습니다.`)
+      addSystemMessage('회의를 시작합니다. 에이전트들이 회의실로 이동합니다. 상석은 대표님 자리로 비워둡니다.')
       return
     }
 
@@ -326,7 +331,7 @@ function App() {
       setHeldPrompts([])
       localStorage.removeItem(MEETING_CHECKPOINT_KEY)
       localStorage.removeItem(MEETING_QUEUE_KEY)
-      addSystemMessage(`전체 회의 종료: 이전 상태로 복귀하고 보류 지시 ${queued.length}건을 순서대로 재개합니다.`)
+      addSystemMessage(`회의를 마쳤습니다. 각자 자리로 복귀합니다.${queued.length ? ` 보류한 지시 ${queued.length}건을 이어서 처리합니다.` : ''}`)
       for (const prompt of queued) await executePrompt(prompt.text, prompt.targetIds)
       return
     }

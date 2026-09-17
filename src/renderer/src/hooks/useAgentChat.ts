@@ -1,17 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentInstance, AgentTemplate } from '@shared/types'
 import { stripAnsi } from '../lib/ansi'
+import { readChatHistory, saveChatHistory, userChatMessage, type ChatMessage } from '../lib/chatHistory'
+export type { ChatMessage } from '../lib/chatHistory'
 
 const RESPONSE_IDLE_MS = 1500
-
-export interface ChatMessage {
-  id: string
-  kind: 'user' | 'agent' | 'system'
-  authorName: string
-  authorColor: string
-  authorSeed: string
-  text: string
-}
 
 interface CaptureEntry {
   instanceId: string
@@ -50,8 +43,15 @@ export function useAgentChat(
   templates: AgentTemplate[],
   onPlanReady?: (payload: PlanReadyPayload) => void
 ) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messages, setMessages] = useState<ChatMessage[]>(() => readChatHistory(localStorage))
   const [lastTaskByInstance, setLastTaskByInstance] = useState<Record<string, string>>({})
+
+  useEffect(() => saveChatHistory(localStorage, messages), [messages])
+
+  const addUserMessage = (text: string): void => {
+    const message = userChatMessage(text)
+    setMessages((prev) => [...prev, message])
+  }
 
   // kept fresh every render so the long-lived pty:data listener below always
   // sees current instances/templates without needing to resubscribe
@@ -311,7 +311,7 @@ export function useAgentChat(
     taskId: string,
     specPath: string,
     sourceInstances = instances,
-    displayText = text
+    displayText: string | null = text
   ): void => {
     const targets = sourceInstances.filter((i) => targetInstanceIds.includes(i.instanceId))
     if (targets.length === 0) return
@@ -322,14 +322,7 @@ export function useAgentChat(
 
     setMessages((prev) => [
       ...prev,
-      {
-        id: crypto.randomUUID(),
-        kind: 'user',
-        authorName: '김태호',
-        authorColor: '#6ea8fe',
-        authorSeed: 'me',
-        text: displayText
-      },
+      ...(displayText === null ? [] : [userChatMessage(displayText)]),
       {
         id: crypto.randomUUID(),
         kind: 'system',
@@ -423,5 +416,5 @@ export function useAgentChat(
     }
   }
 
-  return { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage }
+  return { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage }
 }

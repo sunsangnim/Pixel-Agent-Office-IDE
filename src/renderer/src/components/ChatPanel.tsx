@@ -206,9 +206,9 @@ function ChatPanel({
                 if (e.key === 'Backspace' && !text && selectedMentions.length > 0) {
                   setSelectedMentions((current) => current.slice(0, -1))
                 }
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
                   e.preventDefault()
-                  send()
+                  if (!e.repeat) send()
                 }
               }}
             />
@@ -217,6 +217,8 @@ function ChatPanel({
             className="chat-send-btn"
             onClick={send}
             disabled={!text.trim()}
+            title="전송 (Enter · 줄바꿈 Shift+Enter)"
+            aria-label="메시지 전송"
           >
             ▷
           </button>

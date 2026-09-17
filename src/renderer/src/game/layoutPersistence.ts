@@ -1,6 +1,9 @@
 import type { WorldPoint } from './officeWorld'
 
 export const OFFICE_LAYOUT_SAVE_KEY = 'pixel-office-layout-v1'
+// The chair at the left end of the meeting table, in front of the laptop.
+// Its identity remains reserved when the user moves or rotates the furniture.
+export const REPRESENTATIVE_MEETING_CHAIR_ID = 'custom-1787984571110-14'
 export interface SavedFurniture extends WorldPoint { frame?: number; width?: number; height?: number; rotation?: number; zOrder?: number }
 export type OfficeLayoutSave = Record<string, SavedFurniture>
 

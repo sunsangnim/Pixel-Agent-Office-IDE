@@ -34,7 +34,7 @@ buildSync({
 const {
   OfficeScene, IdleActivity, ActorStateMachine, CharacterGait, actionForPresence, resolveOfficePresence,
   findOfficePath, hasOfficeLineOfSight, isOfficePositionWalkable, routeFor, WAYPOINTS,
-  DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS,
+  DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS, REPRESENTATIVE_MEETING_CHAIR_ID,
   OFFICE_REPRESENTATIVE_SAVE_KEY, parseRepresentativePosition, measureFurnitureBounds,
   STAFF_PANTRY_SHEETS, measureWalkSheet, measureSeatedSheet, measureCharacterSheet, measurePantrySheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS,
   REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_CYCLE_MS, REPRESENTATIVE_WORK_FRAME_WIDTH,
@@ -318,16 +318,47 @@ snapshot(traffic, [actor('traveler'), actor('parked', 1)])
 advance(traffic, 4)
 const traveler = traffic.actors.get('traveler')
 const parkedActor = traffic.actors.get('parked')
-assert.equal(traveler.blocked, true)
-assert.equal(traveler.sprite.anims.isPlaying, false, 'blocked traffic stops the walking animation')
-assert.deepEqual([parkedActor.container.x, parkedActor.container.y], [316, 400], 'traffic cannot push a stationary actor around')
+assert.equal(traveler.settled, true, 'a floor occupant walks aside to clear the doorway')
+assert.notDeepEqual([parkedActor.container.x, parkedActor.container.y], [316, 400], 'the occupant yields instead of waiting forever')
 snapshot(traffic, [actor('traveler'), actor('parked', 1, 'offDuty')])
 advance(traffic, 5)
 assert.equal(traveler.settled, true, 'a cleared passage resumes movement without a new command')
 assert.equal(parkedActor.container.destroyed, true)
 assert.equal(parkedActor.overlay.destroyed, true, 'leaving employees also remove names and status overlays')
 assert.equal(parkedActor.seatedForeground.destroyed, true, 'leaving employees cannot leave a floating head')
-console.log('PASS traffic waiting, stationary actors, off-duty cleanup, and clear-passage retry')
+console.log('PASS voluntary passing-place movement, doorway progress and off-duty cleanup')
+
+function assertNoActorOverlap(scene) {
+  const views = [...scene.actors.values()]
+  for (let i = 0; i < views.length; i++) for (let j = i + 1; j < views.length; j++) {
+    assert.ok(isOfficePositionWalkable(views[i].container, [actorCollisionRect(views[j].container)]),
+      `${views[i].actor.profileId} overlaps ${views[j].actor.profileId}`)
+  }
+}
+
+for (const narrow of [false, true]) for (const reversed of [false, true]) {
+  const passing = createScene({})
+  passing.collisionRects = () => narrow ? [
+    { x: 320, y: 0, width: 320, height: 380 }, { x: 320, y: 420, width: 320, height: 540 }
+  ] : []
+  passing.actorDestination = candidate => ({ point: { x: candidate.profileId === 'a' ? 700 : 260, y: 400 }, seated: false })
+  passing.worldSave.actors = [{ profileId: 'a', x: 260, y: 400 }, { profileId: 'b', x: 700, y: 400 }]
+  snapshot(passing, reversed ? [actor('b', 1), actor('a')] : [actor('a'), actor('b', 1)])
+  let positions = [...passing.actors.values()].map(v => position(v.container))
+  advance(passing, 18, () => {
+    assertNoActorOverlap(passing)
+    const next = [...passing.actors.values()].map(v => position(v.container))
+    next.forEach((p, i) => assert.ok(Math.hypot(p.x - positions[i].x, p.y - positions[i].y) <= 2.5,
+      `yielding must walk rather than teleport: ${narrow}/${reversed}/${i} ${JSON.stringify(positions[i])} -> ${JSON.stringify(p)}`))
+    positions = next
+  })
+  for (const view of passing.actors.values()) {
+    assert.equal(view.settled, true, `head-on swap ${narrow}/${reversed}/${view.actor.profileId} must finish`)
+    assert.deepEqual(position(view.container), view.goal)
+    assert.equal(view.trafficYield, undefined)
+  }
+}
+console.log('PASS opposing walkers in open floor and single-file corridors, either update order, without overlaps or teleporting')
 
 const editing = createScene()
 snapshot(editing, [lead])
@@ -376,6 +407,23 @@ for (const member of crowd.actors.values()) {
   assert.equal(member.sprite.anims.isPlaying, false)
 }
 console.log('PASS four-person arrivals, occasional pantry visits/returns, and an explicit meeting')
+
+const fullMeeting = createScene()
+const fullAttendees = Array.from({ length: 8 }, (_, index) => actor(`guest-${index}`, index % 3, 'meeting', Math.floor(index / 3)))
+fullMeeting.worldSave.actors = fullAttendees.map((guest, index) => ({ profileId: guest.profileId, x: 160 + index * 72, y: 600 }))
+snapshot(fullMeeting, fullAttendees)
+advance(fullMeeting, 35, () => assertNoActorOverlap(fullMeeting))
+for (const guest of fullMeeting.actors.values()) {
+  assert.equal(guest.settled, true, `${guest.actor.profileId} must arrive without deadlock`)
+  assert.notEqual(guest.chairId, REPRESENTATIVE_MEETING_CHAIR_ID)
+}
+const destinations = [...fullMeeting.actors.values()].map(v => [v.actor.profileId, JSON.stringify(v.goal)])
+snapshot(fullMeeting, fullAttendees.slice().reverse())
+assert.deepEqual([...fullMeeting.actors.values()].map(v => [v.actor.profileId, JSON.stringify(v.goal)]), destinations, 'snapshot ordering must not swap meeting seats')
+snapshot(fullMeeting, fullAttendees.map(guest => ({ ...guest, presence: 'working' })))
+advance(fullMeeting, 40, () => assertNoActorOverlap(fullMeeting))
+for (const guest of fullMeeting.actors.values()) assert.equal(guest.settled, true, `${guest.actor.profileId} must leave the meeting and reach work`)
+console.log('PASS eight concurrent meeting arrivals/departures, reserved head seat, stable assignments and overlap-free exits')
 
 
 assert.equal(STAFF_PANTRY_SHEETS.length, 15)
@@ -523,7 +571,7 @@ function floorClick(scene, point, { button = 'left', over = [], event = {} } = {
   scene.input.events.get('pointerdown')({ worldX: point.x, worldY: point.y, event,
     leftButtonDown: () => button === 'left' }, over)
 }
-const position = (sprite) => ({ x: sprite.x, y: sprite.y })
+function position(sprite) { return { x: sprite.x, y: sprite.y } }
 const player = representativeScene()
 const ceo = player.representativeSprite
 assert.ok(isOfficePositionWalkable(ceo, player.collisionRects()), 'the representative starts on free floor, outside its desk')
@@ -605,14 +653,15 @@ snapshot(playerTraffic, [actor('blocker')])
 floorClick(playerTraffic, { x: 420, y: 400 })
 const walkingPlayer = playerTraffic.representativeSprite
 advance(playerTraffic, 4, () => {
-  assert.ok(isOfficePositionWalkable(walkingPlayer, [actorCollisionRect({ x: 316, y: 400 })]), 'the representative cannot cross a stationary employee')
+  assert.ok(isOfficePositionWalkable(walkingPlayer, [actorCollisionRect(playerTraffic.actors.get('blocker').container)]), 'the representative and yielding employee never overlap')
 })
-assert.equal(walkingPlayer.anims.isPlaying, false, 'a blocked representative does not walk in place')
-assert.deepEqual(playerTraffic.representativeGoal, { x: 420, y: 400 })
+assert.equal(walkingPlayer.anims.isPlaying, false, 'the representative stops walking on arrival')
+assert.equal(playerTraffic.representativeGoal, null)
+assert.deepEqual(position(walkingPlayer), { x: 420, y: 400 }, 'employees yield without needing to go off duty')
 snapshot(playerTraffic, [actor('blocker', 0, 'offDuty')])
 advance(playerTraffic, 5)
 assert.deepEqual(position(walkingPlayer), { x: 420, y: 400 }, 'movement resumes when the employee clears the passage')
-console.log('PASS representative waits for employees and resumes after the passage clears')
+console.log('PASS representative right of way and collision-free employee yielding')
 
 function seatingScene(rotation = 0, frame = 12) {
   storage.delete(OFFICE_REPRESENTATIVE_SAVE_KEY)
@@ -1382,8 +1431,8 @@ snapshot(meeting, attendees)
 advance(meeting, 25)
 for (const view of meeting.actors.values()) {
   assert.equal(view.settled, true)
-  if (view.actorIndex < 2) {
-    assert.equal(view.seatedGoal, false, 'attendees use free floor when enlarged furniture encloses their seats')
+  assert.notEqual(view.chairId, REPRESENTATIVE_MEETING_CHAIR_ID, 'the head chair stays reserved even while empty')
+  if (!view.seatedGoal) {
     assert.equal(view.chairId, null)
     assert.ok(isOfficePositionWalkable(view.container, meeting.collisionRects()))
   } else {
@@ -1392,8 +1441,9 @@ for (const view of meeting.actors.values()) {
     assert.deepEqual(position(view.container), position(meeting.furniture.get(view.chairId).image))
   }
 }
-assert.equal(new Set([...meeting.actors.values()].filter((view) => view.seatedGoal).map((view) => view.chairId)).size, 3)
-console.log('PASS five meeting attendees: distinct reachable chairs and free-floor waiting at enclosed seats')
+assert.equal(new Set([...meeting.actors.values()].filter((view) => view.seatedGoal).map((view) => view.chairId)).size, 2)
+assert.equal(new Set([...meeting.actors.values()].map((view) => `${view.container.x}:${view.container.y}`)).size, 5)
+console.log('PASS five meeting attendees: reserved head chair, distinct reachable seats and free-floor overflow')
 
 // Regression: the old desk collision was half its rendered size, and enlarged
 // chairs still used their original bounds. Check visible edges independently
