@@ -4,7 +4,7 @@ import { OFFICE_RENDER_SCALE, OfficeScene } from '../game/OfficeScene'
 import { OFFICE_WORLD_HEIGHT, OFFICE_WORLD_WIDTH, type OfficeWorldSnapshot } from '../game/officeWorld'
 import LayoutEditorPanel from './LayoutEditorPanel'
 import OfficeDialoguePanel from './OfficeDialoguePanel'
-import type { OfficeDialogue } from '../game/officeDialogue'
+import type { OfficeDialogue, OfficeRequest } from '../game/officeDialogue'
 import type { ChatMessage } from '../lib/chatHistory'
 
 interface PhaserOfficeProps {
@@ -13,9 +13,11 @@ interface PhaserOfficeProps {
   onActorSelect: (profileId: string) => void
   onDeskCountsChange: (counts: number[]) => void
   messages: ChatMessage[]
+  requests: OfficeRequest[]
+  onConversationChange: (profileId: string) => void
 }
 
-function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsChange, messages }: PhaserOfficeProps) {
+function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsChange, messages, requests, onConversationChange }: PhaserOfficeProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const gameRef = useRef<Phaser.Game | null>(null)
   const sceneRef = useRef<OfficeScene | null>(null)
@@ -27,6 +29,21 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
   const [editing, setEditing] = useState(false)
   const [dialogues, setDialogues] = useState<OfficeDialogue[]>([])
   const seenMessages = useRef(new Set(messages.map((message) => message.id)))
+  const [activeRequestId, setActiveRequestId] = useState<string | null>(null)
+  const dismissedRequests = useRef(new Set<string>())
+  const requestKey = requests.map((request) => request.id).join('|')
+  const conversationRef = useRef(onConversationChange)
+  conversationRef.current = onConversationChange
+
+  useEffect(() => {
+    for (const id of dismissedRequests.current) if (!requests.some((request) => request.id === id)) dismissedRequests.current.delete(id)
+    setActiveRequestId((id) => {
+      const current = requests.find((request) => request.id === id)
+      const permission = requests.find((request) => request.kind === 'permission' && !dismissedRequests.current.has(request.id))
+      if (permission && (!current || current.kind === 'planning')) return permission.id
+      return current?.id ?? requests.find((request) => !dismissedRequests.current.has(request.id))?.id ?? null
+    })
+  }, [requestKey])
 
   useEffect(() => {
     if (!hostRef.current || gameRef.current) return
@@ -80,6 +97,11 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
     const scene = sceneRef.current
     if (!scene) return
     scene.updateSnapshot(snapshot)
+    setDialogues((queue) => {
+      const active = queue.filter((dialogue) => !dialogue.id.startsWith('visit-') ||
+        snapshot.actors.some((actor) => actor.profileId === dialogue.profileId && actor.presence === 'representativeVisit'))
+      return active.length === queue.length ? queue : active
+    })
   }, [snapshot])
 
   useEffect(() => {
@@ -98,13 +120,32 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
     }
   }, [messages, scene, snapshot])
 
+  const activeRequest = requests.find((request) => request.id === activeRequestId)
+  const requestActor = activeRequest && snapshot.actors.find((actor) => actor.profileId === activeRequest.profileId)
+  const requestDialogue = requestActor && activeRequest && scene?.dialogueForActor(requestActor, activeRequest.text, activeRequest.id)
+  const dialogue = requestDialogue || dialogues[0]
+  useEffect(() => {
+    if (dialogue && !editing) conversationRef.current(dialogue.profileId)
+  }, [dialogue?.profileId, editing])
+  const closeRequest = (): void => {
+    if (activeRequestId) dismissedRequests.current.add(activeRequestId)
+    setActiveRequestId(requests.find((request) => !dismissedRequests.current.has(request.id))?.id ?? null)
+  }
+
   return (
     <div className="phaser-office-wrap">
       <div className="phaser-office-host" ref={hostRef} aria-label="Phaser 생활형 에이전트 오피스" />
       {editing && <LayoutEditorPanel scene={scene} />}
-      {!editing && dialogues[0] && <OfficeDialoguePanel key={dialogues[0].id} dialogue={dialogues[0]}
+      {!editing && requests.length > 0 && <div className="office-request-tray" aria-label="대기 중인 요청">
+        {requests.map((request) => <button key={request.id} className={request.id === activeRequestId ? 'active' : ''}
+          onClick={() => { dismissedRequests.current.delete(request.id); setActiveRequestId(request.id) }}>
+          {snapshot.actors.find((actor) => actor.profileId === request.profileId)?.displayName} · {request.kind === 'permission' ? '권한 요청' : request.kind === 'approval' ? '작업 승인 요청' : '작업 요청'}
+        </button>)}
+      </div>}
+      {!editing && dialogue && <OfficeDialoguePanel key={dialogue.id} dialogue={dialogue}
+        request={requestDialogue ? activeRequest : undefined}
         remaining={dialogues.length - 1} onNext={() => setDialogues((queue) => queue.slice(1))}
-        onClose={() => setDialogues([])} />}
+        onClose={requestDialogue ? closeRequest : () => setDialogues([])} />}
     </div>
   )
 }

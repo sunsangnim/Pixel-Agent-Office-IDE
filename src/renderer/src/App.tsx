@@ -4,7 +4,6 @@ import OfficeView from './components/OfficeView'
 import AgentProfileRow from './components/AgentProfileRow'
 import TerminalModal from './components/TerminalModal'
 import DiffPanel from './components/DiffPanel'
-import PlanApprovalModal from './components/PlanApprovalModal'
 import ChatPanel from './components/ChatPanel'
 import WorkspacePanel from './components/WorkspacePanel'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
@@ -13,7 +12,8 @@ import { planTask } from './lib/taskRouter'
 import { leadTitleFor, SUB_AGENT_TITLE } from '@shared/agentProfiles'
 import { parseMeetingCommand, type MeetingCommand } from './lib/meetingCommands'
 import { parseAttendanceCommand } from './lib/attendanceCommands'
-import { OFFICE_VISIT_KEY, parseOfficeCommand, readOfficeVisitors, type OfficeCommand } from './lib/officeCommands'
+import { OFFICE_VISIT_KEY, parseOfficeCommand, readOfficeVisitors, resolveOfficeCommandTargets, type OfficeCommand } from './lib/officeCommands'
+import type { OfficeRequest } from './game/officeDialogue'
 import { planningStatus } from './lib/planningStatus'
 import {
   MEETING_CHECKPOINT_KEY,
@@ -50,13 +50,13 @@ function App() {
   const [meetingActive, setMeetingActive] = useState(() => Boolean(localStorage.getItem(MEETING_CHECKPOINT_KEY)))
   const [manuallyOffDutyIds, setManuallyOffDutyIds] = useState<Set<string>>(new Set())
   const [representativeVisitors, setRepresentativeVisitors] = useState(() => readOfficeVisitors(localStorage))
+  const [conversationProfileId, setConversationProfileId] = useState<string | null>(null)
   const recoveredCommand = useRef(false)
   const instancesLoaded = useRef(false)
   const [heldPrompts, setHeldPrompts] = useState<HeldMeetingPrompt[]>(() =>
     readStoredJson(localStorage.getItem(MEETING_QUEUE_KEY), [])
   )
   const [pendingPlan, setPendingPlan] = useState<PendingPlan | null>(null)
-  const [planModalOpen, setPlanModalOpen] = useState(false)
   const { deskStatuses: statuses, runtimeStates } = usePtyStatuses()
 
   const handlePlanReady = ({ instanceId, taskId }: PlanReadyPayload): void => {
@@ -79,7 +79,6 @@ function App() {
     window.api.tasks.readSpec(pendingPlan.specPath).then((specText) => {
       if (cancelled) return
       setPendingPlan((current) => (current && current.taskId === pendingPlan.taskId ? { ...current, specText } : current))
-      setPlanModalOpen(true)
     }).catch((e) => { if (!cancelled) setError(String(e)) })
     return () => {
       cancelled = true
@@ -89,11 +88,10 @@ function App() {
   useEffect(() => { localStorage.setItem(OFFICE_VISIT_KEY, JSON.stringify([...representativeVisitors])) }, [representativeVisitors])
 
   const handleOfficeCommand = (command: OfficeCommand, targetIds = Array.from(selectedTargetIds)): void => {
-    const targets = command.templateIds.length
-      ? profiles.filter((profile) => profile.rank === 'teamLead' && command.templateIds.includes(profile.templateId))
-      : profiles.filter((profile) => instances.some((instance) => instance.profileId === profile.profileId && targetIds.includes(instance.instanceId)))
+    const targets = resolveOfficeCommandTargets(command, profiles, instances, targetIds, conversationProfileId, representativeVisitors)
     if (!targets.length) { addSystemMessage('이동할 캐릭터를 @멘션하거나 선택해주세요. 예: @Claude 대표실로 오게나'); return }
     const ids = targets.map((profile) => profile.profileId)
+    if (ids.length === 1) setConversationProfileId(ids[0])
     setError(null)
     setRepresentativeVisitors((previous) => {
       const next = new Set(previous)
@@ -108,7 +106,6 @@ function App() {
     if (!pendingPlan) return
     cancelPlanning(pendingPlan.taskId)
     setPendingPlan(null)
-    setPlanModalOpen(false)
     addSystemMessage('기획 요청을 취소했습니다. 작성된 문서는 작업실에 보관됩니다.')
   }
 
@@ -117,9 +114,10 @@ function App() {
     const command = parseOfficeCommand(pendingPlan.originalText)
     if (!command || !profiles.length) return
     recoveredCommand.current = true
+    const lastUser = messages.findLast((message) => message.kind === 'user')
+    if (lastUser) localStorage.setItem('pixel-office-recovered-command', lastUser.id)
     cancelPlanning(pendingPlan.taskId)
     setPendingPlan(null)
-    setPlanModalOpen(false)
     setSelectedInstanceId(null)
     addSystemMessage('이동 지시로 잘못 시작된 기획 요청을 취소했습니다.')
     handleOfficeCommand(command, pendingPlan.instanceIds)
@@ -130,17 +128,18 @@ function App() {
     const index = messages.findLastIndex((message) => message.kind === 'user')
     const last = messages[index]
     const command = last && parseOfficeCommand(last.text)
-    if (!command || !command.templateIds.length || !messages.slice(index + 1).some((message) => message.kind === 'system' && message.text.includes('기획 작성 요청'))) return
+    if (!command || !messages.slice(index + 1).some((message) => message.kind === 'system' && message.text.includes('기획 작성 요청'))) return
+    const targets = resolveOfficeCommandTargets(command, profiles, instances, [], conversationProfileId, representativeVisitors)
+    if (!targets.length) return
     if (localStorage.getItem('pixel-office-recovered-command') === last.id) return
     // Recover the reported command after a live update/reload without starting a new CLI.
     recoveredCommand.current = true
     localStorage.setItem('pixel-office-recovered-command', last.id)
-    for (const instance of instances.filter((instance) => command.templateIds.includes(instance.templateId))) {
+    for (const instance of instances.filter((instance) => targets.some((profile) => profile.profileId === instance.profileId))) {
       if (window.api.pty.cancelPrompt) window.api.pty.cancelPrompt(instance.ptyId)
       else window.api.pty.write(instance.ptyId, '\u0003')
     }
     setPendingPlan(null)
-    setPlanModalOpen(false)
     setSelectedInstanceId(null)
     addSystemMessage('이동 지시로 잘못 시작된 기획 요청을 취소했습니다.')
     handleOfficeCommand(command)
@@ -285,7 +284,6 @@ function App() {
     if (!pendingPlan) return
     const plan = pendingPlan
     setPendingPlan(null)
-    setPlanModalOpen(false)
 
     const workflowPrompt = buildWorkflowPrompt(plan)
 
@@ -343,7 +341,6 @@ function App() {
     const plan = pendingPlan
     const revisionPrompt = `[반려] ${feedback}\n기획서(${plan.specPath})와 Phase 문서(${plan.phasesPath})를 반영해 다시 수정한 뒤 "기획 완료"라고 보고하세요.`
     setPendingPlan({ ...plan, readyIds: new Set(), specText: null })
-    setPlanModalOpen(false)
     sendPlanningPrompt(revisionPrompt, plan.instanceIds, plan.taskId, plan.specPath, instances, `[반려] ${feedback}`)
   }
 
@@ -390,7 +387,6 @@ function App() {
     // Recover a review created by older command matching during a live update.
     // No approval or implementation request should be sent for a local command.
     setPendingPlan(null)
-    setPlanModalOpen(false)
     addSystemMessage('회의 요청으로 잘못 열린 기획 검토를 취소했습니다.')
     void handleMeetingCommand(command)
   }, [pendingPlan])
@@ -436,29 +432,27 @@ function App() {
     await executePrompt(text)
   }
 
+  const requests: OfficeRequest[] = instances.filter((instance) => runtimeStates[instance.ptyId]?.state === 'waiting').map((instance) => ({
+    id: `permission:${instance.ptyId}:${runtimeStates[instance.ptyId].timestamp}`, profileId: instance.profileId, kind: 'permission', ptyId: instance.ptyId,
+    text: `${runtimeStates[instance.ptyId]?.reason?.replace(/\s*—\s*터미널에서 확인해주세요\.?/, '') ?? '권한 또는 확인 요청이 있습니다.'}\n요청 내용을 확인한 뒤 직접 응답해주세요.`
+  }))
+  if (pendingPlan && !parseOfficeCommand(pendingPlan.originalText) && !parseMeetingCommand(pendingPlan.originalText)) {
+    const instance = instances.find((instance) => pendingPlan.instanceIds.includes(instance.instanceId))
+    if (instance) {
+      const ready = pendingPlan.specText !== null
+      const status = planningStatus(pendingPlan.instanceIds, instances, runtimeStates)
+      requests.push({ id: `plan:${pendingPlan.taskId}:${ready ? 'approval' : 'progress'}`, profileId: instance.profileId,
+        kind: ready ? 'approval' : 'planning', ptyId: instance.ptyId,
+        text: ready ? `“${pendingPlan.originalText}” 기획을 확인해주세요. 승인해주시면 작업을 시작하겠습니다.` : `요청: ${pendingPlan.originalText}\n${status.text}`,
+        specText: pendingPlan.specText ?? undefined, onCancel: cancelPlan,
+        onApprove: ready ? () => { void approvePlan() } : undefined, onReject: ready ? rejectPlan : undefined })
+    }
+  }
+
   return (
     <div className="app-root">
       <div className="main-column">
         {error && <p className="error-banner">{error}</p>}
-        {pendingPlan && !planModalOpen && (
-          <div className="plan-pending-banner">
-            {pendingPlan.specText ? (
-              <>
-                기획서 검토 대기 중
-                <button onClick={() => setPlanModalOpen(true)}>다시 열기</button>
-              </>
-            ) : (
-              (() => {
-                const status = planningStatus(pendingPlan.instanceIds, instances, runtimeStates)
-                return <>
-                  <span>{status.text}</span>
-                  <button onClick={() => setSelectedInstanceId(status.blockedInstanceId ?? pendingPlan.instanceIds[0])}>터미널 확인</button>
-                  <button onClick={cancelPlan}>기획 취소</button>
-                </>
-              })()
-            )}
-          </div>
-        )}
 
         <OfficeView
           instances={instances}
@@ -474,6 +468,8 @@ function App() {
           manuallyOffDutyIds={manuallyOffDutyIds}
           representativeVisitors={representativeVisitors}
           messages={messages}
+          requests={requests}
+          onConversationChange={setConversationProfileId}
         />
 
         <AgentProfileRow
@@ -531,15 +527,6 @@ function App() {
           )
         })()}
 
-      {planModalOpen && pendingPlan && (
-        <PlanApprovalModal
-          title={pendingPlan.originalText.slice(0, 40)}
-          specText={pendingPlan.specText}
-          onApprove={() => void approvePlan()}
-          onReject={rejectPlan}
-          onClose={() => setPlanModalOpen(false)}
-        />
-      )}
     </div>
   )
 }

@@ -21,7 +21,13 @@ export function usePtyStatuses(): PtyStatusSnapshot {
       if (active) setRuntimeStates((prev) => ({ ...Object.fromEntries(states.map((state) => [state.ptyId, state])), ...prev }))
     }).catch(() => {})
     const unsubscribeState = window.api.pty.onState((payload) => {
-      setRuntimeStates((prev) => ({ ...prev, [payload.ptyId]: payload }))
+      setRuntimeStates((prev) => ({ ...prev, [payload.ptyId]: {
+        ...payload,
+        // Redrawing one permission prompt is one request. A new wait after
+        // resuming gets a new identity so a dismissed panel can open again.
+        timestamp: payload.state === 'waiting' && prev[payload.ptyId]?.state === 'waiting'
+          ? prev[payload.ptyId].timestamp : payload.timestamp
+      } }))
     })
     const unsubscribeExit = window.api.pty.onExit(({ ptyId, exitCode }) => {
       setRuntimeStates((prev) => {

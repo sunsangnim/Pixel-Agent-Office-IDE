@@ -10,7 +10,7 @@ import { BUILT_IN_AGENT_PROFILES } from '../src/shared/agentProfiles'
 import { MAX_TEAM_CAPACITY, ORCHESTRATION_POLICY } from '../src/shared/orchestrationPolicy'
 import type { AgentRuntimeState, AgentStatePayload, CliAdapterId } from '../src/shared/types'
 import { planTask } from '../src/renderer/src/lib/taskRouter'
-import { parseOfficeCommand } from '../src/renderer/src/lib/officeCommands'
+import { parseOfficeCommand, resolveOfficeCommandTargets } from '../src/renderer/src/lib/officeCommands'
 import { planningStatus } from '../src/renderer/src/lib/planningStatus'
 import { isMeetingEndCommand, isMeetingStartCommand, parseMeetingCommand } from '../src/renderer/src/lib/meetingCommands'
 import { isWorkingTime } from '../src/renderer/src/hooks/useOfficeClock'
@@ -457,6 +457,19 @@ async function main(): Promise<void> {
   assert.deepEqual(parseOfficeCommand('@Claude 대표실로 오게나'), { action: 'visit', templateIds: ['claude-code'] })
   assert.deepEqual(parseOfficeCommand('클로드야 대표실로 와'), { action: 'visit', templateIds: ['claude-code'] })
   assert.deepEqual(parseOfficeCommand('@Codex @Antigravity 각자 자리로 돌아가'), { action: 'return', templateIds: ['codex-cli', 'antigravity-cli'] })
+  for (const text of ['자리로 돌아가게', '자리로 돌아가라', '자기 자리로 돌아가세요', '돌아가', '돌아가게나', '복귀해', '복귀하게', '원래 좌석으로 돌아가줘']) {
+    assert.equal(parseOfficeCommand(text)?.action, 'return', text)
+    assert.deepEqual(parseOfficeCommand(`@Claude ${text}`)?.templateIds, ['claude-code'])
+  }
+  for (const text of ['자리로 돌아가게 해주는 기능 만들어', '돌아가지 마', '자리로 돌아가라고 했잖아 고쳐줘', '복귀 기능 수정', '복귀하지 마', '돌아가게 버튼 추가', '자리로 돌아가게\n파일 만들어줘']) assert.equal(parseOfficeCommand(text), null, text)
+  const leads = BUILT_IN_AGENT_PROFILES.filter((profile) => profile.rank === 'teamLead')
+  const visiting = new Set(['claude-code:lead', 'codex-cli:lead'])
+  const pick = (text: string, conversation: string | null, visitors = visiting) => resolveOfficeCommandTargets(parseOfficeCommand(text)!, leads, [], [], conversation, visitors).map((profile) => profile.profileId)
+  assert.deepEqual(pick('자리로 돌아가게', 'claude-code:lead'), ['claude-code:lead'])
+  assert.deepEqual(pick('자리로 돌아가게', null, new Set(['codex-cli:lead'])), ['codex-cli:lead'])
+  assert.deepEqual(pick('자리로 돌아가게', null), [])
+  assert.deepEqual(pick('모두 자리로 돌아가게', null), ['claude-code:lead', 'codex-cli:lead'])
+  assert.deepEqual(pick('@Codex 자리로 돌아가게', 'claude-code:lead'), ['codex-cli:lead'])
   for (const text of ['대표실로 이동하는 기능 만들어줘', '@Claude 대표실로 오게나 명령을 구현해', '대표실 화면 설계해', '대표실로 와서 문서 작성해']) assert.equal(parseOfficeCommand(text), null)
   assert.match(planningStatus(['a'], [{ instanceId: 'a', ptyId: 'p' }] as never, { p: { state: 'waiting', reason: '작업 폴더 신뢰 승인 대기' } } as never).text, /신뢰 승인/)
   assert.match(planningStatus(['a'], [], {}).text, /시작 대기/)

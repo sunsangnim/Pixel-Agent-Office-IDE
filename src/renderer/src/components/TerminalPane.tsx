@@ -30,6 +30,7 @@ function TerminalPane({ ptyId }: TerminalPaneProps) {
     // buffer replay + live stream must not race: queue live chunks until the
     // pre-connect buffer has been written, then flush them in order.
     let bufferLoaded = false
+    let disposed = false
     let pendingLive: string[] = []
 
     const unsubscribeData = window.api.pty.onData((payload) => {
@@ -42,11 +43,12 @@ function TerminalPane({ ptyId }: TerminalPaneProps) {
     })
 
     window.api.pty.getBuffer(ptyId).then((buffer) => {
+      if (disposed) return
       term.write(buffer)
       bufferLoaded = true
       for (const chunk of pendingLive) term.write(chunk)
       pendingLive = []
-    })
+    }).catch(() => { if (!disposed) { bufferLoaded = true; term.writeln('요청 화면을 불러오지 못했습니다. 다시 열어주세요.') } })
 
     const onTermData = term.onData((data) => {
       window.api.pty.write(ptyId, data)
@@ -59,6 +61,7 @@ function TerminalPane({ ptyId }: TerminalPaneProps) {
     resizeObserver.observe(container)
 
     return () => {
+      disposed = true
       unsubscribeData()
       onTermData.dispose()
       resizeObserver.disconnect()

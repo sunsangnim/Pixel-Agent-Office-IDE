@@ -4,6 +4,7 @@ import { useOfficeClock } from '../hooks/useOfficeClock'
 import type { OfficeWorldSnapshot } from '../game/officeWorld'
 import PhaserOffice from './PhaserOffice'
 import type { ChatMessage } from '../lib/chatHistory'
+import type { OfficeRequest } from '../game/officeDialogue'
 
 interface OfficeViewProps {
   instances: AgentInstance[]
@@ -19,6 +20,8 @@ interface OfficeViewProps {
   manuallyOffDutyIds: Set<string>
   representativeVisitors?: Set<string>
   messages: ChatMessage[]
+  requests: OfficeRequest[]
+  onConversationChange: (profileId: string) => void
 }
 
 function OfficeView(props: OfficeViewProps) {
@@ -75,6 +78,8 @@ function OfficeView(props: OfficeViewProps) {
         onActorSelect={selectActor}
         onDeskCountsChange={reportDeskCounts}
         messages={props.messages}
+        requests={props.requests}
+        onConversationChange={props.onConversationChange}
       />
     </div>
   )
