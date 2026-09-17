@@ -9,6 +9,7 @@ import { ptyManager } from './ptyManager'
 import { taskWorkspaceManager } from './taskWorkspaceManager'
 import { TASK_DOCUMENTS_FOLDER, WORKSPACE_FOLDERS } from '../shared/workspaceLayout'
 import { ensureTaskRepository, newProjectRepository } from './projectRepository'
+import { checkGitEnvironment } from './systemDoctor'
 import { meetingPlanningRequest, pendingMeetingQuestions, validateMeetingDraft, type MeetingDraft } from '../shared/meetingNotes'
 import type { AgentInstance, TaskCommand, TaskDispatch, TaskRestoreResult, TaskWorkspace, TrackedTask } from '../shared/types'
 
@@ -83,6 +84,12 @@ class TaskRecovery {
   }
 
   private async prepareRepository(task: TrackedTask): Promise<void> {
+    // A resumed/already-provisioned task's repository doesn't need git/gh to
+    // be usable right now - only a genuinely new repository does.
+    if (task.repository && !task.repository.ready) {
+      const check = await checkGitEnvironment()
+      if (!check.ok) throw new Error(check.message)
+    }
     await ensureTaskRepository(workspaceFiles(), task, repository => {
       this.store().setRepository(task.taskId, repository)
       this.broadcast()
