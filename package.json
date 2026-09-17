@@ -5,7 +5,14 @@
   "main": "./out/main/index.js",
   "private": true,
   "author": "",
+  "license": "MIT",
   "homepage": "https://github.com/sunsangnim/Pixel-Agent-Office-IDE",
+  "engines": {
+    "node": ">=22"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,cjs,mjs}": "eslint"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -19,9 +26,19 @@
     "test:recovery": "node scripts/run-recovery-tests.cjs",
     "test:recovery-ui": "node scripts/run-recovery-ui-tests.cjs",
     "test:meeting-ui": "node scripts/run-meeting-ui-tests.cjs",
-    "test:office-ui": "node scripts/run-office-ui-tests.cjs"
+    "test:office-ui": "node scripts/run-office-ui-tests.cjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky",
+    "test": "npm run typecheck && npm run lint && npm run test:movement && npm run test:editor-layering && npm run test:integration && npm run test:recovery && npm run test:workspace && npm run test:recovery-ui && npm run test:meeting-ui && npm run test:office-ui && npm run test:workspace-ui && npm run build"
   },
   "devDependencies": {
+    "@babel/eslint-parser": "^8.0.5",
+    "@babel/preset-react": "^8.0.1",
+    "@babel/preset-typescript": "^8.0.1",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^26.4.0",
     "@types/pngjs": "^6.0.5",
     "@types/react": "^19.2.18",
@@ -30,7 +47,14 @@
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.5.1",
     "pngjs": "^7.0.0",
+    "prettier": "^3.9.7",
     "typescript": "^7.0.2",
     "vite": "^7.3.6"
   },

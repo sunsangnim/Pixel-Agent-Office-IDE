@@ -304,8 +304,8 @@ ${plan.originalText}`
 
     const planningPrompt = `[기획 단계]\n프로젝트 폴더: ${taskWorkspace.projectPath}\n비공개 작업 문서 폴더: ${taskWorkspace.rootPath}\n1. ${taskWorkspace.specPath}에 아래 요청에 대한 SRS·PRD·화면설계를 구체화하세요.\n2. ${taskWorkspace.phasesPath}에 작업을 Phase로 나누세요.\n3. 이번 단계에서는 코드를 작성하지 마세요 — 기획서 작성까지만 수행합니다.\n4. 완료되면 "기획 완료"라고 짧게 보고하세요.\n\n[사용자 요청]\n${text}`
 
-    let planInstanceIds: string[] = []
-    let mode: PendingPlan['mode'] = 'manual'
+    let planInstanceIds: string[]
+    let mode: PendingPlan['mode']
     let availableInstances = instances
 
     try {

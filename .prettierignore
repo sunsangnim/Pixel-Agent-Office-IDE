@@ -1,0 +1,8 @@
+node_modules
+out
+tmp
+dist
+*.png
+*.md
+package-lock.json
+src/renderer/__tests__/office-ui.html

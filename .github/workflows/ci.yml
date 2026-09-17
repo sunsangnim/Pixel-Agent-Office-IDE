@@ -18,10 +18,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm run test:movement
       - run: npm run test:editor-layering
       - run: npm run test:integration
       - run: npm run test:recovery
+      - run: npm run test:workspace
       - run: npm run build
       - run: npm run test:recovery-ui
       - run: npm run test:meeting-ui
+      - run: npm run test:office-ui
+      - run: npm run test:workspace-ui

@@ -13,7 +13,7 @@ export interface CliAdapter {
   inspectOutput(output: string): AdapterSignal | null
 }
 
-const ANSI_PATTERN = /[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g
+const ANSI_PATTERN = /[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g
 // A quoted/backticked mention of an error phrase (an agent summarizing what it just
 // fixed) should not itself flip the run into an error state - only an unquoted
 // occurrence, as a real CLI error banner would print it, counts.

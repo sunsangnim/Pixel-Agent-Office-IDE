@@ -99,6 +99,6 @@ export async function ensureTaskRepository(
     if (repository.featureBranch) await git('config', 'office.featureBranch', repository.featureBranch)
     save({ ...repository, url: remote.html_url, ready: true })
   } catch (error) {
-    throw new Error(`새 작업 저장소 준비 실패: ${String(error)}\nGitHub CLI(gh) 설치·로그인과 네트워크를 확인한 뒤 “프로젝트 이어가기”에서 이 작업을 다시 선택해주세요. 같은 저장소로 재시도합니다.`)
+    throw new Error(`새 작업 저장소 준비 실패: ${String(error)}\nGitHub CLI(gh) 설치·로그인과 네트워크를 확인한 뒤 “프로젝트 이어가기”에서 이 작업을 다시 선택해주세요. 같은 저장소로 재시도합니다.`, { cause: error })
   }
 }
