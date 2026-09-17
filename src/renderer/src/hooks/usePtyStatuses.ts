@@ -16,6 +16,10 @@ export function usePtyStatuses(): PtyStatusSnapshot {
   const [runtimeStates, setRuntimeStates] = useState<Record<string, AgentStatePayload>>({})
 
   useEffect(() => {
+    let active = true
+    window.api.pty.getStates?.().then((states) => {
+      if (active) setRuntimeStates((prev) => ({ ...Object.fromEntries(states.map((state) => [state.ptyId, state])), ...prev }))
+    }).catch(() => {})
     const unsubscribeState = window.api.pty.onState((payload) => {
       setRuntimeStates((prev) => ({ ...prev, [payload.ptyId]: payload }))
     })
@@ -34,7 +38,7 @@ export function usePtyStatuses(): PtyStatusSnapshot {
         }
       })
     })
-    return () => { unsubscribeState(); unsubscribeExit() }
+    return () => { active = false; unsubscribeState(); unsubscribeExit() }
   }, [])
 
   const deskStatuses = Object.fromEntries(

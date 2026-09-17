@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AgentInstance, AgentProfile, AgentTemplate } from '@shared/types'
 import OfficeView from './components/OfficeView'
 import AgentProfileRow from './components/AgentProfileRow'
@@ -13,6 +13,8 @@ import { planTask } from './lib/taskRouter'
 import { leadTitleFor, SUB_AGENT_TITLE } from '@shared/agentProfiles'
 import { parseMeetingCommand, type MeetingCommand } from './lib/meetingCommands'
 import { parseAttendanceCommand } from './lib/attendanceCommands'
+import { OFFICE_VISIT_KEY, parseOfficeCommand, readOfficeVisitors, type OfficeCommand } from './lib/officeCommands'
+import { planningStatus } from './lib/planningStatus'
 import {
   MEETING_CHECKPOINT_KEY,
   MEETING_QUEUE_KEY,
@@ -47,6 +49,9 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [meetingActive, setMeetingActive] = useState(() => Boolean(localStorage.getItem(MEETING_CHECKPOINT_KEY)))
   const [manuallyOffDutyIds, setManuallyOffDutyIds] = useState<Set<string>>(new Set())
+  const [representativeVisitors, setRepresentativeVisitors] = useState(() => readOfficeVisitors(localStorage))
+  const recoveredCommand = useRef(false)
+  const instancesLoaded = useRef(false)
   const [heldPrompts, setHeldPrompts] = useState<HeldMeetingPrompt[]>(() =>
     readStoredJson(localStorage.getItem(MEETING_QUEUE_KEY), [])
   )
@@ -63,11 +68,11 @@ function App() {
     })
   }
 
-  const { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage } =
+  const { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, cancelPlanning } =
     useAgentChat(instances, templates, handlePlanReady)
 
   useEffect(() => {
-    if (!pendingPlan || parseMeetingCommand(pendingPlan.originalText) || pendingPlan.specText !== null) return
+    if (!pendingPlan || parseMeetingCommand(pendingPlan.originalText) || parseOfficeCommand(pendingPlan.originalText) || pendingPlan.specText !== null) return
     const allReady = pendingPlan.instanceIds.every((id) => pendingPlan.readyIds.has(id))
     if (!allReady) return
     let cancelled = false
@@ -75,11 +80,71 @@ function App() {
       if (cancelled) return
       setPendingPlan((current) => (current && current.taskId === pendingPlan.taskId ? { ...current, specText } : current))
       setPlanModalOpen(true)
-    })
+    }).catch((e) => { if (!cancelled) setError(String(e)) })
     return () => {
       cancelled = true
     }
   }, [pendingPlan])
+
+  useEffect(() => { localStorage.setItem(OFFICE_VISIT_KEY, JSON.stringify([...representativeVisitors])) }, [representativeVisitors])
+
+  const handleOfficeCommand = (command: OfficeCommand, targetIds = Array.from(selectedTargetIds)): void => {
+    const targets = command.templateIds.length
+      ? profiles.filter((profile) => profile.rank === 'teamLead' && command.templateIds.includes(profile.templateId))
+      : profiles.filter((profile) => instances.some((instance) => instance.profileId === profile.profileId && targetIds.includes(instance.instanceId)))
+    if (!targets.length) { addSystemMessage('이동할 캐릭터를 @멘션하거나 선택해주세요. 예: @Claude 대표실로 오게나'); return }
+    const ids = targets.map((profile) => profile.profileId)
+    setError(null)
+    setRepresentativeVisitors((previous) => {
+      const next = new Set(previous)
+      ids.forEach((id) => command.action === 'visit' ? next.add(id) : next.delete(id))
+      return next
+    })
+    if (command.action === 'visit') setManuallyOffDutyIds((previous) => new Set([...previous].filter((id) => !ids.includes(id))))
+    addSystemMessage(`${targets.map((profile) => profile.displayName).join(', ')}: ${command.action === 'visit' ? '대표실로 이동합니다.' : '자기 자리로 복귀합니다.'}`)
+  }
+
+  const cancelPlan = (): void => {
+    if (!pendingPlan) return
+    cancelPlanning(pendingPlan.taskId)
+    setPendingPlan(null)
+    setPlanModalOpen(false)
+    addSystemMessage('기획 요청을 취소했습니다. 작성된 문서는 작업실에 보관됩니다.')
+  }
+
+  useEffect(() => {
+    if (!pendingPlan) return
+    const command = parseOfficeCommand(pendingPlan.originalText)
+    if (!command || !profiles.length) return
+    recoveredCommand.current = true
+    cancelPlanning(pendingPlan.taskId)
+    setPendingPlan(null)
+    setPlanModalOpen(false)
+    setSelectedInstanceId(null)
+    addSystemMessage('이동 지시로 잘못 시작된 기획 요청을 취소했습니다.')
+    handleOfficeCommand(command, pendingPlan.instanceIds)
+  }, [pendingPlan, profiles])
+
+  useEffect(() => {
+    if (recoveredCommand.current || !instancesLoaded.current || !profiles.length) return
+    const index = messages.findLastIndex((message) => message.kind === 'user')
+    const last = messages[index]
+    const command = last && parseOfficeCommand(last.text)
+    if (!command || !command.templateIds.length || !messages.slice(index + 1).some((message) => message.kind === 'system' && message.text.includes('기획 작성 요청'))) return
+    if (localStorage.getItem('pixel-office-recovered-command') === last.id) return
+    // Recover the reported command after a live update/reload without starting a new CLI.
+    recoveredCommand.current = true
+    localStorage.setItem('pixel-office-recovered-command', last.id)
+    for (const instance of instances.filter((instance) => command.templateIds.includes(instance.templateId))) {
+      if (window.api.pty.cancelPrompt) window.api.pty.cancelPrompt(instance.ptyId)
+      else window.api.pty.write(instance.ptyId, '\u0003')
+    }
+    setPendingPlan(null)
+    setPlanModalOpen(false)
+    setSelectedInstanceId(null)
+    addSystemMessage('이동 지시로 잘못 시작된 기획 요청을 취소했습니다.')
+    handleOfficeCommand(command)
+  }, [profiles, instances, messages])
 
   const refreshTemplates = (): void => {
     window.api.templates.list().then((list) => {
@@ -91,7 +156,7 @@ function App() {
   useEffect(() => {
     window.api.workspace.getWorkFolder().then(setWorkFolder).catch((e) => setError(String(e)))
     refreshTemplates()
-    window.api.instances.list().then(setInstances)
+    window.api.instances.list().then((list) => { instancesLoaded.current = true; setInstances(list) })
     const unsubscribeTemplates = window.api.templates.onChanged(refreshTemplates)
     const unsubscribeCapacity = window.api.teamCapacity.onChanged(() => {
       window.api.profiles.list().then(setProfiles)
@@ -302,6 +367,7 @@ function App() {
         }
       }))
       const checkpoint: MeetingCheckpoint = { startedAt: new Date().toISOString(), sessions }
+      setRepresentativeVisitors(new Set())
       localStorage.setItem(MEETING_CHECKPOINT_KEY, JSON.stringify(checkpoint))
       setMeetingActive(true)
       addSystemMessage('회의를 시작합니다. 에이전트들이 회의실로 이동합니다. 상석은 대표님 자리로 비워둡니다.')
@@ -335,6 +401,8 @@ function App() {
     // Record at the input boundary, before local commands, validation, or
     // asynchronous session work can return. Queue replay does not record twice.
     addUserMessage(text)
+    const officeCommand = parseOfficeCommand(text)
+    if (officeCommand) { handleOfficeCommand(officeCommand); return }
     const attendanceCommand = parseAttendanceCommand(text)
     if (attendanceCommand) {
       const leadProfileIds = attendanceCommand.templateIds.map((templateId) => `${templateId}:lead`)
@@ -346,6 +414,7 @@ function App() {
         leadProfileIds.forEach((id) => (attendanceCommand.clockIn ? next.delete(id) : next.add(id)))
         return next
       })
+      setRepresentativeVisitors((prev) => new Set([...prev].filter((id) => !leadProfileIds.includes(id))))
       addSystemMessage(`${teamNames} 팀장이 ${attendanceCommand.clockIn ? '출근' : '퇴근'}했습니다.`)
       return
     }
@@ -379,7 +448,14 @@ function App() {
                 <button onClick={() => setPlanModalOpen(true)}>다시 열기</button>
               </>
             ) : (
-              '기획서 작성 중...'
+              (() => {
+                const status = planningStatus(pendingPlan.instanceIds, instances, runtimeStates)
+                return <>
+                  <span>{status.text}</span>
+                  <button onClick={() => setSelectedInstanceId(status.blockedInstanceId ?? pendingPlan.instanceIds[0])}>터미널 확인</button>
+                  <button onClick={cancelPlan}>기획 취소</button>
+                </>
+              })()
             )}
           </div>
         )}
@@ -396,6 +472,8 @@ function App() {
           onRemove={removeInstance}
           meetingActive={meetingActive}
           manuallyOffDutyIds={manuallyOffDutyIds}
+          representativeVisitors={representativeVisitors}
+          messages={messages}
         />
 
         <AgentProfileRow

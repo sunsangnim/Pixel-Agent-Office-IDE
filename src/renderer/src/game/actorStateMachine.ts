@@ -24,7 +24,7 @@ export class ActorStateMachine {
 
   requestPresence(presence: OfficePresence): boolean {
     if (this.state.actionLocked && presence !== this.state.presence) {
-      if (['working', 'meeting', 'error', 'requestingHelp', 'offDuty'].includes(presence)) {
+      if (['working', 'meeting', 'representativeVisit', 'error', 'requestingHelp', 'offDuty'].includes(presence)) {
         this.cancelAction()
       } else {
         this.queuedPresence = presence

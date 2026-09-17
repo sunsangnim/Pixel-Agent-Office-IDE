@@ -3,15 +3,19 @@ import Phaser from 'phaser'
 import { OFFICE_RENDER_SCALE, OfficeScene } from '../game/OfficeScene'
 import { OFFICE_WORLD_HEIGHT, OFFICE_WORLD_WIDTH, type OfficeWorldSnapshot } from '../game/officeWorld'
 import LayoutEditorPanel from './LayoutEditorPanel'
+import OfficeDialoguePanel from './OfficeDialoguePanel'
+import type { OfficeDialogue } from '../game/officeDialogue'
+import type { ChatMessage } from '../lib/chatHistory'
 
 interface PhaserOfficeProps {
   snapshot: OfficeWorldSnapshot
   teamTemplateIds: string[]
   onActorSelect: (profileId: string) => void
   onDeskCountsChange: (counts: number[]) => void
+  messages: ChatMessage[]
 }
 
-function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsChange }: PhaserOfficeProps) {
+function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsChange, messages }: PhaserOfficeProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const gameRef = useRef<Phaser.Game | null>(null)
   const sceneRef = useRef<OfficeScene | null>(null)
@@ -21,6 +25,8 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
   deskCountsRef.current = onDeskCountsChange
   const [scene, setScene] = useState<OfficeScene | null>(null)
   const [editing, setEditing] = useState(false)
+  const [dialogues, setDialogues] = useState<OfficeDialogue[]>([])
+  const seenMessages = useRef(new Set(messages.map((message) => message.id)))
 
   useEffect(() => {
     if (!hostRef.current || gameRef.current) return
@@ -28,6 +34,7 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
     sceneRef.current = scene
     scene.setActorSelectHandler((profileId: string) => selectRef.current(profileId))
     scene.setDeskCountsHandler((counts: number[]) => deskCountsRef.current(counts))
+    scene.setDialogueHandler((dialogue) => setDialogues((queue) => [...queue, dialogue]))
     const game = new Phaser.Game({
       type: Phaser.CANVAS,
       parent: hostRef.current,
@@ -61,6 +68,7 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
       window.removeEventListener('office:layout-edit', handleLayoutEditing)
       scene.setActorSelectHandler(null)
       scene.setDeskCountsHandler(null)
+      scene.setDialogueHandler(null)
       game.destroy(true)
       gameRef.current = null
       sceneRef.current = null
@@ -78,10 +86,25 @@ function PhaserOffice({ snapshot, teamTemplateIds, onActorSelect, onDeskCountsCh
     sceneRef.current?.setTeamTemplateIds(teamTemplateIds)
   }, [teamTemplateIds])
 
+  useEffect(() => {
+    if (!scene) return
+    for (const message of messages) {
+      if (message.kind !== 'agent' || seenMessages.current.has(message.id)) continue
+      const actor = snapshot.actors.find((actor) => actor.instanceId === message.authorSeed)
+      const dialogue = actor && scene.dialogueForActor(actor, message.text, message.id)
+      if (!dialogue) continue
+      seenMessages.current.add(message.id)
+      setDialogues((queue) => [...queue, dialogue])
+    }
+  }, [messages, scene, snapshot])
+
   return (
     <div className="phaser-office-wrap">
       <div className="phaser-office-host" ref={hostRef} aria-label="Phaser 생활형 에이전트 오피스" />
       {editing && <LayoutEditorPanel scene={scene} />}
+      {!editing && dialogues[0] && <OfficeDialoguePanel key={dialogues[0].id} dialogue={dialogues[0]}
+        remaining={dialogues.length - 1} onNext={() => setDialogues((queue) => queue.slice(1))}
+        onClose={() => setDialogues([])} />}
     </div>
   )
 }

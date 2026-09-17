@@ -10,6 +10,8 @@ import { BUILT_IN_AGENT_PROFILES } from '../src/shared/agentProfiles'
 import { MAX_TEAM_CAPACITY, ORCHESTRATION_POLICY } from '../src/shared/orchestrationPolicy'
 import type { AgentRuntimeState, AgentStatePayload, CliAdapterId } from '../src/shared/types'
 import { planTask } from '../src/renderer/src/lib/taskRouter'
+import { parseOfficeCommand } from '../src/renderer/src/lib/officeCommands'
+import { planningStatus } from '../src/renderer/src/lib/planningStatus'
 import { isMeetingEndCommand, isMeetingStartCommand, parseMeetingCommand } from '../src/renderer/src/lib/meetingCommands'
 import { isWorkingTime } from '../src/renderer/src/hooks/useOfficeClock'
 import { getCorporateRosterCell, CORPORATE_ROSTER_SIZE } from '../src/renderer/src/lib/corporateRoster'
@@ -64,7 +66,11 @@ async function waitForState(
   state: AgentRuntimeState,
   timeoutMs = 7000
 ): Promise<void> {
-  await waitFor(() => statesFor(events, ptyId).includes(state), timeoutMs)
+  try { await waitFor(() => statesFor(events, ptyId).includes(state), timeoutMs) }
+  catch (error) {
+    console.error('Fixture state timeout', state, statesFor(events, ptyId), JSON.stringify(ptyManager.getBuffer(ptyId)))
+    throw error
+  }
 }
 
 async function stopPty(events: RecordedEvent[], ptyId: string): Promise<void> {
@@ -448,7 +454,35 @@ async function main(): Promise<void> {
 
   verifyRoutingAndProfiles()
   verifyAdapters()
+  assert.deepEqual(parseOfficeCommand('@Claude 대표실로 오게나'), { action: 'visit', templateIds: ['claude-code'] })
+  assert.deepEqual(parseOfficeCommand('클로드야 대표실로 와'), { action: 'visit', templateIds: ['claude-code'] })
+  assert.deepEqual(parseOfficeCommand('@Codex @Antigravity 각자 자리로 돌아가'), { action: 'return', templateIds: ['codex-cli', 'antigravity-cli'] })
+  for (const text of ['대표실로 이동하는 기능 만들어줘', '@Claude 대표실로 오게나 명령을 구현해', '대표실 화면 설계해', '대표실로 와서 문서 작성해']) assert.equal(parseOfficeCommand(text), null)
+  assert.match(planningStatus(['a'], [{ instanceId: 'a', ptyId: 'p' }] as never, { p: { state: 'waiting', reason: '작업 폴더 신뢰 승인 대기' } } as never).text, /신뢰 승인/)
+  assert.match(planningStatus(['a'], [], {}).text, /시작 대기/)
+  assert.equal(getCliAdapter('claude').inspectOutput('Accessing workspace:\nYes, I trust this folder')?.state, 'waiting')
+  assert.equal(getCliAdapter('generic').inspectOutput('\u001b[Hfake agent ready\r\n>\u001b[1C\u001b]0;C:\\Program Files\\nodejs\\node.exe\u0007\u001b[?25h')?.state, 'ready')
+  assert.equal(getCliAdapter('claude').inspectOutput('working: approved task')?.state, 'working')
+  console.log('PASS local office commands, task-text exclusions, planning wait status and trust detection')
   verifyLivingOfficeAndRoster()
+
+  const trustId = ptyManager.spawn({ command: process.execPath,
+    args: [path.join(process.cwd(), 'scripts/fixtures/trust-agent.cjs')], cwd: process.cwd(), adapterId: 'claude' }, sender)
+  try {
+    ptyManager.sendPrompt(trustId, 'cancel this queued task')
+    await waitForState(events, trustId, 'waiting')
+    await new Promise((resolve) => setTimeout(resolve, 2200))
+    assert.ok(!statesFor(events, trustId).includes('working'))
+    assert.ok(!statesFor(events, trustId).includes('completed'))
+    assert.ok(!ptyManager.getBuffer(trustId).includes('UNSAFE INPUT'))
+    ptyManager.cancelPrompt(trustId)
+    ptyManager.sendPrompt(trustId, 'approved task')
+    ptyManager.write(trustId, 'trust\r')
+    await waitForState(events, trustId, 'completed')
+    assert.match(ptyManager.getBuffer(trustId), /working: approved task/)
+    assert.ok(!ptyManager.getBuffer(trustId).includes('cancel this queued task'))
+    console.log('PASS startup/trust prompt queue, no idle false completion, cancellation, delivery after explicit readiness')
+  } finally { await stopPty(events, trustId) }
 
   const ptyId = spawnFixture(sender, 'generic')
 

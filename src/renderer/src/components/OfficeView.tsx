@@ -3,6 +3,7 @@ import { useOfficePresence } from '../hooks/useOfficePresence'
 import { useOfficeClock } from '../hooks/useOfficeClock'
 import type { OfficeWorldSnapshot } from '../game/officeWorld'
 import PhaserOffice from './PhaserOffice'
+import type { ChatMessage } from '../lib/chatHistory'
 
 interface OfficeViewProps {
   instances: AgentInstance[]
@@ -16,6 +17,8 @@ interface OfficeViewProps {
   onRemove: (instanceId: string) => void
   meetingActive: boolean
   manuallyOffDutyIds: Set<string>
+  representativeVisitors?: Set<string>
+  messages: ChatMessage[]
 }
 
 function OfficeView(props: OfficeViewProps) {
@@ -27,7 +30,8 @@ function OfficeView(props: OfficeViewProps) {
     props.tasks,
     officeClock.isClockInActive,
     props.meetingActive,
-    props.manuallyOffDutyIds
+    props.manuallyOffDutyIds,
+    props.representativeVisitors
   )
   const teamIds = Array.from(new Set(props.profiles.map((profile) => profile.templateId)))
   const snapshot: OfficeWorldSnapshot = {
@@ -70,6 +74,7 @@ function OfficeView(props: OfficeViewProps) {
         teamTemplateIds={teamIds}
         onActorSelect={selectActor}
         onDeskCountsChange={reportDeskCounts}
+        messages={props.messages}
       />
     </div>
   )

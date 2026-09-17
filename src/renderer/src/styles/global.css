@@ -499,6 +499,63 @@ textarea {
   image-rendering: auto !important;
 }
 
+.office-dialogue {
+  position: fixed;
+  z-index: 80;
+  left: clamp(28px, 5vw, 84px);
+  right: calc(clamp(280px, 25vw, 320px) + clamp(28px, 5vw, 84px));
+  bottom: 28px;
+  display: flex;
+  gap: 22px;
+  min-height: 210px;
+  padding: 22px 26px 18px;
+  color: #4f301e;
+  background: #f4dfad;
+  border: 4px solid #6e432b;
+  border-radius: 3px;
+  box-shadow: 0 0 0 3px #d9a25f, 0 0 0 6px #70472e, inset 0 0 0 3px #be8246, inset 0 0 0 6px #ffeac0, 0 10px 24px #0006;
+  font-family: var(--font-ui);
+}
+.office-dialogue::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 1px solid #bb854e;
+  pointer-events: none;
+}
+.office-dialogue-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.office-dialogue-text {
+  flex: 1;
+  min-height: 90px;
+  max-height: min(32vh, 280px);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: clamp(15px, 1.4vw, 21px);
+  line-height: 1.9;
+  padding: 5px 10px 12px 2px;
+  scrollbar-color: #b57a46 #edd098;
+}
+.office-dialogue-footer { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding-top: 12px; }
+.office-dialogue-footer > span { color: #856644; font-size: 11px; }
+.office-dialogue button { color: #58351e; background: #f6d496; border: 2px solid #a8733f; box-shadow: inset 0 0 0 1px #ffeabf; cursor: pointer; }
+.office-dialogue button:hover { background: #ffe7b7; }
+.office-dialogue button:focus-visible { outline: 3px solid #466a50; outline-offset: 3px; }
+.office-dialogue-footer button { padding: 5px 14px; min-width: 80px; }
+.office-dialogue-footer button span { padding-left: 8px; }
+.office-dialogue .office-dialogue-close { position: absolute; top: 8px; right: 8px; z-index: 1; width: 25px; height: 25px; padding: 0; font-size: 19px; line-height: 20px; }
+.office-dialogue-speaker { flex: 0 0 138px; width: 138px; margin: 0; align-self: center; text-align: center; }
+.office-dialogue-portrait { height: 126px; overflow: hidden; background: #e7bd7f; border: 3px solid #956138; box-shadow: inset 0 0 0 3px #ffd898, 0 0 0 1px #d4a263; }
+.office-dialogue-portrait img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.office-dialogue-speaker figcaption { margin-top: 6px; padding: 3px 4px; font-size: 13px; background: #f7dba3; border: 2px solid #b3814b; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 900px) {
+  .office-dialogue { left: 18px; right: calc(clamp(280px, 25vw, 320px) + 18px); gap: 12px; padding: 20px 15px 15px; min-height: 180px; }
+  .office-dialogue-speaker { flex-basis: 94px; width: 94px; }
+  .office-dialogue-portrait { height: 100px; }
+  .office-dialogue-footer > span { display: none; }
+}
+
 .layout-editor-panel {
   flex: 0 0 auto;
   display: flex;

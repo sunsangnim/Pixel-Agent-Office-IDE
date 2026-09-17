@@ -30,6 +30,8 @@ const api: PreloadApi = {
       ipcRenderer.send('pty:kill', ptyId)
     },
     getBuffer: (ptyId: string): Promise<string> => ipcRenderer.invoke('pty:buffer', ptyId),
+    getStates: () => ipcRenderer.invoke('pty:states'),
+    cancelPrompt: (ptyId: string) => ipcRenderer.send('pty:cancel-prompt', ptyId),
     onData: (callback: (payload: PtyDataPayload) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: PtyDataPayload): void => callback(payload)
       ipcRenderer.on('pty:data', listener)

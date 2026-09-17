@@ -56,6 +56,8 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('pty:buffer', (_event, ptyId: string) => ptyManager.getBuffer(ptyId))
+  ipcMain.handle('pty:states', () => ptyManager.getStates())
+  ipcMain.on('pty:cancel-prompt', (_event, ptyId: string) => ptyManager.cancelPrompt(ptyId))
 
   ipcMain.handle('templates:list', () => agentTemplateStore.list())
 

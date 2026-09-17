@@ -13,6 +13,7 @@ interface CaptureEntry {
   stage: 'task' | 'teamSynthesis' | 'globalSynthesis' | 'planning'
   taskId?: string
   specPath?: string
+  started?: boolean
 }
 
 export interface PlanReadyPayload {
@@ -188,12 +189,18 @@ export function useAgentChat(
     )
   }
 
-  const finalizeCapture = (ptyId: string): void => {
+  const finalizeCapture = (ptyId: string, state: 'completed' | 'error' | 'exited'): void => {
     const capture = capturesRef.current.get(ptyId)
     if (!capture) return
+    const text = stripAnsi(capture.buffer)
+    // The instruction itself contains "기획 완료"; a terminal echo is not a report.
+    if (capture.stage === 'planning' && state === 'completed' && (!capture.started || !/(?:^|\n)\s*(?:[●⏺*-]\s*)?기획\s*완료[.!]?\s*(?:$|\n)/m.test(text))) return
     capturesRef.current.delete(ptyId)
     clearTimeout(capture.timer)
-    const text = stripAnsi(capture.buffer)
+    if (capture.stage === 'planning' && state !== 'completed') {
+      addSystemMessage('기획 요청이 중단되었습니다. 터미널 상태를 확인해주세요.')
+      return
+    }
     if (!text) return
 
     const instance = instancesRef.current.find((candidate) => candidate.instanceId === capture.instanceId)
@@ -235,10 +242,16 @@ export function useAgentChat(
     const unsubscribeData = window.api.pty.onData(({ ptyId, data }) => {
       const capture = capturesRef.current.get(ptyId)
       if (!capture) return
+      if (capture.stage === 'planning' && !capture.started) return
       capture.buffer += data
     })
-    const unsubscribeState = window.api.pty.onState(({ ptyId, state }) => {
-      if (state === 'completed' || state === 'error' || state === 'exited') finalizeCapture(ptyId)
+    const unsubscribeState = window.api.pty.onState(({ ptyId, state, reason }) => {
+      const capture = capturesRef.current.get(ptyId)
+      if (capture?.stage === 'planning' && state === 'working' && reason === '프롬프트 전달') {
+        capture.started = true
+        capture.buffer = ''
+      }
+      if (state === 'completed' || state === 'error' || state === 'exited') finalizeCapture(ptyId, state)
     })
 
     return () => {
@@ -416,5 +429,16 @@ export function useAgentChat(
     }
   }
 
-  return { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage }
+  const cancelPlanning = (taskId: string): void => {
+    for (const [ptyId, capture] of capturesRef.current) {
+      if (capture.stage !== 'planning' || capture.taskId !== taskId) continue
+      clearTimeout(capture.timer)
+      capturesRef.current.delete(ptyId)
+      // The fallback only applies while an older preload is still live during an update.
+      if (window.api.pty.cancelPrompt) window.api.pty.cancelPrompt(ptyId)
+      else window.api.pty.write(ptyId, '\u0003')
+    }
+  }
+
+  return { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, cancelPlanning }
 }
