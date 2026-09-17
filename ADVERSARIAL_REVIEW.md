@@ -118,11 +118,11 @@ feature/main에 실리는 것을 잡아줄 자동 안전망이 전혀 없다.
 | 2 | 정규식 오탐 가능성 | 완료 | `ERROR_PATTERN`에 인용부호/백틱으로 감싼 언급은 제외하는 lookaround 추가, 대기 판정의 `allow/approve/confirm/permission` 키워드는 실제 질문형 문장(`?`/`:`로 끝나는 짧은 구절)에서만 인정하도록 좁힘(`cliAdapters.ts`). 기존 어댑터 테스트는 모두 통과. |
 | 3 | 에셋 비대화 | 부분 완료 | 코드 전체에서 미참조가 확인된 `characters/complete-v5`(20개 PNG)와 그 생성 스크립트 `scripts/build-character-v5-assets.py`를 삭제. 현재 작업 중인 `seated-v3`/`seated-v4`(미커밋 WIP)는 사용자 작업 중이라 건드리지 않음 — 정리 여부는 해당 작업이 끝난 뒤 별도로 판단 필요. |
 | 4 | CI 부재 | 완료 | `.github/workflows/ci.yml` 추가: push/PR마다 typecheck·build·비용 없는 통합 테스트를 Windows 러너에서 실행. 추가 과정에서 실제로 실행해보니 가구 에셋 개수 단언이 최근 회의 테이블 추가 이후 갱신되지 않아 실패 중이었고(`furnitureAssets.length` 13→15), `conference-table-v1/side-v1.png`, `side-table-v2.png` 테두리에 거의 보이지 않는 잔여 알파(1/255) 픽셀이 남아 있어 투명 테두리 검증에 걸렸다. 둘 다 고쳐 `npm run test:integration`이 다시 깨끗하게 통과하도록 함 — CI 부재가 실제로 회귀를 놓치고 있었다는 걸 보여주는 사례. |
-| 5 | `OfficeScene.ts` God object | 보류 | 2,835줄짜리 핵심 렌더링 씬을 실행 검증(앱 구동) 없이 구조만 보고 쪼개는 것은 회귀 위험이 커서 이번 조치에서는 보류함. 별도 Phase로 붙잡고 실제 오피스 화면에서 동작을 확인하며 진행할 것을 권장. |
+| 5 | `OfficeScene.ts` God object | 완료 | 2,835줄짜리 단일 클래스를 책임별로 6개 파일로 분리: `officeSceneWorld.ts`(정적 건물/데스크), `officeSceneFrames.ts`(애니메이션 프레임 생성), `officeSceneFurnitureGeometry.ts`(가구 충돌/좌표 계산), `officeSceneEditor.ts`(레이아웃 에디터), `representativeController.ts`(대표 캐릭터), `actorController.ts`(일반 직원 캐릭터). `OfficeScene.ts`는 1,076줄로 줄었고 Phaser 생명주기(`preload`/`create`/`update`)와 각 구현으로 위임하는 얇은 wrapper 메서드만 남음 — 기존에 `.cjs` 테스트 하네스가 "private" 메서드를 인스턴스에서 직접 호출하고 있던 것까지 확인하고 모든 메서드에 동일한 이름의 wrapper를 유지해 외부 호출부(React 컴포넌트·테스트)는 전부 그대로 동작. 추출은 TypeScript 컴파일러가 아니라 `@babel/parser`로 메서드 경계를 정확히 뽑아 기계적으로 수행(수작업 편집 없음). 과정에서 실제 회귀 2건을 발견·수정: (1) 콜백 타입 파라미터(`frameName: (column, row) => string`)가 있는 `createCharacterFrames`의 wrapper가 인자 파싱 정규식의 괄호 불일치로 `kind` 인자를 누락해 캐릭터 프레임 생성이 실패하던 문제, (2) 그 원인이 된 인자-분리 로직이 화살표 함수의 `=>`를 제네릭 닫힘 `>`로 오인해 depth 카운트가 깨지던 버그. `npm run typecheck`, 전체 테스트 스위트(9개) + `build` 모두 통과 확인했고, 실제 앱을 두 번(재빌드 후 각각) 띄워 오피스 렌더링·레이아웃 에디터·가구 선택·시뮬레이션 이동까지 콘솔 에러 0건으로 확인함. |
 | 6 | `sandbox:false` + `pty:spawn` 무검증 | 완료 | 두 창 모두 `sandbox: true`로 전환(preload가 `contextBridge`/`ipcRenderer`만 사용해 호환됨). `pty:spawn` IPC가 등록된 템플릿 명령 또는 기본 셸이 아닌 임의 `command`는 거부하도록 검증 추가(`ipc.ts`). |
 | — | LF/CRLF 노이즈 | 완료 | `.gitattributes` 추가(`text=auto eol=lf`, 이미지 `binary`). |
 
 `npm run typecheck`, `test:integration`, `test:movement`, `test:editor-layering`, `test:recovery`,
-`test:recovery-ui`, `test:meeting-ui`, `npm run build`가 모두 통과함을 확인했다. 앱을 직접 띄워보는
-런타임 확인(Electron 창 구동)은 하지 않았다 — 특히 5번(보류)과 6번의 `sandbox:true` 전환은 코드상
-호환되지만 실제 창 동작으로 검증된 것은 아니다.
+`test:recovery-ui`, `test:meeting-ui`, `npm run build`가 모두 통과함을 확인했다. 이후 5번(OfficeScene
+분리)과 6번(`sandbox:true`) 모두 실제 Electron 창을 띄워 렌더링·설정창·레이아웃 에디터·시뮬레이션
+이동을 콘솔 에러 0건으로 직접 확인했다 (2026-09-18, 별도 세션).
