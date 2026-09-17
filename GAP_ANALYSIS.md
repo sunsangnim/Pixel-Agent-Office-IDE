@@ -42,3 +42,35 @@
 
 가장 먼저 손볼 가치가 있는 건 **CI 3개 누락**과 **Antigravity 로그인 미검증**이다 — 둘 다 "이미 한 번
 실제로 문제를 낸 것과 같은 패턴"이라서다.
+
+## 조치 결과 (2026-09-18)
+
+### 개발환경 — 8/8 완료
+
+| # | 항목 | 조치 |
+| --- | --- | --- |
+| 1 | Lint/format | `eslint.config.js` + `.prettierrc.json` 추가. `typescript-eslint`는 이 프로젝트의 `typescript@7`(TS 컴파일러 JS API 미노출)과 호환되지 않아 `@babel/eslint-parser` 기반으로 구성 — 실제 타입 검증은 계속 `npm run typecheck`가 담당. Prettier 전체 재포맷(112개 파일 변경분)은 git blame 오염을 피하려 적용하지 않고 `npm run format`으로만 제공, `lint-staged`가 커밋되는 파일에는 자동 반영. |
+| 2 | 패키징 파이프라인 | `electron-builder.yml` + `npm run pack`/`dist:win`/`dist:mac`/`dist:linux` 추가. 이 저장소의 로컬 경로("오피스 IDE"의 공백) 때문에 `node-pty` 네이티브 리빌드가 로컬에서는 실패함(node-gyp의 잘 알려진 Windows 공백-경로 제약, 설정 문제 아님) — 공백 없는 경로로 체크아웃하는 GitHub Actions에서 실제 설치 파일을 만들 수 있도록 `.github/workflows/release.yml`(수동 트리거) 추가. |
+| 3 | CI 불완전 | 누락됐던 `test:workspace`/`test:workspace-ui`/`test:office-ui`와 `npm run lint`/`test:unit`을 `ci.yml`에 추가. |
+| 4 | 통합 `npm test` | typecheck→lint→test:unit→9개 스위트→build를 순서대로 묶은 `npm test` 추가. |
+| 5 | pre-commit 훅 | husky + `lint-staged`로 커밋되는 파일에 `eslint`(검사만, 자동수정 없음)를 돌림. 전체 `npm test`는 몇 분씩 걸려 훅에 넣지 않음. |
+| 6 | LICENSE | MIT 추가. |
+| 7 | Node 버전 고정 | `engines`(`>=22`) + `.nvmrc`(`22`) 추가. |
+| 8 | 표준 테스트 프레임워크 | vitest 추가(`vitest.config.ts`, `npm run test:unit`). 기존 9개 스위트는 각각 실제 Electron/node-pty/Phaser 하네스를 띄우는 구조라 그대로 두고, 새 순수 로직 테스트의 통로로 `layoutPersistence.test.ts`(11개 케이스)를 예시로 추가. |
+
+### 게임/기능 — 7/7 완료 (사운드는 보류로 완료)
+
+| # | 항목 | 조치 |
+| --- | --- | --- |
+| 1 | Undo/Redo, 삭제 확인 | 레이아웃 스냅샷 기반 undo/redo 스택(최대 50개) 추가, `Ctrl+Z`/`Ctrl+Shift+Z`/`Ctrl+Y`와 버튼 2개로 노출. 개별 삭제엔 확인창을 넣지 않음(Undo가 있는데 매번 확인창까지 뜨면 더 나쁜 UX) — "전체 삭제"만 되돌릴 수 없을 만큼 파급력이 커서 확인창 추가. 실제 앱에서 추가→되돌리기→다시실행→전체삭제 전 과정을 스크린샷으로 검증. |
+| 2 | React Error Boundary | `ErrorBoundary.tsx`로 두 창의 렌더 루트를 감쌈. 흰 화면 대신 에러 메시지 + 새로고침 버튼을 보여줌. |
+| 3 | 크래시/에러 로깅 | `system:log-error` IPC로 `<userData>/error.log`에 기록(2MB마다 로테이션). `window.onerror`/`unhandledrejection`까지 잡아 Error Boundary가 못 잡는 영역도 커버. 실제 앱에서 세 경로 모두 로그 파일에 정확히 기록되는 것을 확인. |
+| 4 | 레이아웃 프리셋 | 이름 붙여 저장·불러오기·삭제 가능한 프리셋을 별도 localStorage 키에 저장(현재 작업 중인 배치와 독립적이라 전환해도 안 잃어버림). 실제 앱에서 저장→초기화→불러오기로 원래 배치가 정확히 복원되는 것을 확인. |
+| 5 | git/gh 사전 점검 | `systemDoctor.ts`의 `checkGitEnvironment()`가 새 작업 저장소를 만들기 전에 `git`/`gh` 설치와 `gh` 로그인 상태를 먼저 확인하고, 어느 것이 문제인지 구체적으로 안내. |
+| 6 | Antigravity 로그인 미검증 | 여전히 미해결 — npm에 있는 `antigravity-cli` 패키지는 실제 Google Antigravity가 아닌 제3자의 "placeholder"라 설치하지 않음. 실제 CLI를 구할 방법이 없어 검증 불가 상태로 남겨둠. 사용자가 실제 CLI로 로그인을 한 번 시도해보고 Intent disambiguation 같은 엉뚱한 화면이 뜨면, Claude 때와 동일하게 설정의 "로그인 명령 인자" 필드를 실제 CLI의 서브커맨드(예: `auth login`)로 고치면 된다. |
+| 7 | 사운드/음향 피드백 | 구현하지 않음 — 실제 사운드 에셋이 프로젝트에 전혀 없고, 그럴듯한 효과음을 무작정 만들어 넣는 것보다 어떤 톤/스타일을 원하는지 방향을 정하고 실제 에셋을 마련한 뒤 붙이는 게 맞다고 판단. |
+
+`npm run typecheck`/`lint`/`test:unit`와 영향받은 스위트(`test:editor-layering`, `test:movement`,
+`test:workspace`, `test:recovery`, `test:integration`, `test:office-ui`, `test:recovery-ui`)를 각
+변경 직후 실행해 통과를 확인했고, Undo/Redo·Error Boundary·크래시 로깅·레이아웃 프리셋은 빌드된 앱을
+직접 띄워 스크린샷/로그로 재확인했다.
