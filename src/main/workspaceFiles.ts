@@ -40,8 +40,13 @@ export class WorkspaceFiles {
       throw new Error('전용 작업실은 바로가기나 연결 폴더가 아닌 실제 폴더여야 합니다.')
     }
     mkdirSync(this.root, { recursive: true })
-    for (const [oldName, newName] of Object.entries(LEGACY_WORKSPACE_FOLDERS)) {
-      this.migrateFolder(confinedPath(this.root, oldName), confinedPath(this.root, newName))
+    for (const migration of LEGACY_WORKSPACE_FOLDERS) {
+      this.migrateFolder(confinedPath(this.root, migration.source), confinedPath(this.root, migration.target),
+        'exclude' in migration ? migration.exclude : [])
+    }
+    const oldRequired = confinedPath(this.root, '필수 자료')
+    if (existsSync(oldRequired) && !lstatSync(oldRequired).isSymbolicLink() && lstatSync(oldRequired).isDirectory() && readdirSync(oldRequired).length === 0) {
+      rmdirSync(oldRequired)
     }
     for (const name of Object.values(WORKSPACE_FOLDERS)) {
       mkdirSync(this.path(name), { recursive: true })
@@ -49,12 +54,12 @@ export class WorkspaceFiles {
     mkdirSync(this.path(join('프로젝트', '기본 작업')), { recursive: true })
   }
 
-  private migrateFolder(source: string, target: string): void {
+  private migrateFolder(source: string, target: string, excludedNames: readonly string[] = []): void {
     if (!existsSync(source) || lstatSync(source).isSymbolicLink() || !lstatSync(source).isDirectory()) return
     if (existsSync(target) && (!lstatSync(target).isDirectory() || lstatSync(target).isSymbolicLink())) return
     mkdirSync(confinedPath(this.root, target), { recursive: true })
     for (const entry of readdirSync(source, { withFileTypes: true })) {
-      if (entry.isSymbolicLink()) continue
+      if (entry.isSymbolicLink() || excludedNames.includes(entry.name)) continue
       const from = confinedPath(this.root, join(source, entry.name))
       const to = confinedPath(this.root, join(target, entry.name))
       if (entry.isDirectory()) this.migrateFolder(from, to)
@@ -68,10 +73,11 @@ export class WorkspaceFiles {
   path(input = ''): string {
     const target = confinedPath(this.root, input)
     if (existsSync(target)) return target
-    const [first, ...rest] = relative(this.root, target).split(sep)
-    const replacement = Object.hasOwn(LEGACY_WORKSPACE_FOLDERS, first)
-      ? LEGACY_WORKSPACE_FOLDERS[first as keyof typeof LEGACY_WORKSPACE_FOLDERS] : undefined
-    return replacement ? confinedPath(this.root, join(replacement, ...rest)) : target
+    for (const migration of LEGACY_WORKSPACE_FOLDERS) {
+      const source = resolve(this.root, migration.source)
+      if (contains(source, target)) return confinedPath(this.root, join(migration.target, relative(source, target)))
+    }
+    return target
   }
 
   async list(input = '', query = ''): Promise<WorkspaceListing> {

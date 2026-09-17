@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, existsSync, readFileSync } from 'node:fs'
 import { WorkspaceFiles } from '../src/main/workspaceFiles'
 import { taskWorkspaceManager } from '../src/main/taskWorkspaceManager'
@@ -14,6 +14,17 @@ async function main() {
   const legacyAsset = join(root, '결과물', '에셋', 'image.png')
   writeFileSync(legacyDoc, '# 기존 문서')
   writeFileSync(legacyAsset, Buffer.from([0, 1, 2, 3]))
+  const previousResources = [
+    ['필수 자료/에셋/오피스 리소스/에셋/coffee.png', `${WORKSPACE_FOLDERS.assets}/coffee.png`],
+    ['필수 자료/에셋/오피스 리소스/애니메이션/drink.png', `${WORKSPACE_FOLDERS.animations}/drink.png`],
+    ['필수 자료/에셋/오피스 리소스/기존 작업/preview.png', `${WORKSPACE_FOLDERS.previous}/preview.png`],
+    ['필수 자료/에셋/reference.png', `${WORKSPACE_FOLDERS.assets}/reference.png`],
+    ['필수 자료/문서/guide.md', `${WORKSPACE_FOLDERS.previous}/guide.md`]
+  ]
+  for (const [source] of previousResources) {
+    mkdirSync(dirname(join(root, source)), { recursive: true })
+    writeFileSync(join(root, source), source)
+  }
   const files = new WorkspaceFiles(root)
   files.ensure()
   files.ensure()
@@ -21,18 +32,29 @@ async function main() {
   assert.equal(existsSync(join(root, '결과물')), false)
   assert.equal(readFileSync(files.path(legacyDoc), 'utf8'), '# 기존 문서')
   assert.deepEqual(readFileSync(files.path(legacyAsset)), Buffer.from([0, 1, 2, 3]))
-  assert.equal(files.path(legacyDoc), join(root, WORKSPACE_FOLDERS.documents, '기존 작업', 'SRS.md'))
+  assert.equal(files.path(legacyDoc), join(root, WORKSPACE_FOLDERS.previous, '기존 작업', 'SRS.md'))
+  for (const [source, target] of previousResources) {
+    assert.equal(readFileSync(files.path(target), 'utf8'), source)
+    assert.equal(files.path(join(root, source)), files.path(target))
+  }
+  assert.equal(existsSync(join(root, '필수 자료')), false)
+  assert.deepEqual((await files.list(WORKSPACE_FOLDERS.required)).entries.map(entry => entry.name).sort(), ['에셋', '애니메이션', '기존 작업'].sort())
   for (const path of Object.values(WORKSPACE_FOLDERS)) assert.ok(existsSync(files.path(path)))
   assert.equal(files.path('constructor'), join(root, 'constructor'))
-  assert.equal((await files.list(WORKSPACE_FOLDERS.assets)).entries.length, 0)
   // A previously populated destination must never lose either version.
   mkdirSync(join(root, '문서'), { recursive: true })
   writeFileSync(join(root, '문서', 'same.md'), 'old copy')
-  writeFileSync(files.path(`${WORKSPACE_FOLDERS.documents}/same.md`), 'new copy')
+  writeFileSync(files.path(`${WORKSPACE_FOLDERS.previous}/same.md`), 'new copy')
+  const conflictingSource = join(root, previousResources[0][0])
+  mkdirSync(dirname(conflictingSource), { recursive: true })
+  writeFileSync(conflictingSource, 'keep old resource')
   writeFileSync(join(root, '문서', 'another.md'), 'uncontested')
   files.ensure()
   assert.equal(await files.preview('문서/same.md'), 'old copy')
-  assert.equal(await files.preview(`${WORKSPACE_FOLDERS.documents}/same.md`), 'new copy')
+  assert.equal(await files.preview(`${WORKSPACE_FOLDERS.previous}/same.md`), 'new copy')
+  assert.equal(readFileSync(files.path(conflictingSource), 'utf8'), 'keep old resource')
+  assert.equal(readFileSync(files.path(previousResources[0][1]), 'utf8'), previousResources[0][0])
+  assert.equal(existsSync(files.path(`${WORKSPACE_FOLDERS.assets}/오피스 리소스`)), false)
   assert.equal(await files.preview('문서/another.md'), 'uncontested')
   assert.equal(existsSync(join(root, '문서', 'another.md')), false)
   console.log('PASS folder migration: contents preserved, legacy references, repeated startup, no overwritten conflicts')
