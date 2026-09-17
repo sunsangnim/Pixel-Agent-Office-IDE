@@ -31,12 +31,13 @@
     "test:recovery-ui": "node scripts/run-recovery-ui-tests.cjs",
     "test:meeting-ui": "node scripts/run-meeting-ui-tests.cjs",
     "test:office-ui": "node scripts/run-office-ui-tests.cjs",
+    "test:unit": "vitest run",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
-    "test": "npm run typecheck && npm run lint && npm run test:movement && npm run test:editor-layering && npm run test:integration && npm run test:recovery && npm run test:workspace && npm run test:recovery-ui && npm run test:meeting-ui && npm run test:office-ui && npm run test:workspace-ui && npm run build"
+    "test": "npm run typecheck && npm run lint && npm run test:unit && npm run test:movement && npm run test:editor-layering && npm run test:integration && npm run test:recovery && npm run test:workspace && npm run test:recovery-ui && npm run test:meeting-ui && npm run test:office-ui && npm run test:workspace-ui && npm run build"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^8.0.5",
@@ -60,7 +61,8 @@
     "pngjs": "^7.0.0",
     "prettier": "^3.9.7",
     "typescript": "^7.0.2",
-    "vite": "^7.3.6"
+    "vite": "^7.3.6",
+    "vitest": "^5.0.1"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
