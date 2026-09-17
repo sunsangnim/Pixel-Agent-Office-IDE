@@ -120,6 +120,9 @@ const api: PreloadApi = {
     getBootId: () => ipcRenderer.invoke('app:boot-id'),
     openSettings: (): void => {
       ipcRenderer.send('settings:open')
+    },
+    logError: (context: string, message: string): void => {
+      ipcRenderer.send('system:log-error', context, message)
     }
   },
   git: {

@@ -324,6 +324,7 @@ export interface AgentInstanceApi {
 export interface SystemApi {
   openSettings(): void
   getBootId(): Promise<string>
+  logError(context: string, message: string): void
 }
 
 export interface PreloadApi {

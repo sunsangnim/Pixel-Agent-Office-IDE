@@ -13,6 +13,7 @@ import { mergeTaskFeature } from './taskFeatureWorktree'
 import { teamCapacityStore } from './teamCapacityStore'
 import { buildAgentProfiles } from '../shared/agentProfiles'
 import { TASK_DOCUMENTS_FOLDER, WORKSPACE_FOLDERS } from '../shared/workspaceLayout'
+import { logRendererError } from './errorLog'
 import type {
   AgentTemplateInput,
   AgentTemplatePatch,
@@ -38,6 +39,9 @@ function broadcastTeamCapacityChanged(): void {
 export function registerIpcHandlers(): void {
   taskRecovery.start()
   ipcMain.handle('app:boot-id', () => taskRecovery.bootId)
+  ipcMain.on('system:log-error', (_event, context: string, message: string) => {
+    logRendererError(String(context), String(message))
+  })
   ipcMain.handle('pty:spawn', (event, options: PtySpawnOptions = {}): PtySpawnResult => {
     const defaultShell = process.platform === 'win32' ? 'powershell.exe' : 'bash'
     const command = options.command ?? defaultShell
