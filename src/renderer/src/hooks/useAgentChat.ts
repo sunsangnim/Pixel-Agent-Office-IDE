@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AgentInstance, AgentTemplate } from '@shared/types'
+import type { AgentInstance, AgentTemplate, TrackedTask } from '@shared/types'
 import { stripAnsi } from '../lib/ansi'
 import { readChatHistory, saveChatHistory, userChatMessage, type ChatMessage } from '../lib/chatHistory'
 export type { ChatMessage } from '../lib/chatHistory'
@@ -189,12 +189,12 @@ export function useAgentChat(
     )
   }
 
-  const finalizeCapture = (ptyId: string, state: 'completed' | 'error' | 'exited'): void => {
+  const finalizeCapture = (ptyId: string, state: 'completed' | 'error' | 'exited', documented = false): void => {
     const capture = capturesRef.current.get(ptyId)
     if (!capture) return
     const text = stripAnsi(capture.buffer)
     // The instruction itself contains "기획 완료"; a terminal echo is not a report.
-    if (capture.stage === 'planning' && state === 'completed' && (!capture.started || !/(?:^|\n)\s*(?:[●⏺*-]\s*)?기획\s*완료[.!]?\s*(?:$|\n)/m.test(text))) return
+    if (!documented && capture.stage === 'planning' && state === 'completed' && (!capture.started || !/(?:^|\n)\s*(?:[●⏺*-]\s*)?기획\s*완료[.!]?\s*(?:$|\n)/m.test(text))) return
     capturesRef.current.delete(ptyId)
     clearTimeout(capture.timer)
     if (capture.stage === 'planning' && state !== 'completed') {
@@ -251,24 +251,39 @@ export function useAgentChat(
         capture.started = true
         capture.buffer = ''
       }
+      if (state === 'completed' && capture?.taskId && typeof window.api.tasks.dispatch === 'function') return
       if (state === 'completed' || state === 'error' || state === 'exited') finalizeCapture(ptyId, state)
+    })
+    const unsubscribeTasks = window.api.tasks.onChanged?.(tasks => {
+      for (const [ptyId, capture] of capturesRef.current) {
+        if (!capture.taskId) continue
+        const instance = instancesRef.current.find(item => item.ptyId === ptyId)
+        const task = tasks.find(item => item.taskId === capture.taskId)
+        const command = task?.commands.filter(item => item.profileId === instance?.profileId &&
+          item.stage === (capture.stage === 'planning' ? 'planning' : 'execution')).at(-1)
+        if (command?.status !== 'completed') continue
+        capture.buffer = command.summary || capture.buffer
+        finalizeCapture(ptyId, 'completed', true)
+      }
     })
 
     return () => {
       unsubscribeData()
       unsubscribeState()
+      unsubscribeTasks?.()
       for (const timer of reportTimersRef.current.values()) clearTimeout(timer)
       reportTimersRef.current.clear()
       if (globalTimerRef.current) clearTimeout(globalTimerRef.current)
     }
   }, [])
 
-  const sendPrompt = (
+  const sendPrompt = async (
     text: string,
     targetInstanceIds: string[],
     sourceInstances = instances,
-    displayText = text
-  ): void => {
+    displayText = text,
+    taskId?: string
+  ): Promise<void> => {
     const targets = sourceInstances.filter((i) => targetInstanceIds.includes(i.instanceId))
     if (targets.length === 0) return
 
@@ -312,20 +327,24 @@ export function useAgentChat(
         instanceId: instance.instanceId,
         buffer: '',
         timer: setTimeout(() => {}, 0),
-        stage: 'task'
+        stage: 'task',
+        taskId
       })
-      window.api.pty.sendPrompt(instance.ptyId, text)
     }
+    if (taskId && window.api.tasks.dispatch) await window.api.tasks.dispatch({ taskId, stage: 'execution',
+      assignments: targets.map(instance => ({ instanceId: instance.instanceId, prompt: text, role: '승인된 작업 실행' })) })
+    else targets.forEach(instance => window.api.pty.sendPrompt(instance.ptyId, text))
   }
 
-  const sendPlanningPrompt = (
+  const sendPlanningPrompt = async (
     text: string,
     targetInstanceIds: string[],
     taskId: string,
     specPath: string,
     sourceInstances = instances,
-    displayText: string | null = text
-  ): void => {
+    displayText: string | null = text,
+    mode: TrackedTask['mode'] = 'manual'
+  ): Promise<void> => {
     const targets = sourceInstances.filter((i) => targetInstanceIds.includes(i.instanceId))
     if (targets.length === 0) return
 
@@ -357,15 +376,18 @@ export function useAgentChat(
         taskId,
         specPath
       })
-      window.api.pty.sendPrompt(instance.ptyId, text)
     }
+    if (window.api.tasks.dispatch) await window.api.tasks.dispatch({ taskId, stage: 'planning', mode,
+      assignments: targets.map(instance => ({ instanceId: instance.instanceId, prompt: text, role: '기획 작성' })) })
+    else targets.forEach(instance => window.api.pty.sendPrompt(instance.ptyId, text))
   }
 
-  const sendAssignments = (
+  const sendAssignments = async (
     originalText: string,
     assignments: AgentAssignment[],
-    sourceInstances: AgentInstance[]
-  ): void => {
+    sourceInstances: AgentInstance[],
+    taskId?: string
+  ): Promise<void> => {
     const resolved = assignments.flatMap((assignment) => {
       const instance = sourceInstances.find((candidate) => candidate.instanceId === assignment.instanceId)
       return instance ? [{ assignment, instance }] : []
@@ -423,9 +445,22 @@ export function useAgentChat(
         instanceId: instance.instanceId,
         buffer: '',
         timer: setTimeout(() => {}, 0),
-        stage: 'task'
+        stage: 'task',
+        taskId
       })
-      window.api.pty.sendPrompt(instance.ptyId, assignment.prompt)
+    }
+    if (taskId && window.api.tasks.dispatch) await window.api.tasks.dispatch({ taskId, stage: 'execution', assignments })
+    else resolved.forEach(({ instance, assignment }) => window.api.pty.sendPrompt(instance.ptyId, assignment.prompt))
+  }
+
+  const trackRestoredTasks = (tasks: TrackedTask[], sourceInstances: AgentInstance[]): void => {
+    for (const task of tasks) for (const command of task.commands) {
+      if (!['queued', 'running', 'interrupted'].includes(command.status)) continue
+      const instance = sourceInstances.find(item => item.profileId === command.profileId && item.repoRoot === task.projectPath && item.cwd === command.cwd)
+      if (!instance || capturesRef.current.has(instance.ptyId)) continue
+      capturesRef.current.set(instance.ptyId, { instanceId: instance.instanceId, buffer: '',
+        timer: setTimeout(() => {}, 0), stage: command.stage === 'planning' ? 'planning' : 'task',
+        taskId: task.taskId, specPath: task.specPath, started: true })
     }
   }
 
@@ -440,5 +475,5 @@ export function useAgentChat(
     }
   }
 
-  return { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, cancelPlanning }
+  return { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, cancelPlanning, trackRestoredTasks }
 }

@@ -30,6 +30,8 @@ class TaskWorkspaceManager {
     const specPath = join(rootPath, 'SRS-PRD-SCREEN-DESIGN.md')
     const phasesPath = join(rootPath, 'PHASES.md')
     const readmePath = join(rootPath, 'README.md')
+    const developmentLogPath = join(rootPath, 'DEVELOPMENT-LOG.md')
+    writeFileSync(developmentLogPath, `# ${title} — 개발 기록\n\n각 명령·작업과 검증이 끝날 때마다 아래 항목을 추가합니다. 기존 기록은 보존합니다.\n\n- 수행한 요청과 완료한 내용\n- 변경 파일과 설계 결정\n- 실행한 명령·테스트와 실제 결과\n- 관련 커밋과 미커밋 변경\n- 남은 작업·막힌 점·다음 단계\n\n새 세션은 통합 SRS → 이 개발 기록 → Git 커밋과 작업 트리 순서로 확인한 뒤 미완료 작업을 이어갑니다.\n`, 'utf8')
     writeFileSync(specPath, `# ${title} — SRS · PRD · 화면설계 통합 문서
 
 ## 1. 원문 요청
@@ -93,7 +95,7 @@ ${request}
 - 작업 폴더 생성 및 기획 문서 초안 작성
 `, 'utf-8')
 
-    return { taskId: basename(rootPath), title, rootPath, specPath, phasesPath, readmePath }
+    return { taskId: basename(rootPath), title, rootPath, specPath, phasesPath, readmePath, developmentLogPath }
   }
 }
 

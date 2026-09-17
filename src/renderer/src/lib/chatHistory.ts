@@ -9,6 +9,14 @@ export interface ChatMessage {
 
 export const CHAT_HISTORY_KEY = 'pixel-office:chat-history-v1'
 const HISTORY_LIMIT = 300
+const CHAT_BOOT_KEY = 'pixel-office:chat-boot-id'
+
+/** A renderer reload keeps the conversation; a new IDE process starts empty. */
+export function resetChatForBoot(storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>, bootId: string): void {
+  if (storage.getItem(CHAT_BOOT_KEY) === bootId) return
+  storage.removeItem(CHAT_HISTORY_KEY)
+  storage.setItem(CHAT_BOOT_KEY, bootId)
+}
 
 export function userChatMessage(text: string): ChatMessage {
   return { id: crypto.randomUUID(), kind: 'user', authorName: '김태호', authorColor: '#6ea8fe', authorSeed: 'me', text }

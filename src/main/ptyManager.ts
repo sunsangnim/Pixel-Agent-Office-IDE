@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import { execFile } from 'child_process'
+import { execFile, execFileSync } from 'child_process'
 import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
 import type { WebContents } from 'electron'
@@ -34,13 +34,34 @@ interface PtyEntry {
   adapter: CliAdapter
   state: AgentRuntimeState
   taskActive: boolean
-  pendingPrompts: string[]
+  pendingPrompts: { text: string; id?: string }[]
+  activePrompt?: { text: string; id?: string }
   reason?: string
   completionTimer?: ReturnType<typeof setTimeout>
 }
 
+export interface PromptLifecycleEvent {
+  ptyId: string
+  promptId: string
+  state: 'started' | 'completed' | 'interrupted'
+  reason?: string
+}
+
 class PtyManager {
   private ptys = new Map<string, PtyEntry>()
+  private promptListeners = new Set<(event: PromptLifecycleEvent) => void>()
+
+  onPromptLifecycle(listener: (event: PromptLifecycleEvent) => void): () => void {
+    this.promptListeners.add(listener)
+    return () => this.promptListeners.delete(listener)
+  }
+
+  private reportPrompt(ptyId: string, entry: PtyEntry, state: PromptLifecycleEvent['state'], reason?: string): void {
+    if (!entry.activePrompt?.id) return
+    const event = { ptyId, promptId: entry.activePrompt.id, state, reason }
+    if (state !== 'started') entry.activePrompt = undefined
+    for (const listener of this.promptListeners) listener(event)
+  }
 
   spawn(options: Required<Pick<PtySpawnOptions, 'command' | 'cwd'>> & PtySpawnOptions, sender: WebContents): string {
     const ptyId = randomUUID()
@@ -120,6 +141,13 @@ class PtyManager {
     entry.reason = reason
     if (state === 'waiting' || state === 'error' || state === 'exited') clearTimeout(entry.completionTimer)
     if (state === 'completed' || state === 'error' || state === 'exited') entry.taskActive = false
+    if (state === 'completed') this.reportPrompt(ptyId, entry, 'completed', reason)
+    if (state === 'error' || state === 'exited') {
+      this.reportPrompt(ptyId, entry, 'interrupted', reason)
+      for (const prompt of entry.pendingPrompts.splice(0)) if (prompt.id) {
+        for (const listener of this.promptListeners) listener({ ptyId, promptId: prompt.id, state: 'interrupted', reason })
+      }
+    }
     if (entry.sender.isDestroyed()) return
     const payload: AgentStatePayload = {
       ptyId,
@@ -144,6 +172,7 @@ class PtyManager {
     const entry = this.ptys.get(ptyId)
     if (!entry) return
     entry.pendingPrompts = []
+    this.reportPrompt(ptyId, entry, 'interrupted', '사용자가 명령을 중단했습니다.')
     clearTimeout(entry.completionTimer)
     if (entry.taskActive) this.write(ptyId, '\u0003')
     entry.taskActive = false
@@ -159,10 +188,10 @@ class PtyManager {
     }
   }
 
-  sendPrompt(ptyId: string, prompt: string): void {
+  sendPrompt(ptyId: string, prompt: string, promptId?: string): void {
     const entry = this.ptys.get(ptyId)
-    if (!entry) return
-    entry.pendingPrompts.push(prompt)
+    if (!entry) throw new Error('종료된 CLI 세션입니다. 프로젝트 이어가기로 새 세션을 시작해주세요.')
+    entry.pendingPrompts.push({ text: prompt, id: promptId })
     this.flushPrompt(ptyId, entry)
   }
 
@@ -173,9 +202,11 @@ class PtyManager {
     if (prompt === undefined) return
     clearTimeout(entry.completionTimer)
     entry.taskActive = true
+    entry.activePrompt = prompt
+    this.reportPrompt(ptyId, entry, 'started')
     this.emitState(ptyId, entry, 'working', '프롬프트 전달')
     try {
-      entry.proc.write(entry.adapter.serializePrompt(prompt))
+      entry.proc.write(entry.adapter.serializePrompt(prompt.text))
     } catch (error) {
       this.emitState(
         ptyId,
@@ -201,6 +232,7 @@ class PtyManager {
   kill(ptyId: string): void {
     const entry = this.ptys.get(ptyId)
     if (!entry) return
+    this.reportPrompt(ptyId, entry, 'interrupted', '세션이 종료되었습니다.')
     forceKillWindowsTree(entry.proc.pid)
     clearTimeout(entry.completionTimer)
     try {
@@ -212,14 +244,16 @@ class PtyManager {
   }
 
   killAll(): void {
-    for (const { proc, completionTimer } of this.ptys.values()) {
+    for (const [ptyId, entry] of this.ptys) {
+      const { proc, completionTimer } = entry
+      this.reportPrompt(ptyId, entry, 'interrupted', 'IDE 종료로 작업을 인수인계합니다.')
       clearTimeout(completionTimer)
-      forceKillWindowsTree(proc.pid)
-      try {
-        proc.kill()
-      } catch {
-        // already exited
-      }
+      // The app exits immediately after this method; a delayed timer would
+      // never run and could leave the previous worker modifying the project.
+      if (process.platform === 'win32') {
+        try { execFileSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true, timeout: 3000, stdio: 'ignore' }) }
+        catch { /* already exited */ }
+      } else { try { proc.kill() } catch { /* already exited */ } }
     }
     this.ptys.clear()
   }
