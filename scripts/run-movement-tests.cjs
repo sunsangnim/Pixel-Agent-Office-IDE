@@ -939,19 +939,26 @@ assert.equal(representativeWorkPoseAt(360), 3)
 assert.equal(representativeWorkPoseAt(1700), 0, 'typing pauses between bursts')
 assert.equal(representativeWorkPoseAt(REPRESENTATIVE_WORK_CYCLE_MS + 90), 1)
 for (const direction of ['front', 'back', 'left', 'right']) {
-  const source = new Uint8ClampedArray(seatedRenderer.characterFrame('ceo-seated-sheet-frames', `ceo-sit-${direction}`).source.image.data)
+  const source = seatedRenderer.workFrame(direction)
   const original = new Uint8ClampedArray(source)
   assert.deepEqual(representativeWorkPixels(source, 312, 360, direction, 0), source, 'rest preserves every original pixel')
   const poses = new Set()
   for (let pose = 1; pose < 5; pose += 1) {
     const output = representativeWorkPixels(source, 312, 360, direction, pose)
     assert.notDeepEqual(output, source, `${direction} hands visibly move`)
-    assert.deepEqual(output.slice(0, 204 * 312 * 4), source.slice(0, 204 * 312 * 4), 'head and shoulders stay unchanged')
-    assert.deepEqual(output.slice(289 * 312 * 4), source.slice(289 * 312 * 4), 'hips, legs and feet stay unchanged')
+    assert.deepEqual(output.slice(0, 144 * 312 * 4), source.slice(0, 144 * 312 * 4), 'the head stays unchanged above the raised hands')
+    assert.deepEqual(output.slice(230 * 312 * 4), source.slice(230 * 312 * 4), 'lap, hips, legs and feet stay unchanged')
     poses.add(Buffer.from(output).toString('base64'))
   }
   assert.equal(poses.size, 4, 'left and right hand motions produce distinct poses')
   assert.deepEqual(source, original, 'animation never mutates the seated source')
+  let lapSkin = 0
+  for (let y = 230; y < 285; y++) for (let x = 0; x < 312; x++) {
+    const i = (y * 312 + x) * 4
+    if (source[i + 3] > 127 && source[i] > 180 && source[i + 1] > 90 && source[i + 2] < 150 &&
+      source[i] > source[i + 1] * 1.2) lapSkin++
+  }
+  assert.equal(lapSkin, 0, `${direction}: both hands leave the lap in the new typing posture`)
 }
 const typing = seatingScene()
 typing.addFurniture('desk-0-0', 10, 400, 432, 144, 72)

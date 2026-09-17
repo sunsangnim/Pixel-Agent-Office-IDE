@@ -62,6 +62,16 @@ pixel-office/
 소품까지 포함된 전신 동작 시트로 표시한다. 이 두 파일은 원본 소품으로 보관하며
 런타임에서는 별도로 로드하거나 캐릭터 위에 합성하지 않는다.
 
+## Representative desk work posture
+
+- `characters/ceo-desk-work-v1.png` — 대표 전용 투명 2×2 업무 자세 시트.
+  왼쪽 위부터 정면·왼쪽·뒷면·오른쪽이며, 양손을 책상 높이로 올리고 팔꿈치를 굽힌 자세다.
+  내장 이미지 생성 도구로 `ceo-seated-v1.png`의 외형과 착석 위치를 유지해 제작했다.
+- 기존 착석 시트의 배율과 좌표 변환을 그대로 적용한다. 앞으로 뻗은 손이 생겨도
+  캐릭터 전체를 다시 가운데 정렬하거나 축소하지 않는다.
+- `representativeWorkAnimation.ts`가 손·소매에 작은 타이핑 움직임과 짧은 휴식을 넣는다.
+  회의석과 독립 의자는 기존 휴식 자세를 사용하며 직원 캐릭터에는 적용하지 않는다.
+
 ## Representative break animation and speech
 
 - `characters/ceo-pantry-actions-v1.png` — 대표 전신 12개 자세(3열×4행).
