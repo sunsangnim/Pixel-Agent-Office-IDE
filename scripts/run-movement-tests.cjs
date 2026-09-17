@@ -15,6 +15,7 @@ buildSync({
       "export * from './src/renderer/src/game/furnitureBounds'",
       "export * from './src/renderer/src/game/characterFrames'",
       "export * from './src/renderer/src/game/seatAnchors'",
+      "export * from './src/renderer/src/game/representativeWorkAnimation'",
       "export * from './src/renderer/src/game/layoutPersistence'",
       "export * from './src/renderer/src/game/idleActivity'",
       "export * from './src/renderer/src/game/actorStateMachine'",
@@ -34,7 +35,8 @@ const {
   findOfficePath, hasOfficeLineOfSight, isOfficePositionWalkable, routeFor, WAYPOINTS,
   DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS,
   OFFICE_REPRESENTATIVE_SAVE_KEY, parseRepresentativePosition, measureFurnitureBounds,
-  STAFF_PANTRY_SHEETS, measureWalkSheet, measureSeatedSheet, measureCharacterSheet, measurePantrySheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS
+  STAFF_PANTRY_SHEETS, measureWalkSheet, measureSeatedSheet, measureCharacterSheet, measurePantrySheet, seatedFrameAnchor, CHAIR_SEAT_ANCHORS,
+  REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_CYCLE_MS, representativeWorkPixels, representativeWorkPoseAt
 } = require(outputFile)
 const seatedRenderer = require('./fixtures/seated-renderer.cjs').createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seatedFrameAnchor })
 const installSeatedRenderer = seatedRenderer.install
@@ -908,8 +910,17 @@ for (const rotation of [0, 90, 180, 270]) {
     assert.deepEqual(position(head), position(body), 'the two parts retain identical placement')
     assert.equal(body.visible, false, 'the foreground replaces the body without double drawing')
     assert.equal(head.crop, null, 'the torso is never cut horizontally at the backrest')
-    assert.equal(head.frame, body.frame)
-    assert.equal(head.texture.key, body.texture.key, 'use the complete original pose without an alpha mask')
+    assert.equal(head.texture.key, REPRESENTATIVE_WORK_TEXTURE, 'only the representative at a desk gets the working pose')
+    assert.ok(head.frame.startsWith(`ceo-work-${body.frame.slice('ceo-sit-'.length)}-`))
+    const seatPosition = position(body)
+    const workFrames = new Set()
+    advance(candidate, 2.1, () => {
+      workFrames.add(head.frame)
+      assert.deepEqual(position(body), seatPosition, 'hand motion cannot shift the seat contact')
+      assert.deepEqual(position(head), seatPosition, 'working foreground stays attached to the seat')
+      assertSeatedLayers(candidate, chair, body, head.depth)
+    })
+    assert.equal(workFrames.size, 5, 'both hands tap, recover, and pause')
     assert.deepEqual([...candidate.furniture.values()].map(({ id, image }) => [id, image.depth]), depths)
     assert.ok(candidate.representativeLabel.depth > head.depth)
     assertSeatContact(candidate, chair, body, body)
@@ -921,6 +932,42 @@ for (const rotation of [0, 90, 180, 270]) {
   }
 }
 console.log('PASS desk/person/backrest order, unchanged chairs, all facings, reload, and visible walking')
+
+assert.equal(representativeWorkPoseAt(0), 0)
+assert.equal(representativeWorkPoseAt(90), 1)
+assert.equal(representativeWorkPoseAt(360), 3)
+assert.equal(representativeWorkPoseAt(1700), 0, 'typing pauses between bursts')
+assert.equal(representativeWorkPoseAt(REPRESENTATIVE_WORK_CYCLE_MS + 90), 1)
+for (const direction of ['front', 'back', 'left', 'right']) {
+  const source = new Uint8ClampedArray(seatedRenderer.characterFrame('ceo-seated-sheet-frames', `ceo-sit-${direction}`).source.image.data)
+  const original = new Uint8ClampedArray(source)
+  assert.deepEqual(representativeWorkPixels(source, 312, 360, direction, 0), source, 'rest preserves every original pixel')
+  const poses = new Set()
+  for (let pose = 1; pose < 5; pose += 1) {
+    const output = representativeWorkPixels(source, 312, 360, direction, pose)
+    assert.notDeepEqual(output, source, `${direction} hands visibly move`)
+    assert.deepEqual(output.slice(0, 204 * 312 * 4), source.slice(0, 204 * 312 * 4), 'head and shoulders stay unchanged')
+    assert.deepEqual(output.slice(289 * 312 * 4), source.slice(289 * 312 * 4), 'hips, legs and feet stay unchanged')
+    poses.add(Buffer.from(output).toString('base64'))
+  }
+  assert.equal(poses.size, 4, 'left and right hand motions produce distinct poses')
+  assert.deepEqual(source, original, 'animation never mutates the seated source')
+}
+const typing = seatingScene()
+typing.addFurniture('desk-0-0', 10, 400, 432, 144, 72)
+typing.sitRepresentativeOn('chair-0-0')
+advance(typing, 8)
+assert.equal(typing.representativeSeatedForeground.texture.key, REPRESENTATIVE_WORK_TEXTURE)
+typing.furniture.get('desk-0-0').image.setPosition(650, 750)
+advance(typing, 0.1)
+assert.equal(typing.representativeSeatedForeground.texture.key, 'ceo-seated-sheet-frames', 'moving the desk away restores resting hands')
+typing.furniture.get('desk-0-0').image.setPosition(400, 432)
+advance(typing, 0.2)
+assert.equal(typing.representativeSeatedForeground.texture.key, REPRESENTATIVE_WORK_TEXTURE)
+typing.setLayoutEditing(true)
+assert.equal(typing.representativeSeatedForeground.visible, false, 'editing stops typing and stands up')
+assert.equal(typing.representativeWorkElapsedMs, 0)
+console.log('PASS representative-only work motion, local arm pixels, stable body/seat, brief pauses, desk changes and editor interruption')
 
 // A north-side sitter must stay behind the meeting table even if the chair
 // was edited last. Test both CEO and employee composition with actual arrival.
@@ -946,6 +993,7 @@ for (const north of [true, false]) {
     const sitter = employee ? view.seatedForeground : scene.representativeSeatedForeground
     const table = scene.furniture.get('custom-meeting-table').image
     assert.equal(sitter.visible, true)
+    if (!employee) assert.equal(sitter.texture.key, 'ceo-seated-sheet-frames', 'meeting seats do not type')
     assert.ok(north ? sitter.depth < table.depth : sitter.depth > table.depth,
       north ? 'front table hides the northern sitter lap' : 'southern sitter remains in front of the table')
     assert.equal(sitter.crop, null, 'occlusion uses asset layering, without cropping character pixels')
