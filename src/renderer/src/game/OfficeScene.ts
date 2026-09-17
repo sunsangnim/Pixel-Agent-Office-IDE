@@ -2420,7 +2420,7 @@ export class OfficeScene extends Phaser.Scene {
     view.seatedGoal = destination.seated
     view.chairId = destination.seated ? destination.chairId ?? this.assignedDeskChair(actor)?.id ?? null : null
     const labels: Partial<Record<OfficeGameActor['presence'], string>> = {
-      working: '업무 중', meeting: '회의', representativeVisit: '대표실로 가는 중', requestingHelp: '승인 대기', error: '오류!'
+      working: '업무 중', representativeVisit: '대표실로 가는 중', requestingHelp: '승인 대기', error: '오류!'
     }
     const message = actor.presence === 'pantry'
       ? actionForPresence('pantry', actorIndex) === 'drinking' ? '커피 마시러 가는 중' : '간식 먹으러 가는 중'
