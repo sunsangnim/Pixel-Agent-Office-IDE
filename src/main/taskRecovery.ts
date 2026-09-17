@@ -4,18 +4,26 @@ import { TaskRecoveryStore } from './taskRecoveryStore'
 import { workspaceFiles } from './workspaceStore'
 import { instanceManager } from './instanceManager'
 import { ptyManager } from './ptyManager'
+import { taskWorkspaceManager } from './taskWorkspaceManager'
+import { TASK_DOCUMENTS_FOLDER } from '../shared/workspaceLayout'
+import { meetingPlanningRequest, pendingMeetingQuestions, validateMeetingDraft, type MeetingDraft } from '../shared/meetingNotes'
 import type { AgentInstance, TaskCommand, TaskDispatch, TaskRestoreResult, TaskWorkspace, TrackedTask } from '../shared/types'
 
 class TaskRecovery {
   readonly bootId = randomUUID()
   private saved?: TaskRecoveryStore
   private resuming = new Map<string, Promise<string[]>>()
+  private meetingPlans = new Map<string, Promise<TaskRestoreResult>>()
   private pendingChecks = new Set<string>()
   private bindings = new Map<string, { taskId: string; commandId: string; ptyId: string }>()
   private timer?: ReturnType<typeof setInterval>
 
   private store(): TaskRecoveryStore { return this.saved ??= new TaskRecoveryStore(workspaceFiles()) }
   list(): TrackedTask[] { return this.store().list() }
+  hasActiveCommand(ptyId: string): boolean {
+    return [...this.bindings.values()].some(binding => binding.ptyId === ptyId &&
+      this.store().get(binding.taskId).commands.some(command => command.id === binding.commandId && ['queued', 'running'].includes(command.status)))
+  }
   private broadcast(): void {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('tasks:changed', this.list())
   }
@@ -59,6 +67,31 @@ class TaskRecovery {
   register(workspace: TaskWorkspace, request: string, projectPath: string): void {
     this.store().register(workspace, request, projectPath)
     this.broadcast()
+  }
+
+  async planMeeting(draft: MeetingDraft, sender: WebContents): Promise<TaskRestoreResult> {
+    validateMeetingDraft(draft)
+    if (!draft.endedAt || !draft.entries.length || pendingMeetingQuestions(draft).length) throw new Error('회의를 마치고 세 에이전트의 답변을 받은 뒤 SRS를 작성할 수 있습니다.')
+    const active = this.meetingPlans.get(draft.meetingId)
+    if (active) return active
+    const projectPath = workspaceFiles().path(draft.projectPath)
+    let task = this.list().find(item => item.sourceId === draft.meetingId)
+    if (task && task.projectPath !== projectPath) throw new Error('회의 프로젝트가 변경되었습니다.')
+    if (!task) {
+      if (this.list().some(item => item.projectPath === projectPath && ['planning', 'review'].includes(item.stage))) throw new Error('기존 기획을 승인하거나 취소한 뒤 회의 SRS 작성을 다시 눌러주세요. 회의 내용은 보관됩니다.')
+      const request = meetingPlanningRequest(draft)
+      const workspace = taskWorkspaceManager.prepare(workspaceFiles().path(TASK_DOCUMENTS_FOLDER), request)
+      this.store().register(workspace, request, projectPath, draft.meetingId)
+      task = this.store().get(workspace.taskId)
+      this.broadcast()
+    }
+    const taskId = task.taskId
+    const pending = (async () => {
+      const notices = await this.restoreTasks(sender, projectPath, taskId)
+      return { bootId: this.bootId, tasks: this.list(), instances: instanceManager.list(), notices }
+    })()
+    this.meetingPlans.set(draft.meetingId, pending)
+    try { return await pending } finally { this.meetingPlans.delete(draft.meetingId) }
   }
 
   async dispatch(request: TaskDispatch): Promise<void> {
@@ -160,9 +193,9 @@ class TaskRecovery {
     } finally { this.resuming.delete(projectPath) }
   }
 
-  private async restoreTasks(sender: WebContents, projectPath: string): Promise<string[]> {
+  private async restoreTasks(sender: WebContents, projectPath: string, taskId?: string): Promise<string[]> {
     const notices: string[] = []
-    const selected = () => this.list().filter(task => task.projectPath === projectPath && !['completed', 'cancelled'].includes(task.stage))
+    const selected = () => this.list().filter(task => task.projectPath === projectPath && (!taskId || task.taskId === taskId) && !['completed', 'cancelled'].includes(task.stage))
     // A receipt may have been written immediately before the old process closed.
     for (const task of selected()) for (const command of task.commands) await this.check(task.taskId, command.id)
     for (const task of selected()) {

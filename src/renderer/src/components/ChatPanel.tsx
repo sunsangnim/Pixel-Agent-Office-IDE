@@ -11,7 +11,8 @@ interface ChatPanelProps {
   onOpenFolder: () => void
   messages: ChatMessage[]
   selectedTargetIds: Set<string>
-  onSend: (text: string) => void | Promise<void>
+  meetingActive?: boolean
+  onSend: (text: string, askAgents?: boolean) => void | Promise<void>
 }
 
 function ChatPanel({
@@ -22,6 +23,7 @@ function ChatPanel({
   onOpenFolder,
   messages,
   selectedTargetIds,
+  meetingActive = false,
   onSend
 }: ChatPanelProps) {
   const [text, setText] = useState('')
@@ -64,10 +66,10 @@ function ChatPanel({
     .filter((i) => selectedTargetIds.has(i.instanceId))
     .map((i) => templates.find((t) => t.id === i.templateId)?.name ?? i.templateId)
 
-  const send = (): void => {
+  const send = (askAgents = false): void => {
     if (!text.trim()) return
     const prompt = [...selectedMentions, text.trim()].join(' ')
-    void onSend(prompt)
+    void onSend(prompt, askAgents)
     setText('')
     setSelectedMentions([])
   }
@@ -204,7 +206,7 @@ function ChatPanel({
               className="chat-input"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder={selectedMentions.length > 0 ? '업무 내용을 입력하세요' : '@를 입력해 에이전트를 선택하고 지시하세요'}
+              placeholder={meetingActive ? '회의 발언이나 질문을 입력하세요' : selectedMentions.length > 0 ? '업무 내용을 입력하세요' : '@를 입력해 에이전트를 선택하고 지시하세요'}
               onKeyDown={(e) => {
                 if (e.key === 'Backspace' && !text && selectedMentions.length > 0) {
                   setSelectedMentions((current) => current.slice(0, -1))
@@ -218,7 +220,7 @@ function ChatPanel({
           </div>
           <button
             className="chat-send-btn"
-            onClick={send}
+            onClick={() => send()}
             disabled={!text.trim()}
             title="전송 (Enter · 줄바꿈 Shift+Enter)"
             aria-label="메시지 전송"
@@ -226,6 +228,7 @@ function ChatPanel({
             ▷
           </button>
         </div>
+        {meetingActive && <button className="meeting-question-btn" disabled={!text.trim()} onClick={() => send(true)}>세 에이전트에게 질문</button>}
       </div>
     </div>
   )

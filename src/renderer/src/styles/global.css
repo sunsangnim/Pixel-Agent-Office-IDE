@@ -1394,3 +1394,9 @@ textarea {
 .resume-project-option { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 12px; padding: 16px; text-align: left; border: 1px solid #555875; border-radius: 6px; background: #2c314b; color: #eef0f6; cursor: pointer; }
 .resume-project-option:hover { background: #394365; }
 .resume-project-option small { color: #abb6d0; overflow-wrap: anywhere; }
+.meeting-notes-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 14px; margin-bottom: 12px; background: #302b22; color: #f3dbac; border: 1px solid #92724d; border-radius: 6px; font-size: 13px; }
+.meeting-notes-bar > span:first-child { flex: 1; min-width: 200px; }
+.meeting-notes-bar button, .meeting-question-btn { padding: 6px 10px; color: #f3dbac; background: #473a2c; border: 1px solid #92724d; border-radius: 4px; cursor: pointer; }
+.meeting-question-btn { margin-top: 8px; width: 100%; }
+.meeting-notes-bar button:disabled, .meeting-question-btn:disabled { opacity: .5; cursor: default; }
+.meeting-answer-error { width: 100%; color: #ffb4a7; }

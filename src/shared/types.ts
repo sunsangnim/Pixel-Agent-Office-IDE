@@ -213,6 +213,7 @@ export interface TaskCommand {
   recovered?: boolean
 }
 export interface TrackedTask extends TaskWorkspace {
+  sourceId?: string
   request: string
   projectPath: string
   stage: TaskStage
@@ -234,6 +235,7 @@ export interface TaskRestoreResult {
 }
 
 export interface TaskApi {
+  planMeeting(draft: import('./meetingNotes').MeetingDraft): Promise<TaskRestoreResult>
   prepare(request: string): Promise<TaskWorkspace>
   readSpec(specPath: string): Promise<string>
   dispatch(request: TaskDispatch): Promise<void>
@@ -243,6 +245,20 @@ export interface TaskApi {
   resume(projectPath: string): Promise<TaskRestoreResult>
   list(): Promise<TrackedTask[]>
   onChanged(callback: (tasks: TrackedTask[]) => void): () => void
+}
+
+export interface MeetingReplyEvent {
+  meetingId: string
+  questionId: string
+  templateId: string
+  entry?: import('./meetingNotes').MeetingEntry
+  error?: string
+  instances: AgentInstance[]
+}
+
+export interface MeetingApi {
+  ask(draft: import('./meetingNotes').MeetingDraft, questionId: string): Promise<void>
+  onReply(callback: (event: MeetingReplyEvent) => void): () => void
 }
 
 export type GitDiffLineType = 'context' | 'add' | 'del'
@@ -299,6 +315,7 @@ export interface SystemApi {
 }
 
 export interface PreloadApi {
+  meetings: MeetingApi
   pty: PtyApi
   templates: AgentTemplateApi
   workspace: WorkspaceApi

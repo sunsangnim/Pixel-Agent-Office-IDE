@@ -7,6 +7,8 @@ import { instanceManager } from './instanceManager'
 import { openSettingsWindow } from './windowManager'
 import { taskWorkspaceManager } from './taskWorkspaceManager'
 import { taskRecovery } from './taskRecovery'
+import { meetingDiscussion } from './meetingDiscussion'
+import type { MeetingDraft } from '../shared/meetingNotes'
 import { diffAgainstBase, mergeDeskBranch } from './gitWorktreeManager'
 import { teamCapacityStore } from './teamCapacityStore'
 import { buildAgentProfiles } from '../shared/agentProfiles'
@@ -136,6 +138,12 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('tasks:list', () => taskRecovery.list())
+  ipcMain.handle('tasks:plan-meeting', async (event, draft: MeetingDraft) => {
+    const result = await taskRecovery.planMeeting(draft, event.sender)
+    workspaceStore.set(draft.projectPath)
+    return result
+  })
+  ipcMain.handle('meetings:ask', (event, draft: MeetingDraft, questionId: string) => meetingDiscussion.ask(draft, questionId, event.sender))
   ipcMain.handle('tasks:restore', event => taskRecovery.restore(event.sender))
   ipcMain.handle('tasks:resume', (event, projectPath: string) => {
     workspaceStore.set(projectPath)
