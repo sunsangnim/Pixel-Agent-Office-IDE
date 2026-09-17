@@ -10,7 +10,7 @@ import { BUILT_IN_AGENT_PROFILES } from '../src/shared/agentProfiles'
 import { MAX_TEAM_CAPACITY, ORCHESTRATION_POLICY } from '../src/shared/orchestrationPolicy'
 import type { AgentRuntimeState, AgentStatePayload, CliAdapterId } from '../src/shared/types'
 import { planTask } from '../src/renderer/src/lib/taskRouter'
-import { isMeetingEndCommand, isMeetingStartCommand } from '../src/renderer/src/lib/meetingCommands'
+import { isMeetingEndCommand, isMeetingStartCommand, parseMeetingCommand } from '../src/renderer/src/lib/meetingCommands'
 import { isWorkingTime } from '../src/renderer/src/hooks/useOfficeClock'
 import { getCorporateRosterCell, CORPORATE_ROSTER_SIZE } from '../src/renderer/src/lib/corporateRoster'
 import { presenceForRuntime, readStoredJson } from '../src/renderer/src/lib/meetingCheckpoint'
@@ -107,6 +107,27 @@ function verifyRoutingAndProfiles(): void {
   assert.equal(isMeetingStartCommand('회의하자'), true)
   assert.equal(isMeetingStartCommand('다 모여'), true)
   assert.equal(isMeetingEndCommand('회의 종료'), true)
+  for (const text of [
+    '회의합시다', '회의 합시다!', '회의 해요', '회의해', '회의해줘', '회의 해 주세요.', '회의하죠', '회의할까요?',
+    '전체 회의 시작', '다 같이 회의 시작합시다', '회의를 시작해 주세요', '자, 이제 모두 회의 좀 합시다!',
+    '다 모여!', '다들 모여주세요', '회의실로 모입시다', '@Claude @Codex 회의합시다', '@코덱스 회의 시작해요'
+  ]) {
+    assert.equal(parseMeetingCommand(text), 'start', `meeting start: ${text}`)
+    assert.equal(isMeetingEndCommand(text), false)
+  }
+  for (const text of [
+    '회의 끝', '회의 종료합시다', '회의를 종료해 주세요', '회의 끝내자', '회의 마칩시다', '회의 마쳐요',
+    '회의 그만하자', '업무 복귀', '업무로 복귀합시다', '다들 업무로 복귀해 주세요!'
+  ]) {
+    assert.equal(parseMeetingCommand(text), 'end', `meeting end: ${text}`)
+    assert.equal(isMeetingStartCommand(text), false)
+  }
+  for (const text of [
+    '', '회의', '회의록 작성해줘', '회의 시작 버튼을 만들어줘', '회의 종료 기능 고쳐줘',
+    '회의하자고 했는데 창이 떴어', '회의하지 말자', '회의 시작하지 마', '회의를 종료하지 마세요',
+    '회의합시다라는 문구를 바꿔줘', '다 모여 버튼 추가', '업무 복귀 애니메이션 수정', '내일 회의합시다',
+    '회의합시다\n그리고 버튼 만들어줘'
+  ]) assert.equal(parseMeetingCommand(text), null, `not a meeting command: ${text}`)
   const chatStorage = new Map<string, string>()
   const chatStore = { getItem: (key: string) => chatStorage.get(key) ?? null,
     setItem: (key: string, value: string) => { chatStorage.set(key, value) } }
