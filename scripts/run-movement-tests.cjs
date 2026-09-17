@@ -316,10 +316,10 @@ assert.ok(!isInRepresentativeRoom({ x: 832, y: 624 }))
 assert.ok(isOfficePositionWalkable(WAYPOINTS.representativeDoor, OFFICE_WALL_COLLISIONS), 'the representative doorway lies in the visible wall opening')
 
 const ownership = createScene()
-assert.deepEqual(ownership.computeDeskCounts(), [1, 1, 1], 'the representative desk is never Antigravity capacity')
+assert.deepEqual(ownership.computeDeskCounts(), [2, 2, 2], 'each team has two desks; the representative desk is never Antigravity capacity')
 assert.equal(ownership.furniture.has('desk-2-1'), false)
 assert.equal(ownership.furniture.has('chair-2-1'), false)
-const subAgent = actor('antigravity-child', 2, 'working', 1)
+const subAgent = actor('antigravity-child', 2, 'working', 2)
 assert.equal(ownership.actorDestination(subAgent, 0).seated, false)
 assert.ok(!isInRepresentativeRoom(ownership.actorDestination(subAgent, 0).point), 'a child without its own chair waits outside the representative room')
 for (let team = 0; team < 3; team++) {
@@ -339,12 +339,12 @@ for (let team = 0; team < 3; team++) {
 assert.equal(ownership.representativeChairAvailable(ownership.furniture.get(REPRESENTATIVE_CHAIR_ID)), true)
 assert.equal(ownership.representativeChairAvailable(ownership.furniture.get(REPRESENTATIVE_MEETING_CHAIR_ID)), true)
 ownership.addFurniture('custom-private-desk', 10, 816, 736, 64, 64)
-assert.deepEqual(ownership.computeDeskCounts(), [1, 1, 1], 'custom desks in the representative room do not create employee slots')
+assert.deepEqual(ownership.computeDeskCounts(), [2, 2, 2], 'custom desks in the representative room do not create employee slots')
 const relocatedChair = ownership.furniture.get('chair-2-0')
 relocatedChair.image.setPosition(800, 880)
 assert.equal(ownership.actorCanUseChair(actor('moved-owner', 2), relocatedChair), false, 'moving an employee chair into the private room cannot bypass its boundary')
 ownership.furniture.get('desk-2-0').image.setPosition(800, 832)
-assert.deepEqual(ownership.computeDeskCounts(), [1, 1, 0], 'moving a staff desk inside the representative room removes its staff capacity')
+assert.deepEqual(ownership.computeDeskCounts(), [2, 2, 1], 'moving a staff desk inside the representative room removes its staff capacity')
 console.log('PASS representative-room boundaries, saved identity migration, deletion, private capacity and exclusive chair permissions')
 
 for (const forbiddenId of ['chair-1-0', REPRESENTATIVE_CHAIR_ID, REPRESENTATIVE_MEETING_CHAIR_ID]) {
@@ -553,7 +553,11 @@ for (const member of crowd.actors.values()) {
 }
 console.log('PASS four-person arrivals, three spaced lead pantry turns/returns, and an explicit meeting')
 
-const fullMeeting = createScene()
+// Exercise eight guests beyond the three lead seats with an open overflow
+// waiting area. The default second desk row now occupies that fixture's floor.
+const openOverflowLayout = Object.fromEntries(Object.entries(DEFAULT_LAYOUT_SEED).filter(([, saved]) =>
+  !(saved.y >= 600 && saved.x < 672 && [10, 12].includes(saved.frame))))
+const fullMeeting = createScene(openOverflowLayout)
 const fullAttendees = Array.from({ length: 8 }, (_, index) => actor(`guest-${index}`, index % 3, 'meeting', Math.floor(index / 3)))
 fullMeeting.worldSave.actors = fullAttendees.map((guest, index) => ({ profileId: guest.profileId, x: 160 + index * 72, y: 600 }))
 snapshot(fullMeeting, fullAttendees)
@@ -602,7 +606,7 @@ console.log('PASS all fifteen employee pantry sheets: distinct poses, transparen
 for (let team = 0; team < 3; team++) for (let variant = 0; variant < 5; variant++) {
   for (const [index, action, word] of [[0, 'eating', '간식'], [1, 'drinking', '커피']]) {
     const id = team + '-' + variant
-    const pantry = createScene()
+    const pantry = createScene(openOverflowLayout)
     // Claude's lead uses skin 0-4. Its navy skin remains available on slot 5.
     const slot = team === 0 && variant === 0 ? 5 : variant
     const resting = actor('pantry-' + id, team, 'pantry', slot)
@@ -945,7 +949,8 @@ console.log('PASS representative seated departure to pantry and chair interrupti
 const livePantry = representativeScene({ x: 480, y: 600 })
 const liveCoffee = [...livePantry.furniture.values()].find(item => item.frame === 0)
 furnitureClick(livePantry, liveCoffee.id)
-liveCoffee.image.setPosition(640, 640)
+// Relocate below the new second desk row, leaving the coffee approach clear.
+liveCoffee.image.setPosition(480, 832)
 livePantry.refreshNavigationLayout()
 awaitRepresentativeBreak(livePantry)
 assert.ok(livePantry.representativeSprite.y > 600, 'the route follows the relocated coffee machine')
@@ -1343,9 +1348,9 @@ console.log('PASS occupied and empty employee seat ownership, returning employee
 for (const [id, saved] of Object.entries(DEFAULT_LAYOUT_SEED).filter(([, saved]) =>
   saved.frame === 12 && saved.y < 336)) {
   const meetingSeat = representativeScene({ x: 480, y: 600 })
-  if (saved.y === 112) {
+  if (id === 'custom-1787984492714-7') {
     assert.equal(meetingSeat.sitRepresentativeOn(id), false,
-      'enlarged chairs enclose the north seats; entering them must not cross another chair')
+      'the north-left seat is enclosed; entering it must not cross another chair')
     assert.equal(meetingSeat.representativeChairTarget, null)
     continue
   }
@@ -1581,7 +1586,7 @@ for (const view of meeting.actors.values()) {
     assert.deepEqual(position(view.container), position(meeting.furniture.get(view.chairId).image))
   }
 }
-assert.equal(new Set([...meeting.actors.values()].filter((view) => view.seatedGoal).map((view) => view.chairId)).size, 2)
+assert.equal(new Set([...meeting.actors.values()].filter((view) => view.seatedGoal).map((view) => view.chairId)).size, 3)
 assert.equal(new Set([...meeting.actors.values()].map((view) => `${view.container.x}:${view.container.y}`)).size, 5)
 console.log('PASS five meeting attendees: reserved head chair, distinct reachable seats and free-floor overflow')
 
