@@ -10,7 +10,7 @@ import { usePtyStatuses } from './hooks/usePtyStatuses'
 import { useAgentChat, type PlanReadyPayload } from './hooks/useAgentChat'
 import { planTask } from './lib/taskRouter'
 import { leadTitleFor, SUB_AGENT_TITLE } from '@shared/agentProfiles'
-import { isMeetingEndCommand, isMeetingStartCommand } from './lib/meetingCommands'
+import { parseMeetingCommand, type MeetingCommand } from './lib/meetingCommands'
 import { parseAttendanceCommand } from './lib/attendanceCommands'
 import {
   MEETING_CHECKPOINT_KEY,
@@ -65,7 +65,7 @@ function App() {
     useAgentChat(instances, templates, handlePlanReady)
 
   useEffect(() => {
-    if (!pendingPlan || pendingPlan.specText !== null) return
+    if (!pendingPlan || parseMeetingCommand(pendingPlan.originalText) || pendingPlan.specText !== null) return
     const allReady = pendingPlan.instanceIds.every((id) => pendingPlan.readyIds.has(id))
     if (!allReady) return
     let cancelled = false
@@ -280,28 +280,9 @@ function App() {
     sendPlanningPrompt(revisionPrompt, plan.instanceIds, plan.taskId, plan.specPath, instances, `[반려] ${feedback}`)
   }
 
-  const sendPromptToSelected = async (text: string): Promise<void> => {
-    text = text.trim()
-    if (!text) return
-    // Record at the input boundary, before local commands, validation, or
-    // asynchronous session work can return. Queue replay does not record twice.
-    addUserMessage(text)
-    const attendanceCommand = parseAttendanceCommand(text)
-    if (attendanceCommand) {
-      const leadProfileIds = attendanceCommand.templateIds.map((templateId) => `${templateId}:lead`)
-      const teamNames = attendanceCommand.templateIds
-        .map((templateId) => templates.find((t) => t.id === templateId)?.name ?? templateId)
-        .join(', ')
-      setManuallyOffDutyIds((prev) => {
-        const next = new Set(prev)
-        leadProfileIds.forEach((id) => (attendanceCommand.clockIn ? next.delete(id) : next.add(id)))
-        return next
-      })
-      addSystemMessage(`${teamNames} 팀장이 ${attendanceCommand.clockIn ? '출근' : '퇴근'}했습니다.`)
-      return
-    }
-
-    if (isMeetingStartCommand(text)) {
+  const handleMeetingCommand = async (command: MeetingCommand): Promise<void> => {
+    setError(null)
+    if (command === 'start') {
       if (meetingActive) {
         addSystemMessage('이미 전체 회의가 진행 중입니다.')
         return
@@ -325,14 +306,51 @@ function App() {
       return
     }
 
-    if (isMeetingEndCommand(text)) {
-      const queued = [...heldPrompts]
-      setMeetingActive(false)
-      setHeldPrompts([])
-      localStorage.removeItem(MEETING_CHECKPOINT_KEY)
-      localStorage.removeItem(MEETING_QUEUE_KEY)
-      addSystemMessage(`회의를 마쳤습니다. 각자 자리로 복귀합니다.${queued.length ? ` 보류한 지시 ${queued.length}건을 이어서 처리합니다.` : ''}`)
-      for (const prompt of queued) await executePrompt(prompt.text, prompt.targetIds)
+    const queued = [...heldPrompts]
+    setMeetingActive(false)
+    setHeldPrompts([])
+    localStorage.removeItem(MEETING_CHECKPOINT_KEY)
+    localStorage.removeItem(MEETING_QUEUE_KEY)
+    addSystemMessage(`회의를 마쳤습니다. 각자 자리로 복귀합니다.${queued.length ? ` 보류한 지시 ${queued.length}건을 이어서 처리합니다.` : ''}`)
+    for (const prompt of queued) await executePrompt(prompt.text, prompt.targetIds)
+  }
+
+  useEffect(() => {
+    if (!pendingPlan) return
+    const command = parseMeetingCommand(pendingPlan.originalText)
+    if (!command) return
+    // Recover a review created by older command matching during a live update.
+    // No approval or implementation request should be sent for a local command.
+    setPendingPlan(null)
+    setPlanModalOpen(false)
+    addSystemMessage('회의 요청으로 잘못 열린 기획 검토를 취소했습니다.')
+    void handleMeetingCommand(command)
+  }, [pendingPlan])
+
+  const sendPromptToSelected = async (text: string): Promise<void> => {
+    text = text.trim()
+    if (!text) return
+    // Record at the input boundary, before local commands, validation, or
+    // asynchronous session work can return. Queue replay does not record twice.
+    addUserMessage(text)
+    const attendanceCommand = parseAttendanceCommand(text)
+    if (attendanceCommand) {
+      const leadProfileIds = attendanceCommand.templateIds.map((templateId) => `${templateId}:lead`)
+      const teamNames = attendanceCommand.templateIds
+        .map((templateId) => templates.find((t) => t.id === templateId)?.name ?? templateId)
+        .join(', ')
+      setManuallyOffDutyIds((prev) => {
+        const next = new Set(prev)
+        leadProfileIds.forEach((id) => (attendanceCommand.clockIn ? next.delete(id) : next.add(id)))
+        return next
+      })
+      addSystemMessage(`${teamNames} 팀장이 ${attendanceCommand.clockIn ? '출근' : '퇴근'}했습니다.`)
+      return
+    }
+
+    const meetingCommand = parseMeetingCommand(text)
+    if (meetingCommand) {
+      await handleMeetingCommand(meetingCommand)
       return
     }
 
