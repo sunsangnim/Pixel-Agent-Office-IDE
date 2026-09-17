@@ -14,7 +14,10 @@ export interface CliAdapter {
 }
 
 const ANSI_PATTERN = /[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g
-const ERROR_PATTERN = /(?:not authenticated|login required|unauthorized|permission denied|rate limit|quota exceeded|fatal error|command not found)/i
+// A quoted/backticked mention of an error phrase (an agent summarizing what it just
+// fixed) should not itself flip the run into an error state - only an unquoted
+// occurrence, as a real CLI error banner would print it, counts.
+const ERROR_PATTERN = /(?<!['"`“」])\b(?:not authenticated|login required|unauthorized|permission denied|rate limit(?:\s+exceeded)?|quota exceeded|fatal error|command not found)\b(?!['"`”」])/i
 
 function clean(output: string): string {
   // ConPTY appends an OSC window title after the initial prompt. Titles can
@@ -33,7 +36,11 @@ function inspectCommon(output: string, readyPattern: RegExp): AdapterSignal | nu
   }
   const error = text.match(ERROR_PATTERN)?.[0]
   if (error) return { state: 'error', reason: error }
-  if (/\b(?:allow|approve|confirm|permission)\b|press enter|\by\/n\b/i.test(text)) {
+  // "allow/approve/confirm/permission" alone is too common in ordinary prose (docs,
+  // commit messages); only trust it as a live prompt when it reads like one (ends in
+  // ':' or '?', the shape of an interactive question). "y/n" and "press enter" are
+  // specific enough on their own to keep matching anywhere.
+  if (/\b(?:allow|approve|confirm|permission)\b[^\n]{0,24}[?:]\s*$|press enter|\by\/n\b/im.test(text)) {
     return { state: 'waiting', reason: '사용자 확인 또는 권한 승인을 기다리는 중' }
   }
   if (readyPattern.test(text)) return { state: 'ready' }

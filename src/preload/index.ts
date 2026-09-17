@@ -124,7 +124,8 @@ const api: PreloadApi = {
   },
   git: {
     diff: (runId: string): Promise<GitDiffResult> => ipcRenderer.invoke('git:diff', runId),
-    merge: (runId: string): Promise<GitMergeResult> => ipcRenderer.invoke('git:merge', runId)
+    merge: (runId: string, confirmed?: boolean): Promise<GitMergeResult> =>
+      ipcRenderer.invoke('git:merge', runId, confirmed)
   },
   teamCapacity: {
     list: (): Promise<Record<string, number>> => ipcRenderer.invoke('team-capacity:list'),

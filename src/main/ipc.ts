@@ -39,7 +39,17 @@ export function registerIpcHandlers(): void {
   taskRecovery.start()
   ipcMain.handle('app:boot-id', () => taskRecovery.bootId)
   ipcMain.handle('pty:spawn', (event, options: PtySpawnOptions = {}): PtySpawnResult => {
-    const command = options.command ?? (process.platform === 'win32' ? 'powershell.exe' : 'bash')
+    const defaultShell = process.platform === 'win32' ? 'powershell.exe' : 'bash'
+    const command = options.command ?? defaultShell
+    // Only ever run a shell the user explicitly registered as a CLI template (or the
+    // bare fallback shell) - never an arbitrary command string handed in over IPC.
+    if (options.command) {
+      const allowed = new Set(agentTemplateStore.list().map((template) => template.command))
+      allowed.add(defaultShell)
+      if (!allowed.has(options.command)) {
+        throw new Error('등록되지 않은 CLI 명령은 실행할 수 없습니다. 설정에서 템플릿을 먼저 등록해주세요.')
+      }
+    }
     const cwd = workspaceFiles().path(options.cwd ?? workspaceStore.get())
     const ptyId = ptyManager.spawn({ ...options, command, cwd }, event.sender)
     return { ptyId }
@@ -238,7 +248,7 @@ export function registerIpcHandlers(): void {
     return { ...result, branch: run.worktreeBranch }
   })
 
-  ipcMain.handle('git:merge', async (_event, runId: string): Promise<GitMergeResult> => {
+  ipcMain.handle('git:merge', async (_event, runId: string, confirmed?: boolean): Promise<GitMergeResult> => {
     const run = instanceManager.getRun(runId)
     if (!run || !run.worktreeBranch) {
       return { ok: false, message: 'Git 저장소가 아니어서 병합할 수 없습니다.' }
@@ -247,6 +257,15 @@ export function registerIpcHandlers(): void {
       const task = taskRecovery.list().find(item => item.projectPath === run.repoRoot && item.repository?.featureBranch === run.worktreeBranch)
       if (!task || task.stage !== 'completed' || !task.repository?.url) {
         return { ok: false, message: '모든 Phase와 검증이 최종 완료된 뒤 main에 병합할 수 있습니다.' }
+      }
+      // 에이전트의 자기 완료 보고만으로는 origin/main에 푸시하지 않는다. 사람이 diff를 보고
+      // 명시적으로 재확인해야만(confirmed:true) 실제 병합·푸시를 수행한다.
+      if (!confirmed) {
+        return {
+          ok: false,
+          requiresConfirmation: true,
+          message: 'main에 병합하면 origin/main에 즉시 푸시됩니다. diff를 확인한 뒤 다시 눌러 진행을 확정해주세요.'
+        }
       }
       try {
         return { ok: true, message: await mergeTaskFeature(workspaceFiles(), run.repoRoot, run.cwd, run.worktreeBranch, task.repository.url) }

@@ -109,3 +109,20 @@ feature/main에 실리는 것을 잡아줄 자동 안전망이 전혀 없다.
 가장 먼저 손봐야 할 지점은 1번이다 — 개별 코드는 방어적으로 잘 짜여 있지만, 그 위에 얹힌 제품
 정책 자체가 "LLM 에이전트의 자기 완료 선언 → 무확인 main 자동 병합·푸시"를 전제로 하고 있고,
 그 완료 판정마저 휴리스틱에 의존한다.
+
+## 조치 결과 (2026-09-18)
+
+| # | 항목 | 상태 | 조치 내용 |
+| --- | --- | --- | --- |
+| 1 | 자기보고 완료 → 무확인 main 병합·푸시 | 완료 | `git:merge`가 `confirmed:true` 없이는 실제 병합·푸시를 실행하지 않고 `requiresConfirmation`만 반환하도록 변경(`src/main/ipc.ts`). `DiffPanel`이 이 신호를 받으면 실제 진행 여부를 다시 확인한 뒤에만 두 번째 호출을 보냄(`DiffPanel.tsx`). 완료 자기보고도 `checks`가 비어 있으면 더 이상 `completed`로 인정하지 않음(`taskRecoveryStore.ts`). `OPERATING_POLICY.md`/`README.md`의 "추가 확인 없이 main 푸시" 문구를 "대표가 재확인해야 푸시"로 수정. |
+| 2 | 정규식 오탐 가능성 | 완료 | `ERROR_PATTERN`에 인용부호/백틱으로 감싼 언급은 제외하는 lookaround 추가, 대기 판정의 `allow/approve/confirm/permission` 키워드는 실제 질문형 문장(`?`/`:`로 끝나는 짧은 구절)에서만 인정하도록 좁힘(`cliAdapters.ts`). 기존 어댑터 테스트는 모두 통과. |
+| 3 | 에셋 비대화 | 부분 완료 | 코드 전체에서 미참조가 확인된 `characters/complete-v5`(20개 PNG)와 그 생성 스크립트 `scripts/build-character-v5-assets.py`를 삭제. 현재 작업 중인 `seated-v3`/`seated-v4`(미커밋 WIP)는 사용자 작업 중이라 건드리지 않음 — 정리 여부는 해당 작업이 끝난 뒤 별도로 판단 필요. |
+| 4 | CI 부재 | 완료 | `.github/workflows/ci.yml` 추가: push/PR마다 typecheck·build·비용 없는 통합 테스트를 Windows 러너에서 실행. 추가 과정에서 실제로 실행해보니 가구 에셋 개수 단언이 최근 회의 테이블 추가 이후 갱신되지 않아 실패 중이었고(`furnitureAssets.length` 13→15), `conference-table-v1/side-v1.png`, `side-table-v2.png` 테두리에 거의 보이지 않는 잔여 알파(1/255) 픽셀이 남아 있어 투명 테두리 검증에 걸렸다. 둘 다 고쳐 `npm run test:integration`이 다시 깨끗하게 통과하도록 함 — CI 부재가 실제로 회귀를 놓치고 있었다는 걸 보여주는 사례. |
+| 5 | `OfficeScene.ts` God object | 보류 | 2,835줄짜리 핵심 렌더링 씬을 실행 검증(앱 구동) 없이 구조만 보고 쪼개는 것은 회귀 위험이 커서 이번 조치에서는 보류함. 별도 Phase로 붙잡고 실제 오피스 화면에서 동작을 확인하며 진행할 것을 권장. |
+| 6 | `sandbox:false` + `pty:spawn` 무검증 | 완료 | 두 창 모두 `sandbox: true`로 전환(preload가 `contextBridge`/`ipcRenderer`만 사용해 호환됨). `pty:spawn` IPC가 등록된 템플릿 명령 또는 기본 셸이 아닌 임의 `command`는 거부하도록 검증 추가(`ipc.ts`). |
+| — | LF/CRLF 노이즈 | 완료 | `.gitattributes` 추가(`text=auto eol=lf`, 이미지 `binary`). |
+
+`npm run typecheck`, `test:integration`, `test:movement`, `test:editor-layering`, `test:recovery`,
+`test:recovery-ui`, `test:meeting-ui`, `npm run build`가 모두 통과함을 확인했다. 앱을 직접 띄워보는
+런타임 확인(Electron 창 구동)은 하지 않았다 — 특히 5번(보류)과 6번의 `sandbox:true` 전환은 코드상
+호환되지만 실제 창 동작으로 검증된 것은 아니다.

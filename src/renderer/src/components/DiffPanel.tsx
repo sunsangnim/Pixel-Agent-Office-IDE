@@ -60,6 +60,14 @@ function DiffPanel({ runId, title, onClose, onSendComments }: DiffPanelProps) {
   const merge = async (): Promise<void> => {
     setMergeStatus('병합 중...')
     const result = await window.api.git.merge(runId)
+    if (result.requiresConfirmation) {
+      setMergeStatus(null)
+      if (!window.confirm(`${result.message}\n\n계속 진행해 origin/main에 푸시할까요?`)) return
+      setMergeStatus('병합 중...')
+      const confirmedResult = await window.api.git.merge(runId, true)
+      setMergeStatus(confirmedResult.message)
+      return
+    }
     setMergeStatus(result.message)
   }
 

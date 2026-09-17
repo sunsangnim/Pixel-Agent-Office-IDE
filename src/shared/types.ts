@@ -303,11 +303,13 @@ export interface GitDiffResult {
 export interface GitMergeResult {
   ok: boolean
   message: string
+  /** main 병합·푸시처럼 되돌리기 어려운 동작은 confirmed:true 없이는 실행하지 않고 이 값만 true로 반환한다. */
+  requiresConfirmation?: boolean
 }
 
 export interface GitApi {
   diff(runId: string): Promise<GitDiffResult>
-  merge(runId: string): Promise<GitMergeResult>
+  merge(runId: string, confirmed?: boolean): Promise<GitMergeResult>
 }
 
 export interface AgentInstanceApi {

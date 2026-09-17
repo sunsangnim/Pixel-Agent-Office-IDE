@@ -289,7 +289,8 @@ function verifyLivingOfficeAndRoster(): void {
   }
   const furnitureDirectory = path.join(process.cwd(), 'src', 'renderer', 'src', 'assets', 'pixel-office', 'furniture')
   const furnitureAssets = fs.readdirSync(furnitureDirectory).filter((file) => file.endsWith('.png'))
-  assert.equal(furnitureAssets.length, 13)
+  // 13 directional furniture types + the 2 flat, non-directional conference table pieces.
+  assert.equal(furnitureAssets.length, 15)
   furnitureAssets.forEach((file) => {
     const furniture = PNG.sync.read(fs.readFileSync(path.join(furnitureDirectory, file)))
     assert.ok(furniture.width >= 32 && furniture.height >= 32)

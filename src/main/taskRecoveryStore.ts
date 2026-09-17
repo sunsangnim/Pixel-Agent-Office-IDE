@@ -173,8 +173,8 @@ export class TaskRecoveryStore {
       `작업 전에 반드시 통합 SRS → 개발 기록 → git log 및 git status/git diff 순서로 읽고 현재 업무와 완료/미완료 범위를 먼저 정리하세요. 필요하면 관련 커밋을 git show로 확인하세요. 이전 세션 대화는 사용하지 않습니다. 기존 미커밋 변경을 보존하고 이미 끝난 작업을 반복하지 마세요.\n${git}\n\n` +
       `${command.stage === 'planning' ? '기획 단계입니다. 문서 작성까지만 진행하고 구현은 사용자 승인을 기다리세요.' : '사용자 승인을 받은 구현 단계입니다. 남은 작업을 이어서 수행하세요.'}\n\n` +
       `각 명령·작업(테스트 포함)이 끝날 때마다 ${task.developmentLogPath}에 수행 내용, 변경 파일, 검증 명령과 결과, 관련 커밋, 미커밋 변경, 남은 일과 다음 단계를 추가하세요. 기록을 덮어쓰거나 마지막까지 미루지 마세요.\n` +
-      `이번 지시를 마치면 개발 기록을 먼저 갱신하고 ${receipt}에 아래 JSON을 저장하세요. 실제 검증으로 완료를 확인한 경우에만 outcome을 completed로 쓰세요. 미완료는 incomplete, 막힘은 blocked입니다. 이 파일이 없으면 IDE는 작업이 끝났다고 판단하지 않습니다.\n` +
-      JSON.stringify({ commandId: command.id, attemptId: command.attemptId, outcome: 'completed', summary: '수행 결과', changedFiles: [], checks: [], nextSteps: [], reviewed: { srs: true, developmentLog: true, git: true } }) +
+      `이번 지시를 마치면 개발 기록을 먼저 갱신하고 ${receipt}에 아래 JSON을 저장하세요. 실제로 실행해 확인한 검증 명령과 그 결과를 checks에 하나 이상 적은 경우에만 outcome을 completed로 쓰세요. checks가 비어 있으면 IDE가 completed로 받아들이지 않습니다. 미완료는 incomplete, 막힘은 blocked입니다. 이 파일이 없으면 IDE는 작업이 끝났다고 판단하지 않습니다.\n` +
+      JSON.stringify({ commandId: command.id, attemptId: command.attemptId, outcome: 'completed', summary: '수행 결과', changedFiles: [], checks: ['실행한 검증 명령과 결과를 적으세요 (예: npm run typecheck 통과)'], nextSteps: [], reviewed: { srs: true, developmentLog: true, git: true } }) +
       `\n작업실 밖에는 파일을 생성하거나 수정하지 마세요.\n\n[원래 요청]\n${task.request}\n\n[이번 지시]\n${command.prompt}` +
       (command.stage === 'execution' ? `\n\n${taskGitPolicy(task.taskId, task.repository?.featureBranch, task.gitCoordinatorProfileId)}` : '')
   }
@@ -188,9 +188,11 @@ export class TaskRecoveryStore {
     let result
     try { result = JSON.parse(readFileSync(receipt, 'utf8')) } catch { return false }
     if (result.commandId !== command.id || result.attemptId !== command.attemptId ||
-      !['completed', 'incomplete', 'blocked'].includes(result.outcome) || typeof result.summary !== 'string' ||
+      !['completed', 'incomplete', 'blocked'].includes(result.outcome) || typeof result.summary !== 'string' || !result.summary.trim() ||
       ![result.changedFiles, result.checks, result.nextSteps].every(value => Array.isArray(value) && value.every(item => typeof item === 'string')) ||
-      !['srs', 'developmentLog', 'git'].every(key => result.reviewed?.[key] === true)) return false
+      !['srs', 'developmentLog', 'git'].every(key => result.reviewed?.[key] === true) ||
+      // "완료"는 최소 하나의 실제 검증 항목을 스스로 적어야만 인정한다 - 빈 checks로는 완료 처리하지 않는다.
+      (result.outcome === 'completed' && result.checks.length === 0)) return false
     const log = this.files.path(task.developmentLogPath)
     if (!existsSync(log) || statSync(log).mtimeMs < Date.parse(command.startedAt)) return false
     const attempt = command.attemptId
