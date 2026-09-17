@@ -33,7 +33,7 @@ buildSync({
   banner: { js: 'function emptyAssetGlob() { return {} }' }, logLevel: 'silent'
 })
 const {
-  OfficeScene, IdleActivity, ActorStateMachine, CharacterGait, actionForPresence, resolveOfficePresence,
+  OfficeScene, IdleActivity, PantrySchedule, PANTRY_VISIT_INTERVAL_MS, ActorStateMachine, CharacterGait, actionForPresence, resolveOfficePresence,
   findOfficePath, hasOfficeLineOfSight, isOfficePositionWalkable, routeFor, WAYPOINTS,
   DEFAULT_LAYOUT_SEED, actorCollisionRect, OFFICE_WALL_COLLISIONS, REPRESENTATIVE_MEETING_CHAIR_ID,
   REPRESENTATIVE_CHAIR_ID, REPRESENTATIVE_DESK_ID, migrateRepresentativeFurniture, isInRepresentativeRoom,
@@ -241,16 +241,51 @@ assert.equal(resolveOfficePresence(profiles, [instance], { pty: { state: 'waitin
 assert.equal(resolveOfficePresence(profiles, [], {}, true, new Set()).lead, 'meeting')
 assert.equal(resolveOfficePresence(profiles, [], {}, true, new Set(['lead'])).lead, 'offDuty')
 const routine = new IdleActivity(() => 0)
-assert.equal(routine.update('deskIdle', 0, 'deskIdle', true), 'deskIdle')
-assert.equal(routine.update('deskIdle', 59_999, 'deskIdle', true), 'deskIdle')
-assert.equal(routine.update('deskIdle', 60_000, 'deskIdle', true), 'pantry')
-assert.equal(routine.update('deskIdle', 80_000, null, true), 'pantry', 'rest time starts on arrival, not departure')
-assert.equal(routine.update('deskIdle', 81_000, 'pantry', true), 'pantry')
-assert.equal(routine.update('deskIdle', 88_999, 'pantry', true), 'pantry')
-assert.equal(routine.update('deskIdle', 89_000, 'pantry', true), 'deskIdle')
+assert.equal(routine.update('deskIdle', 0, 'deskIdle'), 'deskIdle')
+assert.equal(routine.update('deskIdle', 299_999, 'deskIdle'), 'deskIdle')
+assert.equal(routine.update('deskIdle', 300_000, 'deskIdle', true), 'pantry')
+assert.equal(routine.update('deskIdle', 320_000, null), 'pantry', 'rest time starts on arrival, not departure')
+assert.equal(routine.update('deskIdle', 321_000, 'pantry'), 'pantry')
+assert.equal(routine.update('deskIdle', 328_999, 'pantry'), 'pantry')
+assert.equal(routine.update('deskIdle', 329_000, 'pantry'), 'deskIdle')
 assert.equal(routine.awayFromDesk, true, 'return trip retains the visitor slot')
-assert.equal(routine.update('working', 89_001, null, true), 'working')
+assert.equal(routine.update('working', 329_001, null), 'working')
 assert.equal(routine.awayFromDesk, false)
+
+const leads = ['claude', 'codex', 'antigravity'].map(id => ({ id, available: true }))
+assert.equal(PANTRY_VISIT_INTERVAL_MS, 300_000)
+for (const random of [() => 0, () => 0.999, () => 0.5]) {
+  const schedule = new PantrySchedule(random)
+  const selected = []
+  assert.equal(schedule.takeTurn(0, leads, false), null)
+  for (let turn = 1; turn <= 12; turn++) {
+    const now = turn * PANTRY_VISIT_INTERVAL_MS
+    const participants = turn % 2 ? leads : leads.slice().reverse()
+    assert.equal(schedule.takeTurn(now - 1, participants, false), null, 'no visit before five full minutes')
+    const visitor = schedule.takeTurn(now, participants, false)
+    assert.ok(leads.some(lead => lead.id === visitor))
+    assert.notEqual(visitor, selected.at(-1), 'no consecutive repeat, including across rounds')
+    selected.push(visitor)
+    assert.equal(schedule.takeTurn(now, participants, false), null, 'only one grant per interval')
+    if (turn % 3 === 0) assert.equal(new Set(selected.slice(-3)).size, 3, 'each lead visits once per round')
+  }
+}
+assert.notEqual(new PantrySchedule(() => 0).takeTurn(300_000, leads, false),
+  new PantrySchedule(() => 0.999).takeTurn(300_000, leads, false), 'the first visitor is randomly selected')
+const delayedSchedule = new PantrySchedule(() => 0)
+assert.equal(delayedSchedule.takeTurn(300_000, leads, true), null)
+assert.equal(delayedSchedule.takeTurn(900_000, leads, true), null, 'occupied or returning visitors block the next turn')
+assert.equal(delayedSchedule.takeTurn(900_001, leads, false), 'antigravity')
+assert.equal(delayedSchedule.takeTurn(1_200_000, leads, false), null, 'no catch-up burst after waiting')
+const busyLeads = leads.map(lead => ({ ...lead, available: lead.id !== 'codex' }))
+assert.equal(delayedSchedule.takeTurn(1_200_001, busyLeads, false), 'claude')
+assert.equal(delayedSchedule.takeTurn(1_500_001, busyLeads, false), null, 'a busy lead retains their turn')
+assert.equal(delayedSchedule.takeTurn(1_500_001, leads, false), 'codex')
+assert.equal(delayedSchedule.takeTurn(1_500_002, leads, false), null, 'an interrupted visit cannot reset the shared cooldown')
+const soloSchedule = new PantrySchedule(() => 0)
+assert.equal(soloSchedule.takeTurn(300_000, [leads[0]], false), 'claude')
+assert.equal(soloSchedule.takeTurn(600_000, [leads[0]], false), 'claude', 'a lone on-duty lead can still take breaks')
+console.log('PASS shared five-minute pantry interval, randomized fair rounds, no repeats, busy turns and occupied slots')
 const machine = new ActorStateMachine('pantry')
 machine.arrive(0)
 assert.equal(machine.requestPresence('working'), true, 'work interrupts a finite break action')
@@ -481,21 +516,34 @@ assert.deepEqual([edited.container.x, edited.container.y], [chair.x, chair.y])
 console.log('PASS edit pause, pending commands, changed chair goals, and work standing still')
 
 const crowd = createScene()
+crowd.pantrySchedule = new PantrySchedule(() => 0)
 const employees = [actor('claude', 0), actor('codex', 1), actor('antigravity', 2), actor('assistant', 2, 'deskIdle', 1)]
 snapshot(crowd, employees)
 for (const member of crowd.actors.values()) member.idleActivity = new IdleActivity(() => 0)
 advance(crowd, 45)
 for (const member of crowd.actors.values()) assert.equal(member.settled, true, member.actor.profileId + ' must reach its desk')
-let visited = false
-let returned = false
-advance(crowd, 120, () => {
-  const active = [...crowd.actors.values()].filter((member) => member.idleActivity.awayFromDesk)
-  assert.ok(active.length <= 1, 'occasional visits must not send the whole office to the pantry')
-  if (active.some((member) => member.actor.presence === 'pantry' && member.settled)) visited = true
-  if (visited && [...crowd.actors.values()].some((member) => member.idleActivity.awayFromDesk && member.actor.presence === 'deskIdle')) returned = true
-})
-assert.equal(visited, true, 'a character reaches the pantry')
-assert.equal(returned, true, 'the visit has a return route')
+const pantryVisitors = []
+for (let turn = 1; turn <= 3; turn++) {
+  crowd.simulationTimeMs = turn * PANTRY_VISIT_INTERVAL_MS - 1
+  crowd.update(0, 0)
+  assert.ok([...crowd.actors.values()].every(member => !member.idleActivity.awayFromDesk), 'no early departure')
+  crowd.update(0, 1)
+  const departing = [...crowd.actors.values()].filter(member => member.idleActivity.awayFromDesk)
+  assert.equal(departing.length, 1)
+  pantryVisitors.push(departing[0].actor.profileId)
+  let visited = false
+  let returned = false
+  advance(crowd, 90, () => {
+    const active = [...crowd.actors.values()].filter(member => member.idleActivity.awayFromDesk)
+    assert.ok(active.length <= 1, 'only one visitor, including the return trip')
+    if (active.some(member => member.actor.presence === 'pantry' && member.settled)) visited = true
+    if (visited && active.some(member => member.actor.presence === 'deskIdle')) returned = true
+  })
+  assert.equal(visited, true, 'the selected character reaches the pantry')
+  assert.equal(returned, true, 'the visit has a return route')
+  assert.ok([...crowd.actors.values()].every(member => !member.idleActivity.awayFromDesk), 'each visit finishes at the desk')
+}
+assert.deepEqual(pantryVisitors.slice().sort(), ['antigravity', 'claude', 'codex'], 'only the three leads take automatic turns')
 snapshot(crowd, employees.map((employee) => ({ ...employee, presence: 'meeting' })))
 advance(crowd, 45)
 for (const member of crowd.actors.values()) {
@@ -503,7 +551,7 @@ for (const member of crowd.actors.values()) {
   assert.equal(member.settled, true, member.actor.profileId + ' must settle for the requested meeting')
   assert.equal(member.sprite.anims.isPlaying, false)
 }
-console.log('PASS four-person arrivals, occasional pantry visits/returns, and an explicit meeting')
+console.log('PASS four-person arrivals, three spaced lead pantry turns/returns, and an explicit meeting')
 
 const fullMeeting = createScene()
 const fullAttendees = Array.from({ length: 8 }, (_, index) => actor(`guest-${index}`, index % 3, 'meeting', Math.floor(index / 3)))

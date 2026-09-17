@@ -76,7 +76,7 @@ import {
   REPRESENTATIVE_WORK_FRAME_PADDING, representativeWorkPixels, representativeWorkPoseAt, workHandPixels
 } from './representativeWorkAnimation'
 import { measureStaffWorkSheet, staffWorkTexture } from './staffWorkAnimation'
-import { IdleActivity } from './idleActivity'
+import { IdleActivity, PantrySchedule } from './idleActivity'
 import { CharacterGait, type CharacterPose } from './characterGait'
 import { STAFF_WALK_SHEETS, WALK_ROW_NAMES, STAFF_SEATED_SHEETS, SEATED_ROW_NAMES, STAFF_PANTRY_SHEETS } from './staffWalkSheets'
 import {
@@ -305,6 +305,7 @@ export class OfficeScene extends Phaser.Scene {
   private floorLayers: Phaser.GameObjects.TileSprite[] = []
   private selectedFloor = DEFAULT_FLOOR_TEXTURE
   private simulationTimeMs = 0
+  private pantrySchedule = new PantrySchedule()
   private navigationRevision = 0
   private navigationLayoutKey = ''
   private meetingAssignmentKey = ''
@@ -2273,19 +2274,28 @@ export class OfficeScene extends Phaser.Scene {
       ? `|representative:${Math.round(representative.x / 8)}:${Math.round(representative.y / 8)}` : '')
   }
 
-  private effectiveActor(view: ActorView): OfficeGameActor {
-    const pantryAvailable = ![...this.actors.values()].some((other) =>
-      other !== view && other.idleActivity.awayFromDesk)
+  private effectiveActor(view: ActorView, visitAllowed = false): OfficeGameActor {
     const presence = view.idleActivity.update(
-      view.requestedActor.presence, this.simulationTimeMs, view.settled ? view.actor.presence : null, pantryAvailable
+      view.requestedActor.presence, this.simulationTimeMs, view.settled ? view.actor.presence : null, visitAllowed
     )
     return { ...view.requestedActor, presence }
   }
 
   private updateIdleActivities(): void {
+    const views = [...this.actors.values()]
+    const pantryOccupied = Boolean(this.representativePantryTarget || this.representativePantryAction) ||
+      views.some((view) => view.idleActivity.awayFromDesk ||
+        view.actor.presence === 'pantry' || view.actor.presence === 'pantryDoor' ||
+        view.requestedActor.presence === 'pantry' || view.requestedActor.presence === 'pantryDoor')
+    const visitor = this.pantrySchedule.takeTurn(this.simulationTimeMs,
+      views.filter((view) => view.requestedActor.slotIndex === 0).map((view) => ({
+        id: view.requestedActor.profileId,
+        available: view.requestedActor.presence === 'deskIdle' && view.actor.presence === 'deskIdle' &&
+          view.settled && !view.departureBlocked && !view.trafficYield
+      })), pantryOccupied)
     for (const view of this.actors.values()) {
       if (view.departureBlocked && this.simulationTimeMs < view.retryAt) continue
-      const actor = this.effectiveActor(view)
+      const actor = this.effectiveActor(view, view.actor.profileId === visitor)
       const changed = actor.presence !== view.actor.presence
       if (view.trafficYield && !changed) {
         if (!view.trafficYield.arrived || !this.trafficRequesterCleared(view)) continue
