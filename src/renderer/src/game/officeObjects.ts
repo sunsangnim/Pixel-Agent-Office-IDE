@@ -1,4 +1,5 @@
 import { MEETING_SEATS, TEAM_DESKS, WAYPOINTS, type WorldPoint } from './officeWorld'
+import { DEFAULT_LAYOUT_SEED, REPRESENTATIVE_CHAIR_ID, REPRESENTATIVE_DESK_ID } from './layoutPersistence'
 
 export type OfficeObjectType = 'door' | 'chair' | 'desk' | 'coffee' | 'snack' | 'sofa' | 'bookcase'
 
@@ -20,6 +21,9 @@ export const OFFICE_OBJECTS: OfficeObjectDefinition[] = [
   { id: 'snack-counter', type: 'snack', position: { x: 220, y: 105 }, approachPoint: { x: 220, y: 155 }, facing: 'up' },
   { id: 'representative-sofa', type: 'sofa', position: { x: 895, y: 455 }, approachPoint: { x: 895, y: 495 }, snapPoint: { x: 895, y: 458 }, facing: 'down', frontDepthOffset: 8 },
   { id: 'representative-bookcase', type: 'bookcase', position: { x: 912, y: 568 }, approachPoint: { x: 865, y: 568 }, facing: 'right' },
+  { id: REPRESENTATIVE_DESK_ID, type: 'desk', position: DEFAULT_LAYOUT_SEED[REPRESENTATIVE_DESK_ID], approachPoint: { x: 800, y: 912 }, facing: 'up' },
+  { id: REPRESENTATIVE_CHAIR_ID, type: 'chair', position: DEFAULT_LAYOUT_SEED[REPRESENTATIVE_CHAIR_ID],
+    approachPoint: { x: 800, y: 912 }, snapPoint: DEFAULT_LAYOUT_SEED[REPRESENTATIVE_CHAIR_ID], facing: 'up', frontDepthOffset: 12 },
   ...TEAM_DESKS.flatMap((team, teamIndex) => team.flatMap((point, slotIndex) => [
     { id: `desk-${teamIndex}-${slotIndex}`, type: 'desk' as const, position: point, approachPoint: { x: point.x, y: point.y + 48 }, facing: 'up' as const },
     { id: `chair-${teamIndex}-${slotIndex}`, type: 'chair' as const, position: { x: point.x, y: point.y + 35 }, approachPoint: { x: point.x, y: point.y + 55 }, snapPoint: point, facing: 'up' as const, frontDepthOffset: 12 }

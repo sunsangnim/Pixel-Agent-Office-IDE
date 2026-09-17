@@ -189,8 +189,8 @@ function verifyLivingOfficeAndRoster(): void {
   assert.ok(rows.every((row) => row.width > 0 && row.height > 0))
 
   assert.equal(TEAM_DESKS.length, 3)
-  assert.deepEqual(TEAM_DESKS.map((team) => team.length), [1, 1, 2])
-  assert.equal(new Set(TEAM_DESKS.flat().map((point) => `${point.x}:${point.y}`)).size, 4)
+  assert.deepEqual(TEAM_DESKS.map((team) => team.length), [1, 1, 1])
+  assert.equal(new Set(TEAM_DESKS.flat().map((point) => `${point.x}:${point.y}`)).size, 3)
   assert.equal(new Set(MEETING_SEATS.map((point) => `${point.x}:${point.y}`)).size, 8)
   const arrivingActor: OfficeGameActor = {
     profileId: 'test', instanceId: null, displayName: 'test', color: '#fff', rosterIndex: 1,
@@ -248,6 +248,8 @@ function verifyLivingOfficeAndRoster(): void {
   assert.equal(actionForPresence('pantry', 0), 'eating')
   assert.equal(actionForPresence('pantry', 1), 'drinking')
   assert.equal(OFFICE_OBJECTS.filter((object) => object.type === 'desk').length, 4)
+  assert.equal(objectById('desk-2-1'), undefined, 'the representative desk is not an Antigravity child seat')
+  assert.equal(objectById('representative-chair')?.type, 'chair')
   assert.equal(OFFICE_OBJECTS.filter((object) => object.id.startsWith('meeting-chair-')).length, 8)
   assert.deepEqual(objectById('representative-sofa')?.snapPoint, { x: 895, y: 458 })
   const savedWorld = upsertSavedActor(parseOfficeWorldSave(null), {
