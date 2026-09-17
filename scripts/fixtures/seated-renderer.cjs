@@ -57,6 +57,23 @@ function createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seate
     return read(key.startsWith('furniture-directional-')
       ? `furniture/directional/${key.slice(22)}-v1.png` : 'furniture/office-chair-v2.png')
   }
+  function workFrame(direction) {
+    const original = read('characters/ceo-seated-v1.png')
+    const work = read('characters/ceo-desk-work-v1.png')
+    const index = ['front', 'left', 'back', 'right'].indexOf(direction)
+    const { source, destination } = measureCharacterSheet(original.data, original.width, 'ceo-seated-sheet')[index]
+    const data = new Uint8ClampedArray(312 * 360 * 4)
+    const cellX = (index % 2) * original.width / 2
+    const cellY = Math.floor(index / 2) * original.height / 2
+    for (let y = 0; y < 360; y++) for (let x = 0; x < 312; x++) {
+      const sx = Math.floor(source.x + (x + 0.5 - destination.x) * source.width / destination.width)
+      const sy = Math.floor(source.y + (y + 0.5 - destination.y) * source.height / destination.height)
+      if (sx < cellX || sx >= cellX + original.width / 2 || sy < cellY || sy >= cellY + original.height / 2) continue
+      const from = (sy * work.width + sx) * 4
+      data.set(work.data.subarray(from, from + 4), (y * 312 + x) * 4)
+    }
+    return data
+  }
   function install(scene) {
     scene.furnitureTexturePixels = furniturePixels
     scene.seatedFrameAnchor = (sprite) => characterFrame(sprite.texture.key, sprite.frame).seatAnchor
@@ -64,7 +81,7 @@ function createSeatedRenderer({ measureSeatedSheet, measureCharacterSheet, seate
     scene.renderSeatedForeground = (sprite, ...rest) => render.call(scene,
       { ...sprite, frame: characterFrame(sprite.texture.key, sprite.frame) }, ...rest)
   }
-  return { install, characterFrame, furniturePixels }
+  return { install, characterFrame, furniturePixels, workFrame }
 }
 
 module.exports = { createSeatedRenderer }

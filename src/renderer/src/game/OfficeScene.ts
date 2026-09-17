@@ -5,6 +5,7 @@ import row3 from '../assets/pixel-office/characters/corporate-roster-row-3-v1.pn
 import row4 from '../assets/pixel-office/characters/corporate-roster-row-4-v1.png'
 import ceoAnimationSheet from '../assets/pixel-office/characters/ceo-walk-cycle-v3.png'
 import ceoSeatedSheet from '../assets/pixel-office/characters/ceo-seated-v1.png'
+import ceoDeskWorkSheet from '../assets/pixel-office/characters/ceo-desk-work-v1.png'
 import ceoPantrySheet from '../assets/pixel-office/characters/ceo-pantry-actions-v1.png'
 import speechBubbleAsset from '../assets/pixel-office/ui/speech-bubble-v1.png'
 import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-v2.png'
@@ -371,6 +372,7 @@ export class OfficeScene extends Phaser.Scene {
     ;[row1, row2, row3, row4].forEach((url, index) => this.load.image(`roster-row-${index}`, url))
     this.load.image('ceo-animation-sheet', ceoAnimationSheet)
     this.load.image('ceo-seated-sheet', ceoSeatedSheet)
+    this.load.image('ceo-desk-work-sheet', ceoDeskWorkSheet)
     this.load.image('ceo-pantry-sheet', ceoPantrySheet)
     this.load.image('speech-bubble', speechBubbleAsset)
     for (const { id, file } of STAFF_WALK_SHEETS) {
@@ -1828,16 +1830,39 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private createRepresentativeWorkFrames(): void {
-    const seated = this.textures.get('ceo-seated-sheet-frames')
-    const source = seated.getSourceImage() as HTMLCanvasElement
-    const input = source.getContext('2d')!
+    const seated = this.textures.get('ceo-seated-sheet').getSourceImage() as HTMLImageElement
+    const work = this.textures.get('ceo-desk-work-sheet').getSourceImage() as HTMLImageElement
+    const original = document.createElement('canvas')
+    original.width = seated.width
+    original.height = seated.height
+    const originalContext = original.getContext('2d')!
+    originalContext.drawImage(seated, 0, 0)
+    const measured = measureCharacterSheet(originalContext.getImageData(0, 0, seated.width, seated.height).data,
+      seated.width, 'ceo-seated-sheet')
+    const normalized = document.createElement('canvas')
+    normalized.width = CHARACTER_FRAME_WIDTH
+    normalized.height = CHARACTER_FRAME_HEIGHT
+    const input = normalized.getContext('2d')!
+    input.imageSmoothingEnabled = false
     const texture = this.textures.createCanvas(REPRESENTATIVE_WORK_TEXTURE,
       CHARACTER_FRAME_WIDTH * REPRESENTATIVE_WORK_POSES, CHARACTER_FRAME_HEIGHT * FURNITURE_DIRECTIONS.length)
     if (!texture) throw new Error('Could not create representative work frames')
     const context = texture.getContext()
     FURNITURE_DIRECTIONS.forEach((direction, row) => {
-      const frame = seated.get(`ceo-sit-${direction}`)
-      const pixels = input.getImageData(frame.cutX, frame.cutY, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
+      const index = ['front', 'left', 'back', 'right'].indexOf(direction)
+      const { source, destination } = measured[index]
+      // The raised-arm sheet preserves the original hips and feet. Use that
+      // original transform, including padding beyond its old arm bounds, so
+      // reaching forward never recenters or rescales the seated character.
+      const scaleX = destination.width / source.width
+      const scaleY = destination.height / source.height
+      const cellX = (index % 2) * seated.width / 2
+      const cellY = Math.floor(index / 2) * seated.height / 2
+      input.clearRect(0, 0, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
+      input.drawImage(work, cellX, cellY, seated.width / 2, seated.height / 2,
+        destination.x + (cellX - source.x) * scaleX, destination.y + (cellY - source.y) * scaleY,
+        seated.width / 2 * scaleX, seated.height / 2 * scaleY)
+      const pixels = input.getImageData(0, 0, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
       for (let pose = 0; pose < REPRESENTATIVE_WORK_POSES; pose += 1) {
         const output = context.createImageData(CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
         output.data.set(representativeWorkPixels(pixels.data, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT, direction, pose))
