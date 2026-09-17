@@ -194,11 +194,55 @@ export interface TaskWorkspace {
   specPath: string
   phasesPath: string
   readmePath: string
+  developmentLogPath: string
+}
+
+export type TaskStage = 'planning' | 'review' | 'execution' | 'completed' | 'cancelled'
+export interface TaskCommand {
+  id: string
+  attemptId: string
+  profileId: string
+  templateId: string
+  cwd: string
+  prompt: string
+  role: string
+  stage: 'planning' | 'execution'
+  status: 'queued' | 'running' | 'interrupted' | 'completed' | 'cancelled'
+  startedAt: string
+  summary?: string
+  recovered?: boolean
+}
+export interface TrackedTask extends TaskWorkspace {
+  request: string
+  projectPath: string
+  stage: TaskStage
+  mode: 'manual' | 'simple' | 'complex'
+  commands: TaskCommand[]
+  updatedAt: string
+}
+export interface TaskDispatch {
+  taskId: string
+  stage: 'planning' | 'execution'
+  mode?: TrackedTask['mode']
+  assignments: { instanceId: string; prompt: string; role: string }[]
+}
+export interface TaskRestoreResult {
+  bootId: string
+  tasks: TrackedTask[]
+  instances: AgentInstance[]
+  notices: string[]
 }
 
 export interface TaskApi {
   prepare(request: string): Promise<TaskWorkspace>
   readSpec(specPath: string): Promise<string>
+  dispatch(request: TaskDispatch): Promise<void>
+  approve(taskId: string): Promise<void>
+  cancel(taskId: string): Promise<void>
+  restore(): Promise<TaskRestoreResult>
+  resume(projectPath: string): Promise<TaskRestoreResult>
+  list(): Promise<TrackedTask[]>
+  onChanged(callback: (tasks: TrackedTask[]) => void): () => void
 }
 
 export type GitDiffLineType = 'context' | 'add' | 'del'
@@ -242,6 +286,7 @@ export interface GitApi {
 
 export interface AgentInstanceApi {
   list(): Promise<AgentInstance[]>
+  ensureProject(instanceIds: string[]): Promise<AgentInstance[]>
   create(templateId: string): Promise<AgentInstance[]>
   createChild(parentInstanceId: string): Promise<AgentInstance[]>
   restart(instanceId: string): Promise<AgentInstance[]>
@@ -250,6 +295,7 @@ export interface AgentInstanceApi {
 
 export interface SystemApi {
   openSettings(): void
+  getBootId(): Promise<string>
 }
 
 export interface PreloadApi {

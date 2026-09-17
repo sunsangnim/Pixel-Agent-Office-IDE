@@ -72,10 +72,22 @@ const api: PreloadApi = {
   },
   tasks: {
     prepare: (request: string) => ipcRenderer.invoke('tasks:prepare', request),
-    readSpec: (specPath: string): Promise<string> => ipcRenderer.invoke('tasks:read-spec', specPath)
+    readSpec: (specPath: string): Promise<string> => ipcRenderer.invoke('tasks:read-spec', specPath),
+    dispatch: request => ipcRenderer.invoke('tasks:dispatch', request),
+    approve: taskId => ipcRenderer.invoke('tasks:approve', taskId),
+    cancel: taskId => ipcRenderer.invoke('tasks:cancel', taskId),
+    restore: () => ipcRenderer.invoke('tasks:restore'),
+    resume: projectPath => ipcRenderer.invoke('tasks:resume', projectPath),
+    list: () => ipcRenderer.invoke('tasks:list'),
+    onChanged: callback => {
+      const listener = (_event: Electron.IpcRendererEvent, tasks: import('../shared/types').TrackedTask[]) => callback(tasks)
+      ipcRenderer.on('tasks:changed', listener)
+      return () => ipcRenderer.removeListener('tasks:changed', listener)
+    }
   },
   instances: {
     list: (): Promise<AgentInstance[]> => ipcRenderer.invoke('instances:list'),
+    ensureProject: (instanceIds: string[]): Promise<AgentInstance[]> => ipcRenderer.invoke('instances:ensure-project', instanceIds),
     create: (templateId: string): Promise<AgentInstance[]> =>
       ipcRenderer.invoke('instances:create', templateId),
     createChild: (parentInstanceId: string): Promise<AgentInstance[]> =>
@@ -96,6 +108,7 @@ const api: PreloadApi = {
     remove: (runId: string) => ipcRenderer.invoke('runs:remove', runId)
   },
   system: {
+    getBootId: () => ipcRenderer.invoke('app:boot-id'),
     openSettings: (): void => {
       ipcRenderer.send('settings:open')
     }

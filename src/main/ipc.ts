@@ -6,6 +6,7 @@ import { workspaceFiles, workspaceStore } from './workspaceStore'
 import { instanceManager } from './instanceManager'
 import { openSettingsWindow } from './windowManager'
 import { taskWorkspaceManager } from './taskWorkspaceManager'
+import { taskRecovery } from './taskRecovery'
 import { diffAgainstBase, mergeDeskBranch } from './gitWorktreeManager'
 import { teamCapacityStore } from './teamCapacityStore'
 import { buildAgentProfiles } from '../shared/agentProfiles'
@@ -16,7 +17,8 @@ import type {
   GitDiffResult,
   GitMergeResult,
   PtySpawnOptions,
-  PtySpawnResult
+  PtySpawnResult,
+  TaskDispatch
 } from '../shared/types'
 
 function broadcastTemplatesChanged(): void {
@@ -32,6 +34,8 @@ function broadcastTeamCapacityChanged(): void {
 }
 
 export function registerIpcHandlers(): void {
+  taskRecovery.start()
+  ipcMain.handle('app:boot-id', () => taskRecovery.bootId)
   ipcMain.handle('pty:spawn', (event, options: PtySpawnOptions = {}): PtySpawnResult => {
     const command = options.command ?? (process.platform === 'win32' ? 'powershell.exe' : 'bash')
     const cwd = workspaceFiles().path(options.cwd ?? workspaceStore.get())
@@ -43,9 +47,14 @@ export function registerIpcHandlers(): void {
     ptyManager.write(ptyId, data)
   })
 
-  ipcMain.on('pty:send-prompt', (_event, ptyId: string, prompt: string) => {
-    const files = workspaceFiles()
-    ptyManager.sendPrompt(ptyId, `[작업실 규칙]\n작업실: ${files.root}\n파일 생성·수정과 명령 실행은 이 작업실 안에서만 수행하세요. 폴더 밖 파일은 수정하지 마세요. IDE 자체의 필수 파일은 ${files.path(WORKSPACE_FOLDERS.required)} 아래 에셋·애니메이션·기존 작업으로 분류합니다. 가구·캐릭터·커피 등의 원본은 ${files.path(WORKSPACE_FOLDERS.assets)}, 애니메이션은 ${files.path(WORKSPACE_FOLDERS.animations)}, 이전 작업 자료는 ${files.path(WORKSPACE_FOLDERS.previous)}에 보관하며 임의로 덮어쓰지 마세요. 이번에 의뢰받은 작업의 SRS·PRD·PHASES·보고서는 ${files.path(TASK_DOCUMENTS_FOLDER)} 아래 작업별 폴더에 저장하세요. ${files.path(WORKSPACE_FOLDERS.outputs)}에는 사용자가 오피스에서 의뢰한 작업의 결과만 작업별 폴더에 저장하세요. IDE 자체 리소스를 산출물에 섞지 마세요.\n\n${prompt}`)
+  ipcMain.on('pty:send-prompt', async (event, ptyId: string, prompt: string) => {
+    try {
+      if (await taskRecovery.dispatchRelated(ptyId, prompt)) return
+      const files = workspaceFiles()
+      ptyManager.sendPrompt(ptyId, `[작업실 규칙]\n작업실: ${files.root}\n파일 생성·수정과 명령 실행은 이 작업실 안에서만 수행하세요. 폴더 밖 파일은 수정하지 마세요. IDE 자체의 필수 파일은 ${files.path(WORKSPACE_FOLDERS.required)} 아래 에셋·애니메이션·기존 작업으로 분류합니다. 가구·캐릭터·커피 등의 원본은 ${files.path(WORKSPACE_FOLDERS.assets)}, 애니메이션은 ${files.path(WORKSPACE_FOLDERS.animations)}, 이전 작업 자료는 ${files.path(WORKSPACE_FOLDERS.previous)}에 보관하며 임의로 덮어쓰지 마세요. 이번에 의뢰받은 작업의 SRS·PRD·PHASES·보고서는 ${files.path(TASK_DOCUMENTS_FOLDER)} 아래 작업별 폴더에 저장하세요. ${files.path(WORKSPACE_FOLDERS.outputs)}에는 사용자가 오피스에서 의뢰한 작업의 결과만 작업별 폴더에 저장하세요. IDE 자체 리소스를 산출물에 섞지 마세요.\n\n${prompt}`)
+    } catch (error) {
+      event.sender.send('agent:state', { ptyId, adapterId: 'generic', state: 'error', reason: String(error), timestamp: Date.now() })
+    }
   })
 
   ipcMain.on('pty:resize', (_event, ptyId: string, cols: number, rows: number) => {
@@ -121,14 +130,29 @@ export function registerIpcHandlers(): void {
     const workspace = workspaceStore.get()
     if (!workspace) throw new Error('작업 폴더를 먼저 지정해주세요.')
     const privateTaskRoot = workspaceFiles().path(TASK_DOCUMENTS_FOLDER)
-    return taskWorkspaceManager.prepare(privateTaskRoot, request)
+    const task = taskWorkspaceManager.prepare(privateTaskRoot, request)
+    taskRecovery.register(task, request, workspace)
+    return task
   })
+
+  ipcMain.handle('tasks:list', () => taskRecovery.list())
+  ipcMain.handle('tasks:restore', event => taskRecovery.restore(event.sender))
+  ipcMain.handle('tasks:resume', (event, projectPath: string) => {
+    workspaceStore.set(projectPath)
+    return taskRecovery.resume(projectPath, event.sender)
+  })
+  ipcMain.handle('tasks:dispatch', (_event, request: TaskDispatch) => taskRecovery.dispatch(request))
+  ipcMain.handle('tasks:approve', (_event, taskId: string) => taskRecovery.approve(taskId))
+  ipcMain.handle('tasks:cancel', (_event, taskId: string) => taskRecovery.cancel(taskId))
 
   ipcMain.handle('tasks:read-spec', (_event, specPath: string) => {
     return workspaceFiles().preview(specPath)
   })
 
   ipcMain.handle('instances:list', () => instanceManager.list())
+  ipcMain.handle('instances:ensure-project', (event, instanceIds: string[]) =>
+    taskRecovery.ensureProject(instanceIds, workspaceStore.get(), event.sender)
+  )
 
   ipcMain.handle('profiles:list', () =>
     buildAgentProfiles(agentTemplateStore.list(), teamCapacityStore.getAll())

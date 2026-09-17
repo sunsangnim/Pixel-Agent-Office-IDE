@@ -1,0 +1,5 @@
+const { buildSync } = require('esbuild')
+const path = require('node:path')
+const output = path.resolve('out/recovery-runner.cjs')
+buildSync({ entryPoints: [path.resolve('scripts/recovery-runner.ts')], outfile: output, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent' })
+require(output)

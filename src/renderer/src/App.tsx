@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AgentInstance, AgentProfile, AgentTemplate } from '@shared/types'
+import type { AgentInstance, AgentProfile, AgentTemplate, TrackedTask } from '@shared/types'
 import OfficeView from './components/OfficeView'
 import AgentProfileRow from './components/AgentProfileRow'
 import TerminalModal from './components/TerminalModal'
 import DiffPanel from './components/DiffPanel'
 import ChatPanel from './components/ChatPanel'
 import WorkspacePanel from './components/WorkspacePanel'
+import ResumeProjectDialog from './components/ResumeProjectDialog'
+import { resolveResumeRequest } from './lib/resumeCommands'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
 import { useAgentChat, type PlanReadyPayload } from './hooks/useAgentChat'
 import { planTask } from './lib/taskRouter'
@@ -40,6 +42,7 @@ interface PendingPlan {
 function App() {
   const [workFolder, setWorkFolder] = useState<string | null>(null)
   const [filesOpen, setFilesOpen] = useState(false)
+  const [resumeOpen, setResumeOpen] = useState(false)
   const [templates, setTemplates] = useState<AgentTemplate[]>([])
   const [instances, setInstances] = useState<AgentInstance[]>([])
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
@@ -57,9 +60,13 @@ function App() {
     readStoredJson(localStorage.getItem(MEETING_QUEUE_KEY), [])
   )
   const [pendingPlan, setPendingPlan] = useState<PendingPlan | null>(null)
+  const [trackedTasks, setTrackedTasks] = useState<TrackedTask[]>([])
+  const restoredBoot = useRef<string | null>(null)
+  const taskStages = useRef(new Map<string, string>())
   const { deskStatuses: statuses, runtimeStates } = usePtyStatuses()
 
   const handlePlanReady = ({ instanceId, taskId }: PlanReadyPayload): void => {
+    if (typeof window.api.tasks.dispatch === 'function') return // Durable completion records determine readiness.
     setPendingPlan((prev) => {
       if (!prev || prev.taskId !== taskId || prev.readyIds.has(instanceId)) return prev
       const readyIds = new Set(prev.readyIds)
@@ -68,8 +75,28 @@ function App() {
     })
   }
 
-  const { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, cancelPlanning } =
+  const { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, cancelPlanning, trackRestoredTasks } =
     useAgentChat(instances, templates, handlePlanReady)
+
+  useEffect(() => {
+    if (!window.api.tasks.dispatch) return
+    const task = trackedTasks.find(item => item.projectPath === workFolder && (item.stage === 'planning' || item.stage === 'review'))
+    if (!task) { setPendingPlan(null); return }
+    const targets = instances.filter(instance => instance.repoRoot === task.projectPath && task.commands.some(command => command.profileId === instance.profileId && command.cwd === instance.cwd && command.stage === 'planning'))
+    if (!targets.length) return
+    setPendingPlan(previous => ({ ...task, originalText: task.request,
+      instanceIds: targets.map(instance => instance.instanceId),
+      readyIds: new Set(task.stage === 'review' ? targets.map(instance => instance.instanceId) : []),
+      specText: task.stage === 'review' && previous?.taskId === task.taskId ? previous.specText : null }))
+  }, [trackedTasks, instances, workFolder])
+
+  useEffect(() => {
+    for (const task of trackedTasks) {
+      const previous = taskStages.current.get(task.taskId)
+      if (previous && previous !== task.stage && task.stage === 'completed') addSystemMessage(`“${task.title}” 작업 완료. 개발 기록과 검증·커밋 정보를 저장했습니다.`)
+      taskStages.current.set(task.taskId, task.stage)
+    }
+  }, [trackedTasks])
 
   useEffect(() => {
     if (!pendingPlan || parseMeetingCommand(pendingPlan.originalText) || parseOfficeCommand(pendingPlan.originalText) || pendingPlan.specText !== null) return
@@ -104,6 +131,7 @@ function App() {
 
   const cancelPlan = (): void => {
     if (!pendingPlan) return
+    if (window.api.tasks.cancel) void window.api.tasks.cancel(pendingPlan.taskId).catch(e => setError(String(e)))
     cancelPlanning(pendingPlan.taskId)
     setPendingPlan(null)
     addSystemMessage('기획 요청을 취소했습니다. 작성된 문서는 작업실에 보관됩니다.')
@@ -155,7 +183,19 @@ function App() {
   useEffect(() => {
     window.api.workspace.getWorkFolder().then(setWorkFolder).catch((e) => setError(String(e)))
     refreshTemplates()
-    window.api.instances.list().then((list) => { instancesLoaded.current = true; setInstances(list) })
+    if (window.api.tasks.restore) {
+      window.api.tasks.restore().then(result => {
+        instancesLoaded.current = true
+        setInstances(result.instances)
+        setTrackedTasks(result.tasks)
+        trackRestoredTasks(result.tasks, result.instances)
+        if (restoredBoot.current !== result.bootId) {
+          restoredBoot.current = result.bootId
+          result.notices.forEach(addSystemMessage)
+        }
+      }).catch(e => setError(`작업 인수인계 확인 실패: ${String(e)}`))
+    } else window.api.instances.list().then((list) => { instancesLoaded.current = true; setInstances(list) })
+    const unsubscribeTasks = window.api.tasks.onChanged?.(setTrackedTasks)
     const unsubscribeTemplates = window.api.templates.onChanged(refreshTemplates)
     const unsubscribeCapacity = window.api.teamCapacity.onChanged(() => {
       window.api.profiles.list().then(setProfiles)
@@ -163,12 +203,26 @@ function App() {
     return () => {
       unsubscribeTemplates()
       unsubscribeCapacity()
+      unsubscribeTasks?.()
     }
   }, [])
 
   const chooseFolder = async (): Promise<void> => {
     const folder = await window.api.workspace.chooseWorkFolder()
     setWorkFolder(folder)
+  }
+
+  const resumeProject = async (projectPath: string): Promise<void> => {
+    setResumeOpen(false)
+    setError(null)
+    try {
+      const result = await window.api.tasks.resume(projectPath)
+      setWorkFolder(projectPath)
+      setInstances(result.instances)
+      setTrackedTasks(result.tasks)
+      trackRestoredTasks(result.tasks, result.instances)
+      result.notices.forEach(addSystemMessage)
+    } catch (e) { setError(String(e)) }
   }
 
   const removeInstance = async (instanceId: string): Promise<void> => {
@@ -221,17 +275,16 @@ function App() {
 
     let planInstanceIds: string[] = []
     let mode: PendingPlan['mode'] = 'manual'
+    let availableInstances = instances
 
     try {
       if (targetIds.length > 0) {
         mode = 'manual'
         planInstanceIds = targetIds
-        sendPlanningPrompt(planningPrompt, targetIds, taskWorkspace.taskId, taskWorkspace.specPath, instances, null)
       } else {
         const plan = planTask(text)
         addSystemMessage(`작업 계획: ${plan.reason}`)
         mode = plan.complexity
-        let availableInstances = instances
         const leaders: AgentInstance[] = []
         for (const templateId of plan.templateIds) {
           let leader = availableInstances.find(
@@ -245,17 +298,15 @@ function App() {
           }
           if (leader) leaders.push(leader)
         }
-        setInstances(availableInstances)
         planInstanceIds = leaders.map((leader) => leader.instanceId)
-        sendPlanningPrompt(
-          planningPrompt,
-          planInstanceIds,
-          taskWorkspace.taskId,
-          taskWorkspace.specPath,
-          availableInstances,
-          null
-        )
       }
+      if (window.api.instances.ensureProject) {
+        const profileIds = planInstanceIds.map(id => availableInstances.find(instance => instance.instanceId === id)?.profileId)
+        availableInstances = await window.api.instances.ensureProject(planInstanceIds)
+        planInstanceIds = availableInstances.filter(instance => profileIds.includes(instance.profileId)).map(instance => instance.instanceId)
+      }
+      setInstances(availableInstances)
+      await sendPlanningPrompt(planningPrompt, planInstanceIds, taskWorkspace.taskId, taskWorkspace.specPath, availableInstances, null, mode)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       return
@@ -283,57 +334,60 @@ function App() {
   const approvePlan = async (): Promise<void> => {
     if (!pendingPlan) return
     const plan = pendingPlan
-    setPendingPlan(null)
+    try {
+      if (window.api.tasks.approve) await window.api.tasks.approve(plan.taskId)
+      setPendingPlan(null)
 
-    const workflowPrompt = buildWorkflowPrompt(plan)
+      const workflowPrompt = buildWorkflowPrompt(plan)
 
-    if (plan.mode !== 'complex') {
-      sendPrompt(workflowPrompt, plan.instanceIds, instances, `[기획 승인] ${plan.originalText}`)
-      return
-    }
+      if (plan.mode !== 'complex') {
+        await sendPrompt(workflowPrompt, plan.instanceIds, instances, `[기획 승인] ${plan.originalText}`, plan.taskId)
+        return
+      }
 
-    let availableInstances = instances
-    const leaders = plan.instanceIds
-      .map((id) => availableInstances.find((instance) => instance.instanceId === id))
-      .filter((instance): instance is AgentInstance => Boolean(instance))
+      let availableInstances = instances
+      const leaders = plan.instanceIds
+        .map((id) => availableInstances.find((instance) => instance.instanceId === id))
+        .filter((instance): instance is AgentInstance => Boolean(instance))
 
-    for (const leader of leaders) {
-      const child = availableInstances.find(
-        (instance) => instance.parentInstanceId === leader.instanceId && instance.rank === 'subAgent'
-      )
-      if (!child) {
-        try {
-          availableInstances = await window.api.instances.createChild(leader.instanceId)
-        } catch {
-          // The global concurrency policy can leave a team lead working alone.
+      for (const leader of leaders) {
+        const child = availableInstances.find(
+          (instance) => instance.parentInstanceId === leader.instanceId && instance.rank === 'subAgent'
+        )
+        if (!child) {
+          try {
+            availableInstances = await window.api.instances.createChild(leader.instanceId)
+          } catch {
+            // The global concurrency policy can leave a team lead working alone.
+          }
         }
       }
-    }
-    setInstances(availableInstances)
+      setInstances(availableInstances)
 
-    const assignments = leaders.flatMap((leader) => {
-      const templateName = templates.find((template) => template.id === leader.templateId)?.name ?? leader.templateId
-      const child = availableInstances.find(
-        (instance) => instance.parentInstanceId === leader.instanceId && instance.rank === 'subAgent'
-      )
-      const leadTitle = leadTitleFor(leader.templateId)
-      const leadAssignment = {
-        instanceId: leader.instanceId,
-        role: `${templateName} ${leadTitle} · 조율`,
-        prompt: `[${leadTitle} 역할 — 기획 승인됨] 아래 운영정책을 지키며 ${templateName} 팀의 실행 계획과 최종 취합 기준을 제시하세요.\n\n${workflowPrompt}`
-      }
-      return child
-        ? [
-            leadAssignment,
-            {
-              instanceId: child.instanceId,
-              role: `${templateName} ${SUB_AGENT_TITLE} · ${specialties[leader.templateId]}`,
-              prompt: `[${SUB_AGENT_TITLE} 역할: ${specialties[leader.templateId]}] 아래 운영정책을 지키며 맡은 영역을 수행하고 ${leadTitle}이 취합할 수 있는 결과와 검증 내용을 명확히 보고하세요.\n\n${workflowPrompt}`
-            }
-          ]
-        : [leadAssignment]
-    })
-    sendAssignments(plan.originalText, assignments, availableInstances)
+      const assignments = leaders.flatMap((leader) => {
+        const templateName = templates.find((template) => template.id === leader.templateId)?.name ?? leader.templateId
+        const child = availableInstances.find(
+          (instance) => instance.parentInstanceId === leader.instanceId && instance.rank === 'subAgent'
+        )
+        const leadTitle = leadTitleFor(leader.templateId)
+        const leadAssignment = {
+          instanceId: leader.instanceId,
+          role: `${templateName} ${leadTitle} · 조율`,
+          prompt: `[${leadTitle} 역할 — 기획 승인됨] 아래 운영정책을 지키며 ${templateName} 팀의 실행 계획과 최종 취합 기준을 제시하세요.\n\n${workflowPrompt}`
+        }
+        return child
+          ? [
+              leadAssignment,
+              {
+                instanceId: child.instanceId,
+                role: `${templateName} ${SUB_AGENT_TITLE} · ${specialties[leader.templateId]}`,
+                prompt: `[${SUB_AGENT_TITLE} 역할: ${specialties[leader.templateId]}] 아래 운영정책을 지키며 맡은 영역을 수행하고 ${leadTitle}이 취합할 수 있는 결과와 검증 내용을 명확히 보고하세요.\n\n${workflowPrompt}`
+              }
+            ]
+          : [leadAssignment]
+      })
+      await sendAssignments(plan.originalText, assignments, availableInstances, plan.taskId)
+    } catch (e) { setError(String(e)) }
   }
 
   const rejectPlan = (feedback: string): void => {
@@ -341,7 +395,7 @@ function App() {
     const plan = pendingPlan
     const revisionPrompt = `[반려] ${feedback}\n기획서(${plan.specPath})와 Phase 문서(${plan.phasesPath})를 반영해 다시 수정한 뒤 "기획 완료"라고 보고하세요.`
     setPendingPlan({ ...plan, readyIds: new Set(), specText: null })
-    sendPlanningPrompt(revisionPrompt, plan.instanceIds, plan.taskId, plan.specPath, instances, `[반려] ${feedback}`)
+    void sendPlanningPrompt(revisionPrompt, plan.instanceIds, plan.taskId, plan.specPath, instances, `[반려] ${feedback}`, plan.mode).catch(e => setError(String(e)))
   }
 
   const handleMeetingCommand = async (command: MeetingCommand): Promise<void> => {
@@ -421,6 +475,12 @@ function App() {
       return
     }
 
+    if (typeof window.api.tasks.resume === 'function') {
+      const resume = resolveResumeRequest(text, trackedTasks)
+      if (resume.kind === 'project') { await resumeProject(resume.projectPath!); return }
+      if (resume.kind === 'select') { setResumeOpen(true); return }
+    }
+
     if (meetingActive) {
       const next = [...heldPrompts, { text, targetIds: Array.from(selectedTargetIds) }]
       setHeldPrompts(next)
@@ -453,6 +513,9 @@ function App() {
     <div className="app-root">
       <div className="main-column">
         {error && <p className="error-banner">{error}</p>}
+        {trackedTasks.some(task => !['completed', 'cancelled'].includes(task.stage)) && <div className="resume-task-bar">
+          <span>저장된 미완료 작업이 있습니다.</span><button onClick={() => setResumeOpen(true)}>프로젝트 이어가기</button>
+        </div>}
 
         <OfficeView
           instances={instances}
@@ -497,6 +560,7 @@ function App() {
       />
 
       {filesOpen && <WorkspacePanel workFolder={workFolder} onChooseFolder={chooseFolder} onClose={() => setFilesOpen(false)} />}
+      {resumeOpen && <ResumeProjectDialog tasks={trackedTasks} onClose={() => setResumeOpen(false)} onSelect={project => { void resumeProject(project) }} />}
 
       {selectedInstanceId &&
         (() => {
@@ -522,7 +586,7 @@ function App() {
               runId={instance.instanceId}
               title={template?.name ?? instance.templateId}
               onClose={() => setDiffInstanceId(null)}
-              onSendComments={(runId, prompt) => sendPrompt(prompt, [runId], instances, prompt)}
+              onSendComments={(runId, prompt) => { void sendPrompt(prompt, [runId], instances, prompt).catch(e => setError(String(e))) }}
             />
           )
         })()}

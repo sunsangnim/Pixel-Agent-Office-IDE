@@ -1384,3 +1384,13 @@ textarea {
   color: #6a6a80;
   font-size: 10px;
 }
+
+.resume-task-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 14px; margin-bottom: 12px; border-radius: 6px; background: #272d43; color: #dbe7ff; font-size: 13px; }
+.resume-project-dialog { width: min(620px, 86vw); max-height: 80vh; padding: 24px; border: 1px solid #555875; border-radius: 12px; background: #202238; color: #eef0f6; }
+.resume-project-dialog::backdrop { background: #0009; }
+.resume-project-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.resume-project-dialog h2 { margin: 0; font-size: 20px; }
+.resume-project-dialog p { color: #b9bfd4; font-size: 13px; line-height: 1.6; }
+.resume-project-option { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 12px; padding: 16px; text-align: left; border: 1px solid #555875; border-radius: 6px; background: #2c314b; color: #eef0f6; cursor: pointer; }
+.resume-project-option:hover { background: #394365; }
+.resume-project-option small { color: #abb6d0; overflow-wrap: anywhere; }

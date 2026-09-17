@@ -9,6 +9,7 @@ import { buildAgentProfiles } from '../shared/agentProfiles'
 import { ensureDeskWorktree, removeDeskWorktree } from './gitWorktreeManager'
 import { teamCapacityStore } from './teamCapacityStore'
 import { workspaceFiles } from './workspaceStore'
+import { freshSessionArgs } from './freshSession'
 
 class InstanceManager {
   private runs = new Map<string, AgentRun>()
@@ -80,7 +81,7 @@ class InstanceManager {
     const ptyId = ptyManager.spawn(
       {
         command: template.command,
-        args: template.args,
+        args: freshSessionArgs(template),
         cwd,
         env: template.env,
         adapterId: adapterIdForTemplate(template.id)
@@ -122,7 +123,7 @@ class InstanceManager {
     const ptyId = ptyManager.spawn(
       {
         command: template.command,
-        args: template.args,
+        args: freshSessionArgs(template),
         cwd: run.cwd,
         env: template.env,
         adapterId: adapterIdForTemplate(template.id)
@@ -148,6 +149,14 @@ class InstanceManager {
       }
     }
     return this.list()
+  }
+
+  /** Switching projects closes conversations but keeps every worktree intact. */
+  detach(instanceId: string): void {
+    const run = this.runs.get(instanceId)
+    if (!run) return
+    ptyManager.kill(run.ptyId)
+    this.runs.delete(instanceId)
   }
 }
 
