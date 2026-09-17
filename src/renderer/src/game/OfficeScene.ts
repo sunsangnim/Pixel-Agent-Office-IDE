@@ -66,8 +66,9 @@ import { ActorStateMachine, actionForPresence } from './actorStateMachine'
 import { pantryPoseAt, type PantryAnimation } from './pantryAnimation'
 import {
   REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_POSES, REPRESENTATIVE_WORK_FRAME_WIDTH,
-  REPRESENTATIVE_WORK_FRAME_PADDING, representativeWorkPixels, representativeWorkPoseAt
+  REPRESENTATIVE_WORK_FRAME_PADDING, representativeWorkPixels, representativeWorkPoseAt, workHandPixels
 } from './representativeWorkAnimation'
+import { measureStaffWorkSheet, staffWorkTexture } from './staffWorkAnimation'
 import { IdleActivity } from './idleActivity'
 import { CharacterGait, type CharacterPose } from './characterGait'
 import { STAFF_WALK_SHEETS, WALK_ROW_NAMES, STAFF_SEATED_SHEETS, SEATED_ROW_NAMES, STAFF_PANTRY_SHEETS } from './staffWalkSheets'
@@ -90,6 +91,7 @@ interface ActorView {
   speechPanel: Phaser.GameObjects.Image
   routeKey: string
   pantryAction?: PantryAnimation
+  workElapsedMs: number
   stateMachine: ActorStateMachine
   gait: CharacterGait
   route: WorldPoint[]
@@ -154,6 +156,9 @@ const staffWalkAssets = import.meta.glob('../assets/pixel-office/characters/walk
   eager: true, query: '?url', import: 'default'
 }) as Record<string, string>
 const staffSeatedAssets = import.meta.glob('../assets/pixel-office/characters/seated-v1/*.png', {
+  eager: true, query: '?url', import: 'default'
+}) as Record<string, string>
+const staffWorkAssets = import.meta.glob('../assets/pixel-office/characters/work-v1/*.png', {
   eager: true, query: '?url', import: 'default'
 }) as Record<string, string>
 const staffPantryAssets = import.meta.glob('../assets/pixel-office/characters/pantry-v1/*.png', {
@@ -385,6 +390,10 @@ export class OfficeScene extends Phaser.Scene {
       const url = staffSeatedAssets[`../assets/pixel-office/characters/seated-v1/${file}`]
       if (!url) throw new Error(`Missing employee seated sheet: ${file}`)
       this.load.image(`staff-seated-${team}`, url)
+      const workFile = `staff-${team}-work-v1.png`
+      const workUrl = staffWorkAssets[`../assets/pixel-office/characters/work-v1/${workFile}`]
+      if (!workUrl) throw new Error(`Missing employee work sheet: ${workFile}`)
+      this.load.image(`staff-work-${team}`, workUrl)
     }
     for (const { id, file } of STAFF_PANTRY_SHEETS) {
       const url = staffPantryAssets[`../assets/pixel-office/characters/pantry-v1/${file}`]
@@ -445,6 +454,7 @@ export class OfficeScene extends Phaser.Scene {
     for (const { team } of STAFF_SEATED_SHEETS) {
       this.createCharacterFrames(`staff-seated-${team}`,
         (column, row) => `actor-${team}-${column}-sit-${SEATED_ROW_NAMES[row]}`, 'seated')
+      this.createStaffWorkFrames(team)
     }
     this.createCeoFrames()
     this.createRepresentativeActor()
@@ -460,6 +470,7 @@ export class OfficeScene extends Phaser.Scene {
       this.updateIdleActivities()
       this.updateActorMovement(elapsed / 1000)
       this.updateActorPantryActions(elapsed)
+      this.actors.forEach((view) => this.updateActorWorkAnimation(view, elapsed))
       this.updateRepresentativeMovement(elapsed / 1000)
       this.updateRepresentativePantryAction(elapsed)
       this.updateRepresentativeWorkAnimation(elapsed)
@@ -1880,6 +1891,47 @@ export class OfficeScene extends Phaser.Scene {
     texture.refresh()
   }
 
+  private createStaffWorkFrames(team: number): void {
+    const seated = this.textures.get(`staff-seated-${team}`).getSourceImage() as HTMLImageElement
+    const work = this.textures.get(`staff-work-${team}`).getSourceImage() as HTMLImageElement
+    if (work.width !== seated.width || work.height !== seated.height) throw new Error(`Staff work sheet ${team} changed grid size`)
+    const read = (image: HTMLImageElement): Uint8ClampedArray => {
+      const canvas = document.createElement('canvas')
+      canvas.width = image.width; canvas.height = image.height
+      const context = canvas.getContext('2d')!
+      context.drawImage(image, 0, 0)
+      return context.getImageData(0, 0, image.width, image.height).data
+    }
+    const frames = measureStaffWorkSheet(read(seated), read(work), seated.width, seated.height, team)
+    const normalized = document.createElement('canvas')
+    normalized.width = REPRESENTATIVE_WORK_FRAME_WIDTH; normalized.height = CHARACTER_FRAME_HEIGHT
+    const input = normalized.getContext('2d')!
+    input.imageSmoothingEnabled = false
+    const texture = this.textures.createCanvas(staffWorkTexture(team), REPRESENTATIVE_WORK_FRAME_WIDTH * REPRESENTATIVE_WORK_POSES,
+      CHARACTER_FRAME_HEIGHT * frames.length)
+    if (!texture) throw new Error(`Could not create staff work frames: ${team}`)
+    const context = texture.getContext()
+    const seatedFrames = this.textures.get(`staff-seated-${team}-frames`)
+    const headContext = (seatedFrames.getSourceImage() as HTMLCanvasElement).getContext('2d')!
+    frames.forEach(({ column, row, region: r, workDestination: d, hands }, index) => {
+      input.clearRect(0, 0, normalized.width, normalized.height)
+      // Keep the original body scale and chair contact, with room for the
+      // complete forward reach. Right-facing staff mirror the left pose.
+      input.drawImage(work, r.x, r.y, r.width, r.height, d.x, d.y, d.width, d.height)
+      const pixels = input.getImageData(0, 0, normalized.width, normalized.height).data
+      const frame = seatedFrames.get(`actor-${team}-${column}-sit-${SEATED_ROW_NAMES[row]}`)
+      const head = headContext.getImageData(frame.cutX, frame.cutY, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT).data
+      for (let pose = 0; pose < REPRESENTATIVE_WORK_POSES; pose++) {
+        const output = context.createImageData(normalized.width, normalized.height)
+        output.data.set(workHandPixels(pixels, normalized.width, normalized.height, hands, pose, head))
+        const x = pose * normalized.width, y = index * normalized.height
+        context.putImageData(output, x, y)
+        texture.add(`actor-${team}-${column}-work-${SEATED_ROW_NAMES[row]}-${pose}`, 0, x, y, normalized.width, normalized.height)
+      }
+    })
+    texture.refresh()
+  }
+
   private createCharacterFrames(sourceKey: string, frameName: (column: number, row: number) => string,
     kind: 'legacy' | 'walk' | 'seated' | 'pantry' = 'legacy'): string {
     const source = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement
@@ -1999,7 +2051,8 @@ export class OfficeScene extends Phaser.Scene {
     const container = this.add.container(initial.x, initial.y, [sprite]).setDepth(initial.y)
     const overlay = this.add.container(initial.x, initial.y, [label, speechPanel, bubble])
     const view: ActorView = {
-      container, sprite, seatedForeground, overlay, label, bubble, speechPanel, routeKey: '', stateMachine: new ActorStateMachine(actor.presence),
+      container, sprite, seatedForeground, overlay, label, bubble, speechPanel, routeKey: '', workElapsedMs: 0,
+      stateMachine: new ActorStateMachine(actor.presence),
       gait: new CharacterGait(`actor-${animKey}`),
       route: [], routeIndex: 0, actor, requestedActor: actor, actorIndex: 0, idleActivity: new IdleActivity(),
       goal: null, seatedGoal: false, chairId: null, settled: false, blocked: false, stalledMs: 0, blockedOccupancy: null, retryAt: 0
@@ -2159,6 +2212,7 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private stopActorAction(view: ActorView): void {
+    view.workElapsedMs = 0
     if (view.pantryAction) {
       view.pantryAction = undefined
       this.restoreActorStandingPose(view)
@@ -2348,11 +2402,39 @@ export class OfficeScene extends Phaser.Scene {
     this.updateActorOverlayPosition(view)
   }
 
+  private updateActorWorkAnimation(view: ActorView, deltaMs: number): void {
+    const chair = view.settled && view.seatedGoal && view.chairId === `chair-${view.actor.teamIndex}-${view.actor.slotIndex}` &&
+      this.furniture.get(view.chairId)
+    const atDesk = chair && !this.layoutEditing && !view.pantryAction &&
+      ['working', 'deskIdle', 'arriving'].includes(view.actor.presence) && this.animationAtlasFor(view.actor) &&
+      [...this.furniture.values()].some((furniture) => furniture.frame === DESK_FURNITURE_FRAME && intersectsAabb(
+        this.furnitureWalkCollision(chair.image, 0), this.furnitureWalkCollision(furniture.image, 16)))
+    const texture = staffWorkTexture(view.actor.teamIndex)
+    if (!atDesk) {
+      view.workElapsedMs = 0
+      if (view.seatedForeground.visible && view.seatedForeground.texture.key === texture) {
+        this.renderSeatedForeground(view.sprite, view.seatedForeground)
+      }
+      return
+    }
+    view.workElapsedMs += deltaMs
+    const direction = this.furnitureDirection(this.furnitureRotation(chair.image))
+    const offset = (view.actor.teamIndex * 5 + view.actor.slotIndex) * 137
+    const pose = representativeWorkPoseAt(view.workElapsedMs + offset)
+    const frame = `actor-${this.actorAnimationKey(view.actor)}-work-${direction === 'right' ? 'left' : direction}-${pose}`
+    const foreground = view.seatedForeground
+    if (foreground.texture.key !== texture || foreground.frame.name !== frame) {
+      foreground.setTexture(texture, frame).setFlipX(direction === 'right')
+        .setDisplaySize(ACTOR_SPRITE_WIDTH * REPRESENTATIVE_WORK_FRAME_WIDTH / CHARACTER_FRAME_WIDTH, ACTOR_SPRITE_HEIGHT)
+    }
+  }
+
   private updateActorDepth(view: ActorView): void {
     const chair = view.settled && view.seatedGoal && view.chairId && this.furniture.get(view.chairId)
     let headDepth: number
     if (chair && this.animationAtlasFor(view.actor)) {
       headDepth = this.applySeatedComposition(chair, view.sprite, view.seatedForeground, view.container)
+      this.updateActorWorkAnimation(view, 0)
     } else {
       view.container.setDepth(view.container.y)
       view.sprite.setCrop().setVisible(true)

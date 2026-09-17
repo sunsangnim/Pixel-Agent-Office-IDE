@@ -28,6 +28,9 @@ function imageDouble(x, y, width = 64, height = 64) {
   const events = new Map()
   return {
     x, y, depth: 0, originX: 0.5, originY: 0.5, displayWidth: width, displayHeight: height, events,
+    texture: { key: '' }, frame: { name: '' },
+    setTexture(key, name) { this.texture = { key }; this.frame = { name }; return this },
+    setFlipX(value) { this.flipX = value; return this },
     setDepth(value) { this.depth = value; return this },
     setCrop(...crop) { this.crop = crop; return this },
     setVisible(value) { this.visible = value; return this },
@@ -109,7 +112,7 @@ console.log('PASS Shift selection, group member reselection, deselection, and ma
 const occupied = { actors: [{ profileId: 'seated-test', presence: 'deskIdle', teamIndex: 0, slotIndex: 0 }] }
 scene.snapshot = occupied
 scene.actors.set('seated-test', {
-  actor: occupied.actors[0], settled: true, seatedGoal: true,
+  actor: occupied.actors[0], settled: true, seatedGoal: true, workElapsedMs: 0,
   chairId: 'chair-0-0',
   sprite: Object.assign(imageDouble(0, -38, 104, 120), { anims: { pause() {} } }),
   seatedForeground: imageDouble(128, 534, 104, 120),
