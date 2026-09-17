@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { registerIpcHandlers } from '../src/main/ipc'
 import { workspaceFiles, workspaceStore } from '../src/main/workspaceStore'
+import { TASK_DOCUMENTS_FOLDER, WORKSPACE_FOLDERS } from '../src/shared/workspaceLayout'
 
 const fixture = mkdtempSync(join(resolve('out'), 'workspace-ui-'))
 const desktop = join(fixture, 'desktop')
@@ -24,7 +25,10 @@ app.whenReady().then(async () => {
   const docs = files.createFolder('문서/애니메이션', '대표 타이핑')
   const spec = join(docs, 'SRS-PRD-SCREEN-DESIGN.md')
   writeFileSync(files.path(spec), '# 대표 타이핑 모션\n\n문서는 에셋과 분리해 관리합니다.\n<script>window.bad = true</script>')
-  writeFileSync(files.path('결과물/에셋/preview.png'), Buffer.from([0, 1, 2]))
+  const requestedOutput = files.createFolder(WORKSPACE_FOLDERS.outputs, '의뢰한 작업')
+  writeFileSync(files.path(join(requestedOutput, 'preview.png')), Buffer.from([0, 1, 2]))
+  const officeAssets = files.createFolder(WORKSPACE_FOLDERS.assets, '오피스 리소스')
+  writeFileSync(files.path(join(officeAssets, 'coffee.png')), Buffer.from([0, 1, 2]))
   registerIpcHandlers()
   const win = new BrowserWindow({ show: false, width: 1500, height: 950, webPreferences: { preload: resolve('out/preload/index.js'), sandbox: false, contextIsolation: true, backgroundThrottling: false, offscreen: true } })
   const js = (code: string) => win.webContents.executeJavaScript(code)
@@ -44,6 +48,20 @@ app.whenReady().then(async () => {
   assert.equal(await js('document.querySelector("dialog").open'), true)
   await click('폴더 열기')
   assert.equal(opened[0], files.root)
+  const category = async (name: string) => {
+    await js(`document.querySelector('.workspace-categories button[aria-label="${name}"]').click()`)
+    await wait('document.querySelector(".workspace-list")?.getAttribute("aria-busy")==="false" && !!document.querySelector(".workspace-categories [aria-current]")')
+  }
+  await category('필수 에셋')
+  await click('폴더 열기')
+  assert.equal(opened.at(-1), files.path(WORKSPACE_FOLDERS.assets))
+  await category('산출물')
+  await fill('파일명 검색', 'coffee')
+  await wait('document.querySelector(".workspace-hint")?.textContent.includes("검색 결과가 없습니다")')
+  await fill('파일명 검색', 'preview')
+  await wait('document.querySelectorAll(".workspace-entry").length===1')
+  assert.match(await js('document.querySelector(".workspace-entry").textContent'), /preview.png/)
+  await category('필수 문서')
   await fill('파일명 검색', 'SRS')
   await wait('document.querySelectorAll(".workspace-entry").length===1')
   await js('document.querySelector(".workspace-entry").click()')
@@ -66,9 +84,15 @@ app.whenReady().then(async () => {
   await click('프로젝트 변경')
   await wait('document.querySelector(".workspace-error")?.textContent.includes("작업실")')
   assert.equal(workspaceStore.get(), files.path('프로젝트/기본 작업'))
+  const prepared = await js(`window.api.tasks.prepare('저장 위치 검증')`)
+  assert.equal(prepared.rootPath, files.path(join(TASK_DOCUMENTS_FOLDER, prepared.taskId)))
+  assert.ok(existsSync(prepared.specPath))
+  assert.ok(existsSync(prepared.phasesPath))
+  assert.ok(existsSync(prepared.readmePath))
+  assert.equal(existsSync(join(files.root, '문서')), false)
   await js('document.querySelector("dialog").dispatchEvent(new Event("cancel",{cancelable:true}))')
   await wait('!document.querySelector("dialog")')
-  console.log('PASS actual App + preload + IPC: confined root, file panel, recursive search, safe preview, new folder, Explorer actions, denied external project, close')
+  console.log('PASS actual App + preload + IPC: categorized materials/outputs, confined root, search, safe preview, new folder, Explorer actions, denied external project, close')
   console.log(`Screenshot: ${join(fixture, 'files-preview.png')}`)
   app.quit()
 }).catch((error) => { console.error(error); app.exit(1) })

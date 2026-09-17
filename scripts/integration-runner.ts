@@ -456,6 +456,19 @@ async function main(): Promise<void> {
   verifyAdapters()
   assert.deepEqual(parseOfficeCommand('@Claude 대표실로 오게나'), { action: 'visit', templateIds: ['claude-code'] })
   assert.deepEqual(parseOfficeCommand('클로드야 대표실로 와'), { action: 'visit', templateIds: ['claude-code'] })
+  for (const [templateId, names] of [
+    ['claude-code', ['클부장', '클 부장님', '클로드 부장님', '@클부장', '@Claude 부장님,']],
+    ['codex-cli', ['코차장', '코 차장님', '코덱스 차장님', '@코차장', '@Codex 차장님:']],
+    ['antigravity-cli', ['안과장', '안 과장님', '안티그래비티 과장님', '@안과장', '@Antigravity 과장님']]
+  ] as const) {
+    for (const name of names) {
+      assert.deepEqual(parseOfficeCommand(`${name} 대표실로 오게나`), { action: 'visit', templateIds: [templateId] })
+      assert.deepEqual(parseOfficeCommand(`${name} 자리로 돌아가게`), { action: 'return', templateIds: [templateId] })
+      for (const task of ['대표실로 오게나 명령을 구현해', '대표실로 와서 문서 작성해', '대표실로 오지 마', '자리로 돌아가지 마']) {
+        assert.equal(parseOfficeCommand(`${name} ${task}`), null)
+      }
+    }
+  }
   assert.deepEqual(parseOfficeCommand('@Codex @Antigravity 각자 자리로 돌아가'), { action: 'return', templateIds: ['codex-cli', 'antigravity-cli'] })
   for (const text of ['자리로 돌아가게', '자리로 돌아가라', '자기 자리로 돌아가세요', '돌아가', '돌아가게나', '복귀해', '복귀하게', '원래 좌석으로 돌아가줘']) {
     assert.equal(parseOfficeCommand(text)?.action, 'return', text)

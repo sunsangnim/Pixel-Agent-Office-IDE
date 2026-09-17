@@ -9,6 +9,7 @@ import { taskWorkspaceManager } from './taskWorkspaceManager'
 import { diffAgainstBase, mergeDeskBranch } from './gitWorktreeManager'
 import { teamCapacityStore } from './teamCapacityStore'
 import { buildAgentProfiles } from '../shared/agentProfiles'
+import { TASK_DOCUMENTS_FOLDER, WORKSPACE_FOLDERS } from '../shared/workspaceLayout'
 import type {
   AgentTemplateInput,
   AgentTemplatePatch,
@@ -44,7 +45,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.on('pty:send-prompt', (_event, ptyId: string, prompt: string) => {
     const files = workspaceFiles()
-    ptyManager.sendPrompt(ptyId, `[작업실 규칙]\n작업실: ${files.root}\n파일 생성·수정과 명령 실행은 이 작업실 안에서만 수행하세요. 폴더 밖 파일은 수정하지 마세요. SRS·PRD·PHASES·작업 보고서는 ${files.path('문서')} 아래 작업별 폴더에 저장하세요. 에셋·애니메이션 폴더에는 리소스만 두고 문서를 섞지 마세요. 결과물은 ${files.path('결과물')}에 정리하세요.\n\n${prompt}`)
+    ptyManager.sendPrompt(ptyId, `[작업실 규칙]\n작업실: ${files.root}\n파일 생성·수정과 명령 실행은 이 작업실 안에서만 수행하세요. 폴더 밖 파일은 수정하지 마세요. IDE 자체의 기본 문서와 참고 자료는 ${files.path(WORKSPACE_FOLDERS.documents)}, 가구·캐릭터·커피·애니메이션 등 IDE 자체 에셋과 원본은 ${files.path(WORKSPACE_FOLDERS.assets)}에서 관리하며 임의로 덮어쓰지 마세요. 이번에 의뢰받은 작업의 SRS·PRD·PHASES·보고서는 ${files.path(TASK_DOCUMENTS_FOLDER)} 아래 작업별 폴더에 저장하세요. ${files.path(WORKSPACE_FOLDERS.outputs)}에는 사용자가 오피스에서 의뢰한 작업의 결과만 작업별 폴더에 저장하세요. IDE 자체 리소스를 산출물에 섞지 마세요. 에셋·애니메이션 폴더에는 리소스만 두고 문서를 섞지 마세요.\n\n${prompt}`)
   })
 
   ipcMain.on('pty:resize', (_event, ptyId: string, cols: number, rows: number) => {
@@ -119,7 +120,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('tasks:prepare', (_event, request: string) => {
     const workspace = workspaceStore.get()
     if (!workspace) throw new Error('작업 폴더를 먼저 지정해주세요.')
-    const privateTaskRoot = workspaceFiles().path('문서')
+    const privateTaskRoot = workspaceFiles().path(TASK_DOCUMENTS_FOLDER)
     return taskWorkspaceManager.prepare(privateTaskRoot, request)
   })
 

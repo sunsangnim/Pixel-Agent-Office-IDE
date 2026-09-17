@@ -1,7 +1,8 @@
-import { mkdirSync, lstatSync, realpathSync, existsSync } from 'fs'
+import { mkdirSync, lstatSync, realpathSync, existsSync, readdirSync, renameSync, rmdirSync } from 'fs'
 import { readdir, stat, open } from 'fs/promises'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'path'
 import type { WorkspaceEntry, WorkspaceListing } from '../shared/types'
+import { LEGACY_WORKSPACE_FOLDERS, WORKSPACE_FOLDERS } from '../shared/workspaceLayout'
 
 const IGNORED = new Set(['.git', 'node_modules', '.cache', '.runtime'])
 const TEXT_EXTENSIONS = new Set(['.md', '.txt', '.json', '.jsonc', '.csv', '.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs', '.html', '.css', '.scss', '.yaml', '.yml', '.toml', '.xml', '.py', '.ps1', '.sh', '.log', '.svg', '.sql'])
@@ -39,13 +40,39 @@ export class WorkspaceFiles {
       throw new Error('전용 작업실은 바로가기나 연결 폴더가 아닌 실제 폴더여야 합니다.')
     }
     mkdirSync(this.root, { recursive: true })
-    for (const name of ['프로젝트', '문서', '결과물', '에이전트 작업본', '문서/에셋', '문서/애니메이션', '결과물/에셋', '결과물/애니메이션']) {
+    for (const [oldName, newName] of Object.entries(LEGACY_WORKSPACE_FOLDERS)) {
+      this.migrateFolder(confinedPath(this.root, oldName), confinedPath(this.root, newName))
+    }
+    for (const name of [...Object.values(WORKSPACE_FOLDERS), `${WORKSPACE_FOLDERS.documents}/에셋`, `${WORKSPACE_FOLDERS.documents}/애니메이션`]) {
       mkdirSync(this.path(name), { recursive: true })
     }
     mkdirSync(this.path(join('프로젝트', '기본 작업')), { recursive: true })
   }
 
-  path(input = ''): string { return confinedPath(this.root, input) }
+  private migrateFolder(source: string, target: string): void {
+    if (!existsSync(source) || lstatSync(source).isSymbolicLink() || !lstatSync(source).isDirectory()) return
+    if (existsSync(target) && (!lstatSync(target).isDirectory() || lstatSync(target).isSymbolicLink())) return
+    mkdirSync(confinedPath(this.root, target), { recursive: true })
+    for (const entry of readdirSync(source, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) continue
+      const from = confinedPath(this.root, join(source, entry.name))
+      const to = confinedPath(this.root, join(target, entry.name))
+      if (entry.isDirectory()) this.migrateFolder(from, to)
+      // Existing destination files are never replaced. Conflicts remain visible
+      // in the original folder and old references continue to resolve there.
+      else if (entry.isFile() && !existsSync(to)) renameSync(from, to)
+    }
+    if (readdirSync(source).length === 0) rmdirSync(source)
+  }
+
+  path(input = ''): string {
+    const target = confinedPath(this.root, input)
+    if (existsSync(target)) return target
+    const [first, ...rest] = relative(this.root, target).split(sep)
+    const replacement = Object.hasOwn(LEGACY_WORKSPACE_FOLDERS, first)
+      ? LEGACY_WORKSPACE_FOLDERS[first as keyof typeof LEGACY_WORKSPACE_FOLDERS] : undefined
+    return replacement ? confinedPath(this.root, join(replacement, ...rest)) : target
+  }
 
   async list(input = '', query = ''): Promise<WorkspaceListing> {
     if (typeof query !== 'string') throw new Error('검색어가 올바르지 않습니다.')

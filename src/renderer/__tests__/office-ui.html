@@ -27,9 +27,9 @@ window.api={
  system:{openSettings:()=>{}},tasks:{prepare:async()=>{window.calls.push('prepare');return {taskId:'test-task',rootPath:'/test-docs',specPath:'/test-docs/spec',phasesPath:'/test-docs/phases',readmePath:'/test-docs/readme'}},readSpec:async()=>{window.calls.push('readSpec');return '# 테스트 기획'}}
 }
 if(location.search.includes('recover')){
-localStorage.setItem('pixel-office-representative-visitors-v1',JSON.stringify(['claude-code:lead']))
+localStorage.setItem('pixel-office-representative-visitors-v1',JSON.stringify(location.search.includes('Alias')?[]:['claude-code:lead']))
 localStorage.setItem('pixel-office:chat-history-v1',JSON.stringify([
- {id:'legacy-user',kind:'user',authorName:'대표',authorColor:'',authorSeed:'me',text:location.search.includes('Bare')?'자리로 돌아가게':'@Claude 자리로 돌아가게'},
+ {id:'legacy-user',kind:'user',authorName:'대표',authorColor:'',authorSeed:'me',text:location.search.includes('Alias')?'클부장 대표실로 오게나':location.search.includes('Bare')?'자리로 돌아가게':'@Claude 자리로 돌아가게'},
  {id:'legacy-plan',kind:'system',authorName:'',authorColor:'',authorSeed:'',text:'Claude에게 기획 작성 요청 (구현 전 승인 필요)'}]))
 }
 window.advance=(seconds)=>{for(let i=0;i<seconds*60;i++)window.scene.update(0,1000/60)}
