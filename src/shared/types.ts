@@ -161,6 +161,27 @@ export interface AgentRunApi {
 export interface WorkspaceApi {
   getWorkFolder(): Promise<string | null>
   chooseWorkFolder(): Promise<string | null>
+  listFiles(path?: string, query?: string): Promise<WorkspaceListing>
+  previewFile(path: string): Promise<string>
+  openFolder(path?: string): Promise<void>
+  revealFile(path: string): Promise<void>
+  createFolder(parent: string, name: string): Promise<string>
+}
+
+export interface WorkspaceEntry {
+  name: string
+  /** Path relative to the dedicated workspace root. */
+  path: string
+  directory: boolean
+  size: number
+  modifiedAt: number
+}
+
+export interface WorkspaceListing {
+  root: string
+  path: string
+  entries: WorkspaceEntry[]
+  truncated: boolean
 }
 
 export interface TaskWorkspace {

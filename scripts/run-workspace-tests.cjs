@@ -1,0 +1,5 @@
+const path = require('node:path')
+const { buildSync } = require('esbuild')
+const output = path.join(process.cwd(), 'out', 'workspace-runner.cjs')
+buildSync({ entryPoints: [path.join(__dirname, 'workspace-runner.ts')], outfile: output, bundle: true, platform: 'node', format: 'cjs', logLevel: 'silent' })
+require(output)
