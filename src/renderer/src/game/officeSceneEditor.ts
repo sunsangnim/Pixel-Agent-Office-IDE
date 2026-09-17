@@ -67,6 +67,60 @@ export function redoLayoutChange(scene: OfficeScene): void {
   applyLayoutSnapshot(scene, snapshot)
 }
 
+const LAYOUT_PRESETS_KEY = 'pixel-office-layout-presets-v1'
+const MAX_PRESET_NAME_LENGTH = 40
+export interface LayoutPresetSummary { name: string; savedAt: string }
+interface StoredPreset { savedAt: string; snapshot: LayoutSnapshot }
+
+function readPresets(): Record<string, StoredPreset> {
+  try {
+    const raw = localStorage.getItem(LAYOUT_PRESETS_KEY)
+    if (!raw) return {}
+    const value = JSON.parse(raw) as unknown
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, StoredPreset> : {}
+  } catch {
+    return {}
+  }
+}
+
+function writePresets(presets: Record<string, StoredPreset>): void {
+  localStorage.setItem(LAYOUT_PRESETS_KEY, JSON.stringify(presets))
+}
+
+export function listLayoutPresets(_scene: OfficeScene): LayoutPresetSummary[] {
+  return Object.entries(readPresets())
+    .map(([name, preset]) => ({ name, savedAt: preset.savedAt }))
+    .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
+}
+
+/** Named snapshots of the current layout, saved alongside (not instead of)
+ *  the single active layout - switching presets doesn't require redoing the
+ *  interior from scratch, and mid-edit work is never at risk of being
+ *  silently replaced by loading one. */
+export function saveLayoutPreset(scene: OfficeScene, name: string): boolean {
+  const trimmed = name.trim()
+  if (!trimmed || trimmed.length > MAX_PRESET_NAME_LENGTH) return false
+  const presets = readPresets()
+  presets[trimmed] = { savedAt: new Date().toISOString(), snapshot: snapshotLayout(scene) }
+  writePresets(presets)
+  return true
+}
+
+export function loadLayoutPreset(scene: OfficeScene, name: string): boolean {
+  if (!scene.layoutEditing) return false
+  const preset = readPresets()[name]
+  if (!preset) return false
+  pushUndo(scene)
+  applyLayoutSnapshot(scene, preset.snapshot)
+  return true
+}
+
+export function deleteLayoutPreset(_scene: OfficeScene, name: string): void {
+  const presets = readPresets()
+  delete presets[name]
+  writePresets(presets)
+}
+
 export function addFurniture(scene: OfficeScene, id: string, frame: number, x: number, y: number, _width: number, _height: number): Phaser.GameObjects.Image {
   const saved = scene.layoutSave[id]
   const angle = saved?.rotation ?? 0

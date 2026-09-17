@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FLOOR_ITEMS, PALETTE_ITEMS, type EditorState, type OfficeScene } from '../game/OfficeScene'
+import { FLOOR_ITEMS, PALETTE_ITEMS, type EditorState, type LayoutPresetSummary, type OfficeScene } from '../game/OfficeScene'
 
 interface LayoutEditorPanelProps {
   scene: OfficeScene | null
@@ -9,12 +9,24 @@ function LayoutEditorPanel({ scene }: LayoutEditorPanelProps) {
   const [state, setState] = useState<EditorState>({
     hasSelection: false, floor: 'floor-plain-gray', canUndo: false, canRedo: false
   })
+  const [presets, setPresets] = useState<LayoutPresetSummary[]>([])
+  const [presetName, setPresetName] = useState('')
 
   useEffect(() => {
     if (!scene) return
     scene.setEditorStateHandler(setState)
+    setPresets(scene.listLayoutPresets())
     return () => scene.setEditorStateHandler(null)
   }, [scene])
+
+  const refreshPresets = (): void => setPresets(scene?.listLayoutPresets() ?? [])
+
+  const save = (): void => {
+    if (!scene || !presetName.trim()) return
+    scene.saveLayoutPreset(presetName.trim())
+    setPresetName('')
+    refreshPresets()
+  }
 
   return (
     <div className="layout-editor-panel">
@@ -72,6 +84,42 @@ function LayoutEditorPanel({ scene }: LayoutEditorPanelProps) {
         <button type="button" className="layout-editor-reset-btn" onClick={() => scene?.resetFurnitureLayout()}>
           전체 삭제
         </button>
+      </div>
+
+      <div className="layout-editor-row layout-editor-presets">
+        <span className="layout-editor-row-label">배치 저장</span>
+        <div className="layout-editor-preset-save">
+          <input
+            type="text"
+            placeholder="이름을 입력하세요"
+            value={presetName}
+            maxLength={40}
+            onChange={(e) => setPresetName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') save() }}
+          />
+          <button type="button" disabled={!presetName.trim()} onClick={save}>저장</button>
+        </div>
+        {presets.length > 0 && (
+          <ul className="layout-editor-preset-list">
+            {presets.map((preset) => (
+              <li key={preset.name}>
+                <span title={new Date(preset.savedAt).toLocaleString('ko-KR')}>{preset.name}</span>
+                <button type="button" onClick={() => { scene?.loadLayoutPreset(preset.name) }}>불러오기</button>
+                <button
+                  type="button"
+                  className="layout-editor-preset-delete"
+                  onClick={() => {
+                    if (!window.confirm(`"${preset.name}" 배치를 삭제할까요?`)) return
+                    scene?.deleteLayoutPreset(preset.name)
+                    refreshPresets()
+                  }}
+                >
+                  삭제
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   )
