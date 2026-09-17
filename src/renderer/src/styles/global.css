@@ -548,6 +548,22 @@ textarea {
 .office-dialogue-portrait { height: 126px; overflow: hidden; background: #e7bd7f; border: 3px solid #956138; box-shadow: inset 0 0 0 3px #ffd898, 0 0 0 1px #d4a263; }
 .office-dialogue-portrait img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
 .office-dialogue-speaker figcaption { margin-top: 6px; padding: 3px 4px; font-size: 13px; background: #f7dba3; border: 2px solid #b3814b; }
+.office-request-tray { position: absolute; z-index: 79; top: 12px; left: 16px; right: 16px; display: flex; flex-wrap: wrap; gap: 8px; pointer-events: none; }
+.office-request-tray button { pointer-events: auto; padding: 7px 12px; border: 2px solid #986338; background: #f5dda9; color: #58351e; cursor: pointer; box-shadow: 0 2px 4px #0004; }
+.office-request-tray button.active { background: #ffd58a; border-color: #573922; }
+.office-dialogue-request { max-height: calc(100dvh - 105px); }
+.office-dialogue-request .office-dialogue-main { min-height: 0; }
+.office-dialogue-request .office-dialogue-text { flex: 0 0 auto; min-height: 0; max-height: 110px; font-size: 16px; line-height: 1.6; }
+.office-dialogue-request-title { font-size: 12px; color: #946632; padding-bottom: 5px; }
+.office-dialogue-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 12px; }
+.office-dialogue-actions button { padding: 6px 12px; }
+.office-dialogue-actions button:disabled { opacity: .5; cursor: default; }
+.office-dialogue-actions .office-dialogue-approve { background: #d5e0a1; border-color: #647f45; }
+.office-dialogue-spec { flex: 1 1 auto; min-height: 90px; max-height: 28vh; margin: 8px 0 0; padding: 12px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #ffedc6; border: 2px solid #bb854e; color: #513921; font-size: 12px; }
+.office-dialogue-feedback { min-height: 70px; margin-top: 10px; padding: 8px; resize: vertical; background: #fff5dc; color: #513921; border: 2px solid #bb854e; }
+.office-dialogue-terminal { min-height: 0; }
+.office-dialogue-terminal > p { font-size: 11px; margin: 7px 0; }
+.office-dialogue-terminal .terminal-pane { height: clamp(200px, 35vh, 360px); padding: 8px; background: #111118; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 900px) {
   .office-dialogue { left: 18px; right: calc(clamp(280px, 25vw, 320px) + 18px); gap: 12px; padding: 20px 15px 15px; min-height: 180px; }

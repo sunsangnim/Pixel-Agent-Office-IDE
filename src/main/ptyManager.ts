@@ -58,7 +58,10 @@ class PtyManager {
       const entry = this.ptys.get(ptyId)
       if (entry) {
         entry.buffer = (entry.buffer + data).slice(-MAX_BUFFER_LENGTH)
-        const signal = entry.adapter.inspectOutput(data)
+        // Startup screens can arrive as several ConPTY chunks. Inspect their
+        // accumulated text until the first state is known; do not reuse old
+        // permission text after the CLI has moved on to a later screen.
+        const signal = entry.adapter.inspectOutput(entry.state === 'starting' ? entry.buffer.slice(-12000) : data)
         if (signal) this.emitState(ptyId, entry, signal.state, signal.reason)
         else if (entry.taskActive && entry.state !== 'waiting') this.emitState(ptyId, entry, 'working')
         if (['ready', 'completed'].includes(entry.state) && !entry.taskActive) this.flushPrompt(ptyId, entry)

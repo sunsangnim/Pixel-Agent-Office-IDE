@@ -1,6 +1,7 @@
 const readline = require('node:readline')
 let trusted = false
-console.log('Accessing workspace: fixture\nYes, I trust this folder\nEnter to confirm')
+process.stdout.write('Accessing work')
+setTimeout(() => process.stdout.write('space: fixture\nChoose an option\n'), 80)
 readline.createInterface({ input: process.stdin }).on('line', (text) => {
   if (!trusted) {
     if (text !== 'trust') { console.log('UNSAFE INPUT BEFORE TRUST'); return }
