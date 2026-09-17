@@ -51,12 +51,14 @@ import {
   collisionFootprint, furnitureCollision, OFFICE_FLOOR_REGION, OFFICE_WALL_COLLISIONS, rotatedFootprint, snapFurniturePoint
 } from './officeGrid'
 import { intersectsAabb, resolveAxisSeparated, type CollisionRect } from './collisionResolution'
+import { distanceToRoute, findYieldRoute } from './officeTraffic'
 import { measureFurnitureBounds } from './furnitureBounds'
 import { seatedFrameAnchor, seatedSpriteFoot } from './seatAnchors'
 import {
   DEFAULT_LAYOUT_SEED,
   OFFICE_LAYOUT_SAVE_KEY,
   OFFICE_REMOVED_DESKS_KEY,
+  REPRESENTATIVE_MEETING_CHAIR_ID,
   parseOfficeLayout,
   parseRemovedIds,
   type OfficeLayoutSave,
@@ -109,7 +111,11 @@ interface ActorView {
   stalledMs: number
   blockedOccupancy: string | null
   retryAt: number
+  departureBlocked?: boolean
+  trafficYield?: { requesterId: string; origin: WorldPoint; arrived: boolean; wasSettled: boolean }
 }
+
+interface ActorDestination { point: WorldPoint; seated: boolean; chairId?: string }
 
 interface FurnitureView {
   id: string
@@ -293,6 +299,8 @@ export class OfficeScene extends Phaser.Scene {
   private simulationTimeMs = 0
   private navigationRevision = 0
   private navigationLayoutKey = ''
+  private meetingAssignmentKey = ''
+  private meetingAssignments = new Map<string, ActorDestination>()
 
   constructor() {
     super(OFFICE_SCENE_KEY)
@@ -1667,6 +1675,7 @@ export class OfficeScene extends Phaser.Scene {
       this.representativeStalledMs += deltaSeconds * 1000
       if (this.representativeStalledMs >= 500) {
         this.representativeStalledMs = 0
+        this.resolveRepresentativeTraffic()
         this.planRepresentativeRoute()
       }
       return
@@ -2075,17 +2084,51 @@ export class OfficeScene extends Phaser.Scene {
     return { x: 352 + actor.teamIndex * 96, y: 592 + actor.slotIndex * 40 }
   }
 
-  private actorDestination(actor: OfficeGameActor, actorIndex: number): { point: WorldPoint; seated: boolean; chairId?: string } {
-    if (actor.presence === 'meeting') {
-      const attendees = this.snapshot?.actors.filter((candidate) => candidate.presence === 'meeting') ?? [actor]
-      const index = Math.max(0, attendees.findIndex((candidate) => candidate.profileId === actor.profileId))
-      const chairs = [...this.furniture.values()].filter(({ frame, image }) =>
+  private meetingDestination(actor: OfficeGameActor): ActorDestination {
+    const attendees = (this.snapshot?.actors.filter((candidate) => candidate.presence === 'meeting') ?? [actor])
+      .slice().sort((a, b) => a.teamIndex - b.teamIndex || a.slotIndex - b.slotIndex || a.profileId.localeCompare(b.profileId))
+    const representativeChair = this.representativeSeat?.chairId ?? this.representativeChairTarget
+    const key = JSON.stringify([this.navigationRevision, representativeChair, attendees.map((candidate) => candidate.profileId)])
+    if (key !== this.meetingAssignmentKey) {
+      this.meetingAssignmentKey = key
+      this.meetingAssignments.clear()
+      const collisions = this.collisionRects()
+      const entry = nearestOfficePosition(WAYPOINTS.meetingDoor, collisions) ?? WAYPOINTS.meetingDoor
+      const chairs = [...this.furniture.values()].filter(({ id, frame, image }) =>
+        id !== REPRESENTATIVE_MEETING_CHAIR_ID && id !== representativeChair &&
         [12, 13, 14].includes(frame) && image.x > 304 && image.x < 656 && image.y > 32 && image.y < 336
       ).sort((a, b) => a.image.y - b.image.y || a.image.x - b.image.x || a.id.localeCompare(b.id))
-      const chair = chairs[index]
-      if (chair) return { point: { x: chair.image.x, y: chair.image.y }, seated: true, chairId: chair.id }
-      const waitingIndex = index - chairs.length
-      return { point: { x: 336 + (waitingIndex % 4) * 80, y: 272 + Math.floor(waitingIndex / 4) * 48 }, seated: false }
+        .filter((chair) => findOfficePath(entry, chair.image, collisions, {
+          goalRadius: SEAT_ACCESS_RADIUS, goalCollisions: this.chairAccessCollisions(chair, undefined, false)
+        }).length > 0)
+      const reserved: WorldPoint[] = chairs.map(({ image }) => ({ x: image.x, y: image.y }))
+      const candidates: WorldPoint[] = []
+      // Keep a clear central aisle to the table and doorway. Overflow guests
+      // wait on distinct free floor, rather than sharing an unreachable chair.
+      for (const y of [320, 256, 192, 128, 64]) for (const x of [336, 624, 400, 560]) candidates.push({ x, y })
+      for (let y = 400; y <= 896; y += 64) for (const x of [352, 608, 288, 672]) candidates.push({ x, y })
+      attendees.forEach((attendee, index) => {
+        const chair = chairs[index]
+        if (chair) {
+          this.meetingAssignments.set(attendee.profileId, { point: { x: chair.image.x, y: chair.image.y }, seated: true, chairId: chair.id })
+          return
+        }
+        const obstacles = [...collisions, ...reserved.map(actorCollisionRect)]
+        const point = candidates.find((candidate) => reserved.every((other) => Math.hypot(other.x - candidate.x, other.y - candidate.y) >= 64) &&
+          isOfficePositionWalkable(candidate, obstacles) && findOfficePath(entry, candidate, obstacles).length > 0)
+          ?? nearestOfficePosition({ x: 480, y: 592 + index * 16 }, obstacles, 320)
+        if (point) {
+          reserved.push(point)
+          this.meetingAssignments.set(attendee.profileId, { point, seated: false })
+        }
+      })
+    }
+    return this.meetingAssignments.get(actor.profileId) ?? { point: this.deskSeatPoint(actor), seated: false }
+  }
+
+  private actorDestination(actor: OfficeGameActor, actorIndex: number): ActorDestination {
+    if (actor.presence === 'meeting') {
+      return this.meetingDestination(actor)
     }
     const point = targetPoint(actor, actorIndex, (candidate) => this.deskSeatPoint(candidate)) ?? this.deskSeatPoint(actor)
     const seated = ['working', 'deskIdle', 'arriving', 'requestingHelp', 'error'].includes(actor.presence) &&
@@ -2125,12 +2168,106 @@ export class OfficeScene extends Phaser.Scene {
 
   private updateIdleActivities(): void {
     for (const view of this.actors.values()) {
+      if (view.departureBlocked && this.simulationTimeMs < view.retryAt) continue
       const actor = this.effectiveActor(view)
       const changed = actor.presence !== view.actor.presence
+      if (view.trafficYield && !changed) {
+        if (!view.trafficYield.arrived || !this.trafficRequesterCleared(view)) continue
+        const wasSettled = view.trafficYield.wasSettled
+        view.trafficYield = undefined
+        if (wasSettled) {
+          view.goal = { x: view.container.x, y: view.container.y }
+          view.settled = true
+          this.startActionAnimation(view, actor)
+          continue
+        }
+        view.routeKey = ''
+        this.updateActor(view, actor, view.actorIndex)
+        continue
+      }
       const occupancyChanged = view.blocked && view.blockedOccupancy !== null &&
-        this.simulationTimeMs >= view.retryAt && this.occupancyKey(view) !== view.blockedOccupancy
+        this.simulationTimeMs >= view.retryAt
       if (occupancyChanged) view.routeKey = ''
-      if (changed || occupancyChanged) this.updateActor(view, actor, view.actorIndex)
+      if (changed || occupancyChanged || view.departureBlocked) this.updateActor(view, actor, view.actorIndex)
+    }
+  }
+
+  private actorDeparturePoint(view: ActorView, chair: FurnitureView, destination: ActorDestination): WorldPoint | null {
+    const collisions = this.collisionRects()
+    const obstacles = [...collisions, ...this.actorObstacles(view)]
+    const access = this.chairAccessCollisions(chair, view)
+    const candidates: WorldPoint[] = view.approachPoint ? [view.approachPoint] : []
+    for (let dy = -SEAT_ACCESS_RADIUS; dy <= SEAT_ACCESS_RADIUS; dy += 16) {
+      for (let dx = -SEAT_ACCESS_RADIUS; dx <= SEAT_ACCESS_RADIUS; dx += 16) {
+        if (Math.hypot(dx, dy) <= SEAT_ACCESS_RADIUS) candidates.push({ x: chair.image.x + dx, y: chair.image.y + dy })
+      }
+    }
+    candidates.sort((a, b) => Math.hypot(a.x - chair.image.x, a.y - chair.image.y) - Math.hypot(b.x - chair.image.x, b.y - chair.image.y))
+    const nextChair = destination.chairId && this.furniture.get(destination.chairId)
+    const options = { goalRadius: destination.seated ? SEAT_ACCESS_RADIUS : 0,
+      goalCollisions: nextChair ? this.chairAccessCollisions(nextChair, view, false) : OFFICE_WALL_COLLISIONS }
+    return candidates.find((point) => isOfficePositionWalkable(point, obstacles) &&
+      hasOfficeLineOfSight(chair.image, point, access) &&
+      (Math.hypot(point.x - destination.point.x, point.y - destination.point.y) < 0.5 ||
+        findOfficePath(point, destination.point, collisions, options).length > 0)) ?? null
+  }
+
+  private trafficRequesterCleared(view: ActorView): boolean {
+    const yielding = view.trafficYield!
+    const representative = yielding.requesterId === '__representative__'
+    const requester = this.actors.get(yielding.requesterId)
+    const point = representative ? this.representativeSprite : requester?.container
+    if (!point) return true
+    if (Math.hypot(point.x - view.container.x, point.y - view.container.y) < 44) return false
+    if (representative ? !this.representativeGoal : requester?.settled) return true
+    const route = representative ? this.representativeRoute : requester!.route.slice(requester!.routeIndex)
+    return distanceToRoute(yielding.origin, [point, ...route]) > 44
+  }
+
+  private yieldActor(view: ActorView, requesterId: string, passingRoute: WorldPoint[]): boolean {
+    if (view.trafficYield || view.pantryAction || view.departureBlocked || (view.settled && view.seatedGoal)) return false
+    const reserved = [...this.actors.values()].filter((other) => other !== view)
+      .flatMap((other) => other.trafficYield ? other.route.slice(-1) : other.goal ? [other.goal] : [])
+    const route = findYieldRoute(view.container, passingRoute, [...this.collisionRects(), ...this.actorObstacles(view)], reserved)
+    if (route.length === 0) return false
+    view.trafficYield = { requesterId, origin: { x: view.container.x, y: view.container.y }, arrived: false, wasSettled: view.settled }
+    view.settled = false
+    view.blocked = false
+    view.stalledMs = 0
+    view.route = route
+    view.routeIndex = 0
+    this.restoreActorStandingPose(view)
+    this.setActorSpeech(view, '잠시 양보')
+    return true
+  }
+
+  private resolveActorTraffic(requester: ActorView): boolean {
+    if (requester.trafficYield || !requester.goal) return false
+    const route = [requester.container, ...findOfficePath(requester.container, requester.goal, this.collisionRects(), this.actorSeatPathOptions(requester))]
+    const blockers = [...this.actors.values()].filter((other) => other !== requester && !other.trafficYield &&
+      !(other.settled && other.seatedGoal) && Math.hypot(other.container.x - requester.container.x, other.container.y - requester.container.y) < 80 &&
+      distanceToRoute(other.container, route) < 32)
+      .sort((a, b) => a.actor.profileId.localeCompare(b.actor.profileId))
+    for (const other of blockers) {
+      // A deterministic right of way prevents both walkers choosing the same
+      // sidestep or waiting for each other. Idle floor occupants also step aside.
+      if (other.settled || requester.actor.profileId.localeCompare(other.actor.profileId) < 0) {
+        if (this.yieldActor(other, requester.actor.profileId, route)) return true
+      } else if (other.goal) {
+        const otherRoute = [other.container, ...findOfficePath(other.container, other.goal, this.collisionRects(), this.actorSeatPathOptions(other))]
+        if (this.yieldActor(requester, other.actor.profileId, otherRoute)) return true
+      }
+    }
+    return false
+  }
+
+  private resolveRepresentativeTraffic(): void {
+    const sprite = this.representativeSprite
+    if (!sprite || !this.representativeGoal) return
+    const route = [sprite, ...findOfficePath(sprite, this.representativeGoal, this.collisionRects())]
+    for (const view of this.actors.values()) {
+      if (Math.hypot(view.container.x - sprite.x, view.container.y - sprite.y) < 80 &&
+        distanceToRoute(view.container, route) < 32 && this.yieldActor(view, '__representative__', route)) return
     }
   }
 
@@ -2138,10 +2275,24 @@ export class OfficeScene extends Phaser.Scene {
     if (this.layoutEditing || !view.stateMachine.requestPresence(actor.presence)) return
     const destination = this.actorDestination(actor, actorIndex)
     const key = [actor.presence, destination.point.x, destination.point.y, this.navigationRevision].join(':')
+    const previousChair = view.settled && view.seatedGoal && view.chairId && this.furniture.get(view.chairId)
+    if (previousChair && Math.hypot(destination.point.x - view.container.x, destination.point.y - view.container.y) > 0.5) {
+      const departure = this.actorDeparturePoint(view, previousChair, destination)
+      if (!departure) {
+        // Keep the current seated composition until a collision-free exit is
+        // available. Never stand on another character's occupied approach tile.
+        view.departureBlocked = true
+        view.retryAt = this.simulationTimeMs + 500
+        return
+      }
+      view.container.setPosition(departure.x, departure.y)
+    }
+    view.departureBlocked = false
     view.actor = actor
     view.actorIndex = actorIndex
     if (view.routeKey === key) return
     view.routeKey = key
+    view.trafficYield = undefined
     this.stopActorAction(view)
     view.route = []
     view.routeIndex = 0
@@ -2169,11 +2320,12 @@ export class OfficeScene extends Phaser.Scene {
     }
 
     const collisions = this.collisionRects()
-    if (!isOfficePositionWalkable(view.container, collisions)) {
+    const obstacles = [...collisions, ...this.actorObstacles(view)]
+    if (!isOfficePositionWalkable(view.container, obstacles)) {
       // Stand up at the approach used to enter the seat. Old saves inside
       // furniture are repaired once, before planning, rather than every tick.
-      const standing = view.approachPoint && isOfficePositionWalkable(view.approachPoint, collisions)
-        ? view.approachPoint : nearestOfficePosition(view.container, collisions)
+      const standing = view.approachPoint && isOfficePositionWalkable(view.approachPoint, obstacles)
+        ? view.approachPoint : nearestOfficePosition(view.container, obstacles)
       if (!standing || !hasOfficeLineOfSight(view.container, standing, OFFICE_WALL_COLLISIONS)) {
         this.blockActor(view, false)
         return
@@ -2182,16 +2334,16 @@ export class OfficeScene extends Phaser.Scene {
     }
     view.approachPoint = undefined
     view.container.setScale(1)
-    view.route = findOfficePath(view.container, view.goal, collisions, this.actorSeatPathOptions(view))
+    view.route = findOfficePath(view.container, view.goal, obstacles, this.actorSeatPathOptions(view))
+    if (view.route.length === 0) view.route = findOfficePath(view.container, view.goal, collisions, this.actorSeatPathOptions(view))
     if (view.route.length === 0 && view.seatedGoal && actor.presence === 'meeting') {
       // Edited tables can completely enclose a chair. Join the meeting from
       // open floor instead of trying to walk through the table to that seat.
-      const attendees = this.snapshot?.actors.filter((candidate) => candidate.presence === 'meeting') ?? [actor]
-      const index = Math.max(0, attendees.findIndex((candidate) => candidate.profileId === actor.profileId))
-      view.goal = { x: 336 + (index % 4) * 80, y: 272 + Math.floor(index / 4) * 48 }
+      const waiting = nearestOfficePosition(destination.point, obstacles, SEAT_ACCESS_RADIUS)
+      if (waiting) view.goal = waiting
       view.seatedGoal = false
       view.chairId = null
-      view.route = findOfficePath(view.container, view.goal, collisions)
+      view.route = findOfficePath(view.container, view.goal, obstacles)
     }
     if (view.route.length === 0) this.blockActor(view, false)
     this.updateActorDepth(view)
@@ -2247,6 +2399,14 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private finishActorRoute(view: ActorView): void {
+    if (view.trafficYield) {
+      view.trafficYield.arrived = true
+      view.route = []
+      view.routeIndex = 0
+      this.stopActorWalking(view)
+      this.updateActorDepth(view)
+      return
+    }
     const reservedId = this.representativeSeat?.chairId ?? this.representativeChairTarget
     const reserved = reservedId && this.furniture.get(reservedId)
     if (view.seatedGoal && view.goal && reserved &&
@@ -2265,7 +2425,7 @@ export class OfficeScene extends Phaser.Scene {
     }
     if (view.seatedGoal && view.goal) {
       const chair = view.chairId && this.furniture.get(view.chairId)
-      if (!chair || Math.hypot(view.container.x - view.goal.x, view.container.y - view.goal.y) > SEAT_ACCESS_RADIUS ||
+      if (!chair || chair.id === REPRESENTATIVE_MEETING_CHAIR_ID || Math.hypot(view.container.x - view.goal.x, view.container.y - view.goal.y) > SEAT_ACCESS_RADIUS ||
         !hasOfficeLineOfSight(view.container, view.goal, this.chairAccessCollisions(chair, view, false))) {
         this.blockActor(view, false)
         return
@@ -2311,12 +2471,21 @@ export class OfficeScene extends Phaser.Scene {
         this.stopActorWalking(view)
         view.stalledMs += deltaSeconds * 1000
         if (view.stalledMs >= 500 && view.goal) {
-          const alternate = findOfficePath(view.container, view.goal, obstacles, this.actorSeatPathOptions(view))
+          if (!view.trafficYield && this.resolveActorTraffic(view)) {
+            view.stalledMs = 0
+            continue
+          }
+          const targetGoal = view.trafficYield ? view.route.at(-1)! : view.goal
+          const alternate = findOfficePath(view.container, targetGoal, obstacles, view.trafficYield ? {} : this.actorSeatPathOptions(view))
           if (alternate.length > 0 && Math.hypot(alternate[0].x - before.x, alternate[0].y - before.y) > 0.5) {
             view.route = alternate
             view.routeIndex = 0
             view.stalledMs = 0
-          } else this.blockActor(view, true)
+          } else if (view.trafficYield) {
+            view.stalledMs = 0
+          } else {
+            this.blockActor(view, true)
+          }
         }
         continue
       }

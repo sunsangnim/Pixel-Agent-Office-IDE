@@ -14,6 +14,7 @@ import { isMeetingEndCommand, isMeetingStartCommand } from '../src/renderer/src/
 import { isWorkingTime } from '../src/renderer/src/hooks/useOfficeClock'
 import { getCorporateRosterCell, CORPORATE_ROSTER_SIZE } from '../src/renderer/src/lib/corporateRoster'
 import { presenceForRuntime, readStoredJson } from '../src/renderer/src/lib/meetingCheckpoint'
+import { CHAT_HISTORY_KEY, readChatHistory, saveChatHistory, userChatMessage } from '../src/renderer/src/lib/chatHistory'
 import { MEETING_SEATS, TEAM_DESKS, routeFor, type OfficeGameActor } from '../src/renderer/src/game/officeWorld'
 import { OFFICE_COLLISIONS, findOfficePath } from '../src/renderer/src/game/navigation'
 import { intersectsAabb, pushApart, resolveAxisSeparated } from '../src/renderer/src/game/collisionResolution'
@@ -106,6 +107,21 @@ function verifyRoutingAndProfiles(): void {
   assert.equal(isMeetingStartCommand('회의하자'), true)
   assert.equal(isMeetingStartCommand('다 모여'), true)
   assert.equal(isMeetingEndCommand('회의 종료'), true)
+  const chatStorage = new Map<string, string>()
+  const chatStore = { getItem: (key: string) => chatStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => { chatStorage.set(key, value) } }
+  const meetingMessage = userChatMessage('회의하자')
+  saveChatHistory(chatStore, [meetingMessage, userChatMessage('첫 줄\n둘째 줄'), userChatMessage('회의 종료')])
+  assert.deepEqual(readChatHistory(chatStore).map(message => message.text), ['회의하자', '첫 줄\n둘째 줄', '회의 종료'])
+  assert.equal(readChatHistory(chatStore)[0].id, meetingMessage.id, 'reload retains message identity and order')
+  chatStorage.set(CHAT_HISTORY_KEY, 'broken')
+  assert.deepEqual(readChatHistory(chatStore), [])
+  chatStorage.set(CHAT_HISTORY_KEY, JSON.stringify([null, {}, { kind: 'other' }, meetingMessage]))
+  assert.deepEqual(readChatHistory(chatStore), [meetingMessage])
+  saveChatHistory(chatStore, Array.from({ length: 305 }, (_, index) => userChatMessage(String(index))))
+  assert.equal(readChatHistory(chatStore).length, 300)
+  assert.equal(readChatHistory(chatStore)[0].text, '5')
+  assert.doesNotThrow(() => saveChatHistory({ setItem: () => { throw new Error('Quota exceeded') } }, [meetingMessage]))
   assert.equal(isWorkingTime(new Date(2026, 7, 28, 8, 0)), true)
   assert.equal(isWorkingTime(new Date(2026, 7, 28, 16, 59)), true)
   assert.equal(isWorkingTime(new Date(2026, 7, 28, 17, 0)), false)
