@@ -183,6 +183,12 @@ textarea {
 .workspace-header h2 { font-size: 21px; margin: 0 0 4px; }
 .workspace-header p, .workspace-hint { margin: 0; color: #a4adc3; font-size: 12px; line-height: 1.8; }
 .workspace-project { padding: 10px 12px; border-radius: 8px; background: #252a40; font-size: 12px; }
+.workspace-categories { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.workspace-categories button { text-align: left; white-space: normal; }
+.workspace-categories strong, .workspace-categories small { display: block; }
+.workspace-categories strong { font-size: 12px; margin-bottom: 5px; }
+.workspace-categories small { font-size: 10px; color: #a4b5cc; line-height: 1.6; }
+.workspace-categories button[aria-current] { background: #293e60; border-color: #79b8d0; }
 .workspace-current { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #becae0; }
 .workspace-panel input { min-width: 0; flex: 1; border: 1px solid #404961; border-radius: 6px; background: #111522; color: #f0f2f8; padding: 9px 12px; }
 .workspace-body { display: grid; grid-template-columns: minmax(230px, 38%) minmax(0, 1fr); flex: 1; min-height: 0; border: 1px solid #343c51; border-radius: 8px; overflow: hidden; }
@@ -207,6 +213,7 @@ textarea {
 .workspace-error { margin: 0; font-size: 12px; color: #ffb1b1; }
 @media (max-width: 700px) {
   .workspace-panel { padding: 14px; }
+  .workspace-categories { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-toolbar { flex-wrap: wrap; }
   .workspace-current { flex-basis: 40%; }
   .workspace-body { grid-template-columns: 1fr; grid-template-rows: 45% 55%; }

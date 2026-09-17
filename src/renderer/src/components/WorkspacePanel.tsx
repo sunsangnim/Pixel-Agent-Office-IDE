@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { WorkspaceEntry, WorkspaceListing } from '@shared/types'
+import { WORKSPACE_FOLDERS } from '@shared/workspaceLayout'
 
 interface Props {
   workFolder: string | null
@@ -9,6 +10,12 @@ interface Props {
 
 const message = (error: unknown): string => error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, '') : String(error)
 const parentPath = (path: string): string => path.split(/[\\/]/).slice(0, -1).join('/')
+const CATEGORIES = [
+  { path: WORKSPACE_FOLDERS.assets, label: '필수 에셋', description: '오피스에 필요한 에셋·원본' },
+  { path: WORKSPACE_FOLDERS.documents, label: '필수 문서', description: '오피스 기본 문서·참고 자료' },
+  { path: WORKSPACE_FOLDERS.outputs, label: '산출물', description: '오피스에서 의뢰한 작업 결과' },
+  { path: WORKSPACE_FOLDERS.projects, label: '프로젝트', description: '코드와 진행 중인 작업' }
+]
 
 export default function WorkspacePanel({ workFolder, onChooseFolder, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -74,10 +81,17 @@ export default function WorkspacePanel({ workFolder, onChooseFolder, onClose }: 
   return (
     <dialog ref={dialog} className="workspace-panel" onCancel={(e) => { e.preventDefault(); onClose() }} aria-labelledby="workspace-title">
       <header className="workspace-header">
-        <div><h2 id="workspace-title">작업실 파일</h2><p>문서와 결과물을 한곳에서 찾아보세요.</p></div>
+        <div><h2 id="workspace-title">작업실 파일</h2><p>필수 자료와 산출물을 나누어 관리하세요.</p></div>
         <button type="button" onClick={onClose} aria-label="파일 패널 닫기">닫기</button>
       </header>
       <div className="workspace-project"><span title={workFolder ?? ''}>현재 프로젝트 · {workFolder?.split(/[\\/]/).pop() ?? '준비 중'}</span><button onClick={() => void perform(onChooseFolder)}>프로젝트 변경</button></div>
+      <nav className="workspace-categories" aria-label="자료 분류">
+        {CATEGORIES.map((category) => <button key={category.path} type="button" aria-label={category.label}
+          aria-current={path.replace(/\\/g, '/') === category.path || path.replace(/\\/g, '/').startsWith(`${category.path}/`) ? 'location' : undefined}
+          onClick={() => navigate(category.path)}>
+          <strong>{category.label}</strong><small>{category.description}</small>
+        </button>)}
+      </nav>
       <nav className="workspace-toolbar" aria-label="폴더 탐색">
         <button onClick={() => navigate('')}>작업실</button>
         <button disabled={!path} onClick={() => navigate(parentPath(path))}>상위 폴더</button>
@@ -113,7 +127,7 @@ export default function WorkspacePanel({ workFolder, onChooseFolder, onClose }: 
           </> : <div className="workspace-placeholder"><span aria-hidden="true">▤</span><strong>파일을 선택해 미리보세요</strong><p>문서와 코드는 여기서 확인할 수 있습니다.<br />이름 변경·이동·삭제는 폴더 열기로 관리하세요.</p></div>}
         </section>
       </div>
-      <footer className="workspace-footer">문서 · SRS / PRD / Phase　 |　 결과물 · 에셋 / 애니메이션 <span>5초마다 갱신</span></footer>
+      <footer className="workspace-footer">필수 자료 · 오피스 에셋 / 작업 문서　 |　 산출물 · 의뢰한 작업 결과 <span>5초마다 갱신</span></footer>
     </dialog>
   )
 }
