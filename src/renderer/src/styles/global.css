@@ -183,7 +183,7 @@ textarea {
 .workspace-header h2 { font-size: 21px; margin: 0 0 4px; }
 .workspace-header p, .workspace-hint { margin: 0; color: #a4adc3; font-size: 12px; line-height: 1.8; }
 .workspace-project { padding: 10px 12px; border-radius: 8px; background: #252a40; font-size: 12px; }
-.workspace-categories { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.workspace-categories { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .workspace-categories button { text-align: left; white-space: normal; }
 .workspace-categories strong, .workspace-categories small { display: block; }
 .workspace-categories strong { font-size: 12px; margin-bottom: 5px; }
