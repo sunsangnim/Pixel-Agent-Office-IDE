@@ -17,7 +17,9 @@ const ANSI_PATTERN = /[\u001b\u009b][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\
 const ERROR_PATTERN = /(?:not authenticated|login required|unauthorized|permission denied|rate limit|quota exceeded|fatal error|command not found)/i
 
 function clean(output: string): string {
-  return output.replace(ANSI_PATTERN, '').replace(/\r/g, '')
+  // ConPTY appends an OSC window title after the initial prompt. Titles can
+  // contain spaces and backslashes, which the CSI pattern does not consume.
+  return output.replace(/\u001b\][\s\S]*?(?:\u0007|\u001b\\)/g, '').replace(ANSI_PATTERN, '').replace(/\r/g, '')
 }
 
 function prompt(promptText: string): string {
@@ -26,9 +28,12 @@ function prompt(promptText: string): string {
 
 function inspectCommon(output: string, readyPattern: RegExp): AdapterSignal | null {
   const text = clean(output)
+  if (/trust this folder|accessing workspace|is this a project you created/i.test(text)) {
+    return { state: 'waiting', reason: '작업 폴더 신뢰 승인 대기 — 터미널에서 확인해주세요.' }
+  }
   const error = text.match(ERROR_PATTERN)?.[0]
   if (error) return { state: 'error', reason: error }
-  if (/allow|approve|confirm|permission|press enter|\by\/n\b/i.test(text)) {
+  if (/\b(?:allow|approve|confirm|permission)\b|press enter|\by\/n\b/i.test(text)) {
     return { state: 'waiting', reason: '사용자 확인 또는 권한 승인을 기다리는 중' }
   }
   if (readyPattern.test(text)) return { state: 'ready' }
@@ -47,7 +52,7 @@ const adapters: Record<CliAdapterId, CliAdapter> = {
       // Claude print/stream-json emits a terminal result event. Interactive
       // sessions fall back to the prompt and inactivity detector.
       if (/"type"\s*:\s*"result"/.test(text)) return { state: 'completed' }
-      return inspectCommon(text, /(?:^|\n)\s*[>❯]\s*$/m)
+      return inspectCommon(text, /(?:^|\n)\s*[>❯]\s*(?:$|Try\b|Type\b)/m)
     }
   },
   codex: {

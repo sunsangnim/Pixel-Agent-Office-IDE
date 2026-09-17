@@ -196,6 +196,39 @@ assert.deepEqual(routeFor(actor('inside', 0, 'pantry'), 0, { x: 140, y: 200 }), 
 assert.ok(!routeFor(actor('arriving', 0, 'arriving'), 0, { x: 400, y: 500 }).some((p) => p === WAYPOINTS.elevatorInside))
 console.log('PASS body clearance, unreachable goals, safe smoothing, and room/arrival routes')
 
+const visits = createScene()
+const visitingStaff = [actor('claude-visit', 0, 'representativeVisit'), actor('codex-visit', 1, 'representativeVisit'), actor('antigravity-visit', 2, 'representativeVisit')]
+visits.worldSave.actors = visitingStaff.map((visitor, index) => ({ profileId: visitor.profileId, x: 400 + index * 64, y: 544 }))
+snapshot(visits, [visitingStaff[0]])
+advance(visits, 18)
+const singleVisitor = visits.actors.get('claude-visit')
+const repDesk = visits.furniture.get(REPRESENTATIVE_DESK_ID).image
+const repChair = visits.furniture.get(REPRESENTATIVE_CHAIR_ID).image
+assert.equal(singleVisitor.settled, true)
+assert.equal(singleVisitor.seatedGoal, false)
+assert.ok(isInRepresentativeRoom(singleVisitor.container))
+assert.ok(Math.abs(singleVisitor.container.x - repDesk.x) < 1, 'first visitor stands centered across the representative desk')
+assert.ok((singleVisitor.container.y - repDesk.y) * (repChair.y - repDesk.y) < 0, 'visitor stays opposite the CEO chair')
+snapshot(visits, visitingStaff)
+advance(visits, 25)
+for (const visitor of visitingStaff) {
+  const view = visits.actors.get(visitor.profileId)
+  assert.ok(view.settled && !view.seatedGoal && isInRepresentativeRoom(view.container), visitor.profileId)
+  assert.equal(view.chairId, null)
+  for (const other of visitingStaff.filter((candidate) => candidate !== visitor)) {
+    const otherView = visits.actors.get(other.profileId)
+    assert.ok(Math.hypot(view.container.x - otherView.container.x, view.container.y - otherView.container.y) >= 48)
+  }
+}
+snapshot(visits, visitingStaff.map((visitor) => ({ ...visitor, presence: 'deskIdle' })))
+advance(visits, 25)
+for (const visitor of visitingStaff) {
+  const view = visits.actors.get(visitor.profileId)
+  assert.ok(view.settled && view.seatedGoal)
+  assert.equal(view.chairId, `chair-${visitor.teamIndex}-0`)
+}
+console.log('PASS desk-front summon, multiple separate visitors, reserved CEO chair and return to own seats')
+
 const profiles = [
   { profileId: 'lead', rank: 'teamLead', slotIndex: 0 },
   { profileId: 'child', rank: 'subAgent', slotIndex: 1 }

@@ -48,6 +48,8 @@ export interface PtyApi {
   resize(ptyId: string, cols: number, rows: number): void
   kill(ptyId: string): void
   getBuffer(ptyId: string): Promise<string>
+  getStates(): Promise<AgentStatePayload[]>
+  cancelPrompt(ptyId: string): void
   onData(callback: (payload: PtyDataPayload) => void): () => void
   onExit(callback: (payload: PtyExitPayload) => void): () => void
   onState(callback: (payload: AgentStatePayload) => void): () => void
@@ -86,6 +88,7 @@ export type OfficePresence =
   | 'pantry'
   | 'meetingDoor'
   | 'meeting'
+  | 'representativeVisit'
   | 'working'
   | 'requestingHelp'
   | 'error'

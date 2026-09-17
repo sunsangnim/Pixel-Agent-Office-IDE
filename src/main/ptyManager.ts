@@ -34,6 +34,8 @@ interface PtyEntry {
   adapter: CliAdapter
   state: AgentRuntimeState
   taskActive: boolean
+  pendingPrompts: string[]
+  reason?: string
   completionTimer?: ReturnType<typeof setTimeout>
 }
 
@@ -52,12 +54,14 @@ class PtyManager {
     })
 
     proc.onData((data) => {
+      if (!sender.isDestroyed()) sender.send('pty:data', { ptyId, data })
       const entry = this.ptys.get(ptyId)
       if (entry) {
         entry.buffer = (entry.buffer + data).slice(-MAX_BUFFER_LENGTH)
         const signal = entry.adapter.inspectOutput(data)
         if (signal) this.emitState(ptyId, entry, signal.state, signal.reason)
-        else if (entry.taskActive) this.emitState(ptyId, entry, 'working')
+        else if (entry.taskActive && entry.state !== 'waiting') this.emitState(ptyId, entry, 'working')
+        if (['ready', 'completed'].includes(entry.state) && !entry.taskActive) this.flushPrompt(ptyId, entry)
         if (entry.taskActive && entry.state !== 'waiting' && entry.state !== 'error') {
           clearTimeout(entry.completionTimer)
           entry.completionTimer = setTimeout(() => {
@@ -65,11 +69,9 @@ class PtyManager {
             if (!current?.taskActive || current.state === 'waiting' || current.state === 'error') return
             current.taskActive = false
             this.emitState(ptyId, current, 'completed', '출력 유휴 상태로 작업 완료 판정')
+            this.flushPrompt(ptyId, current)
           }, entry.adapter.completionIdleMs)
         }
-      }
-      if (!sender.isDestroyed()) {
-        sender.send('pty:data', { ptyId, data })
       }
     })
 
@@ -96,7 +98,8 @@ class PtyManager {
       buffer: '',
       adapter,
       state: 'starting',
-      taskActive: false
+      taskActive: false,
+      pendingPrompts: []
     }
     this.ptys.set(ptyId, entry)
     this.emitState(ptyId, entry, 'starting', `${adapter.displayName} 시작 중`)
@@ -111,6 +114,8 @@ class PtyManager {
   ): void {
     if (entry.state === state && !reason) return
     entry.state = state
+    entry.reason = reason
+    if (state === 'waiting' || state === 'error' || state === 'exited') clearTimeout(entry.completionTimer)
     if (state === 'completed' || state === 'error' || state === 'exited') entry.taskActive = false
     if (entry.sender.isDestroyed()) return
     const payload: AgentStatePayload = {
@@ -127,6 +132,20 @@ class PtyManager {
     return this.ptys.get(ptyId)?.buffer ?? ''
   }
 
+  getStates(): AgentStatePayload[] {
+    return [...this.ptys].map(([ptyId, entry]) => ({ ptyId, adapterId: entry.adapter.id,
+      state: entry.state, reason: entry.reason, timestamp: Date.now() }))
+  }
+
+  cancelPrompt(ptyId: string): void {
+    const entry = this.ptys.get(ptyId)
+    if (!entry) return
+    entry.pendingPrompts = []
+    clearTimeout(entry.completionTimer)
+    if (entry.taskActive) this.write(ptyId, '\u0003')
+    entry.taskActive = false
+  }
+
   write(ptyId: string, data: string): void {
     const entry = this.ptys.get(ptyId)
     if (!entry) return
@@ -140,6 +159,15 @@ class PtyManager {
   sendPrompt(ptyId: string, prompt: string): void {
     const entry = this.ptys.get(ptyId)
     if (!entry) return
+    entry.pendingPrompts.push(prompt)
+    this.flushPrompt(ptyId, entry)
+  }
+
+  private flushPrompt(ptyId: string, entry: PtyEntry): void {
+    // Startup/trust/permission screens must never receive queued task text as input.
+    if (entry.taskActive || !['ready', 'completed'].includes(entry.state)) return
+    const prompt = entry.pendingPrompts.shift()
+    if (prompt === undefined) return
     clearTimeout(entry.completionTimer)
     entry.taskActive = true
     this.emitState(ptyId, entry, 'working', '프롬프트 전달')

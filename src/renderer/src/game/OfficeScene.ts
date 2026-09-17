@@ -8,6 +8,7 @@ import ceoSeatedSheet from '../assets/pixel-office/characters/ceo-seated-v1.png'
 import ceoDeskWorkSheet from '../assets/pixel-office/characters/ceo-desk-work-v3.png'
 import ceoPantrySheet from '../assets/pixel-office/characters/ceo-pantry-actions-v1.png'
 import speechBubbleAsset from '../assets/pixel-office/ui/speech-bubble-v1.png'
+import type { OfficeDialogue } from './officeDialogue'
 import coffeeMachineAsset from '../assets/pixel-office/furniture/coffee-machine-v2.png'
 import refrigeratorAsset from '../assets/pixel-office/furniture/refrigerator-v2.png'
 import pantryCabinetAsset from '../assets/pixel-office/furniture/pantry-cabinet-v1.png'
@@ -252,6 +253,9 @@ export class OfficeScene extends Phaser.Scene {
   private doors = new Map<string, DoorView>()
   private worldSave: OfficeWorldSave = { version: 1, actors: [] }
   private actorSelectHandler: ((profileId: string) => void) | null = null
+  private dialogueHandler: ((dialogue: OfficeDialogue) => void) | null = null
+  private greetedVisitors = new Set<string>()
+  private dialogueSequence = 0
   private furniture = new Map<string, FurnitureView>()
   private furnitureBoundsByTexture = new Map<string, CollisionRect>()
   private seatedFrameAnchors = new Map<string, WorldPoint>()
@@ -305,6 +309,8 @@ export class OfficeScene extends Phaser.Scene {
   private navigationLayoutKey = ''
   private meetingAssignmentKey = ''
   private meetingAssignments = new Map<string, ActorDestination>()
+  private representativeVisitKey = ''
+  private representativeVisitAssignments = new Map<string, ActorDestination>()
 
   constructor() {
     super(OFFICE_SCENE_KEY)
@@ -312,6 +318,17 @@ export class OfficeScene extends Phaser.Scene {
 
   setActorSelectHandler(handler: ((profileId: string) => void) | null): void {
     this.actorSelectHandler = handler
+  }
+
+  setDialogueHandler(handler: ((dialogue: OfficeDialogue) => void) | null): void {
+    this.dialogueHandler = handler
+  }
+
+  dialogueForActor(actor: OfficeGameActor, text: string, id: string): OfficeDialogue | null {
+    const atlas = this.animationAtlasFor(actor)
+    if (!atlas || !this.textures.exists(atlas)) return null
+    return { id, profileId: actor.profileId, displayName: actor.displayName, text,
+      portraitUrl: this.textures.getBase64(atlas, `actor-${this.actorAnimationKey(actor)}-idle-0`) }
   }
 
   /** Reports live desk-per-zone counts (indexed by team column 0/1/2) so the
@@ -2035,6 +2052,11 @@ export class OfficeScene extends Phaser.Scene {
   private applySnapshot(snapshot: OfficeWorldSnapshot): void {
     this.snapshot = snapshot
     this.pendingSnapshot = null
+    for (const profileId of this.greetedVisitors) {
+      if (!snapshot.actors.some((actor) => actor.profileId === profileId && actor.presence === 'representativeVisit')) {
+        this.greetedVisitors.delete(profileId)
+      }
+    }
     const pantryOpen = snapshot.actors.some((actor) => actor.presence === 'pantry' || actor.presence === 'pantryDoor')
     const meetingOpen = snapshot.meetingActive || snapshot.actors.some((actor) => actor.presence === 'meeting' || actor.presence === 'meetingDoor')
     this.setDoorOpen('elevator', snapshot.elevatorOpen)
@@ -2174,6 +2196,7 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private actorDestination(actor: OfficeGameActor, actorIndex: number): ActorDestination {
+    if (actor.presence === 'representativeVisit') return this.representativeVisitDestination(actor)
     if (actor.presence === 'meeting') {
       return this.meetingDestination(actor)
     }
@@ -2181,6 +2204,52 @@ export class OfficeScene extends Phaser.Scene {
     const chair = this.assignedDeskChair(actor)
     const seated = ['working', 'deskIdle', 'arriving', 'requestingHelp', 'error'].includes(actor.presence) && Boolean(chair)
     return { point, seated, chairId: seated ? chair?.id : undefined }
+  }
+
+  private representativeVisitDestination(actor: OfficeGameActor): ActorDestination {
+    const visitors = (this.snapshot?.actors.filter((candidate) => candidate.presence === 'representativeVisit') ?? [actor])
+      .slice().sort((a, b) => a.profileId.localeCompare(b.profileId))
+    const collisions = this.collisionRects()
+    const representative = this.representativeSprite
+    const key = JSON.stringify([this.navigationRevision, representative && [Math.round(representative.x), Math.round(representative.y)], visitors.map((visitor) => visitor.profileId)])
+    if (key === this.representativeVisitKey) return this.representativeVisitAssignments.get(actor.profileId) ?? { point: this.deskSeatPoint(actor), seated: false }
+    this.representativeVisitKey = key
+    this.representativeVisitAssignments.clear()
+    const obstacles = representative ? [...collisions, actorCollisionRect(representative)] : collisions
+    const entry = nearestOfficePosition(WAYPOINTS.representativeDoor, obstacles) ?? WAYPOINTS.representativeDoor
+    const candidates: WorldPoint[] = []
+    const desk = this.furniture.get(REPRESENTATIVE_DESK_ID)
+    const chair = this.furniture.get(REPRESENTATIVE_CHAIR_ID)
+    let front: WorldPoint = { x: 832, y: 752 }
+    if (desk) {
+      const bounds = this.furnitureWalkCollision(desk.image, 0)
+      const dx = (chair?.image.x ?? desk.image.x) - desk.image.x
+      const dy = (chair?.image.y ?? desk.image.y + 64) - desk.image.y
+      const horizontal = Math.abs(dx) > Math.abs(dy)
+      const away = horizontal ? (dx >= 0 ? -1 : 1) : (dy >= 0 ? -1 : 1)
+      front = horizontal
+        ? { x: (away < 0 ? bounds.x : bounds.x + bounds.width) + away * (ACTOR_NAV_HALF_WIDTH + 12), y: desk.image.y }
+        : { x: desk.image.x, y: (away < 0 ? bounds.y : bounds.y + bounds.height) + away * (ACTOR_NAV_HALF_HEIGHT + 12) }
+      // Center first, then spread visitors to either side across from the CEO's chair.
+      for (const distance of [0, 32, 64]) for (const offset of [0, -56, 56, -112, 112]) {
+        candidates.push(horizontal ? { x: front.x + away * distance, y: front.y + offset }
+          : { x: front.x + offset, y: front.y + away * distance })
+      }
+    }
+    const fallback: WorldPoint[] = []
+    for (let y = REPRESENTATIVE_ROOM.top + 80; y <= REPRESENTATIVE_ROOM.bottom - 32; y += 48) {
+      for (let x = REPRESENTATIVE_ROOM.left + 48; x <= REPRESENTATIVE_ROOM.right - 32; x += 48) fallback.push({ x, y })
+    }
+    candidates.push(...fallback.sort((a, b) => Math.hypot(a.x - front.x, a.y - front.y) - Math.hypot(b.x - front.x, b.y - front.y)))
+    const reserved: WorldPoint[] = []
+    for (const visitor of visitors) {
+      const occupied = [...obstacles, ...reserved.map(actorCollisionRect)]
+      const point = candidates.find((candidate) => isInRepresentativeRoom(candidate) && reserved.every((other) => Math.hypot(candidate.x - other.x, candidate.y - other.y) >= 48) &&
+        isOfficePositionWalkable(candidate, occupied) && findOfficePath(entry, candidate, obstacles).length > 0)
+      if (point) reserved.push(point)
+      this.representativeVisitAssignments.set(visitor.profileId, { point: point ?? this.deskSeatPoint(visitor), seated: false })
+    }
+    return this.representativeVisitAssignments.get(actor.profileId) ?? { point: this.deskSeatPoint(actor), seated: false }
   }
 
   private actorObstacles(except?: ActorView, includeRepresentative = true): CollisionRect[] {
@@ -2351,7 +2420,7 @@ export class OfficeScene extends Phaser.Scene {
     view.seatedGoal = destination.seated
     view.chairId = destination.seated ? destination.chairId ?? this.assignedDeskChair(actor)?.id ?? null : null
     const labels: Partial<Record<OfficeGameActor['presence'], string>> = {
-      working: '업무 중', meeting: '회의', requestingHelp: '도움 필요!', error: '오류!'
+      working: '업무 중', meeting: '회의', representativeVisit: '대표실로 가는 중', requestingHelp: '승인 대기', error: '오류!'
     }
     const message = actor.presence === 'pantry'
       ? actionForPresence('pantry', actorIndex) === 'drinking' ? '커피 마시러 가는 중' : '간식 먹으러 가는 중'
@@ -2484,6 +2553,17 @@ export class OfficeScene extends Phaser.Scene {
     }
     view.settled = true
     this.startActionAnimation(view, view.actor)
+    if (view.actor.presence === 'representativeVisit') {
+      const arrived = isInRepresentativeRoom(view.container)
+      this.setActorSpeech(view, arrived ? '' : '자리 대기')
+      if (arrived && this.dialogueHandler && !this.greetedVisitors.has(view.actor.profileId)) {
+        const dialogue = this.dialogueForActor(view.actor, '대표님, 부르셨나요?', `visit-${++this.dialogueSequence}`)
+        if (dialogue) {
+          this.greetedVisitors.add(view.actor.profileId)
+          this.dialogueHandler(dialogue)
+        }
+      }
+    }
     this.persistActor(view.actor, view)
   }
 

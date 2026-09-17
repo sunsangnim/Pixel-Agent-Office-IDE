@@ -95,6 +95,7 @@ export function targetPoint(
   }
   if (actor.presence === 'meetingDoor') return WAYPOINTS.meetingDoor
   if (actor.presence === 'meeting') return MEETING_SEATS[actorIndex % MEETING_SEATS.length]
+  if (actor.presence === 'representativeVisit') return { x: 784 + (actorIndex % 3) * 48, y: 736 + Math.floor(actorIndex / 3) * 48 }
   return resolveDesk(actor)
 }
 

@@ -15,7 +15,8 @@
     "test:editor-layering": "node scripts/run-editor-layering-tests.cjs",
     "test:movement": "node scripts/run-movement-tests.cjs",
     "test:workspace": "node scripts/run-workspace-tests.cjs",
-    "test:workspace-ui": "node scripts/run-workspace-ui-tests.cjs"
+    "test:workspace-ui": "node scripts/run-workspace-ui-tests.cjs",
+    "test:office-ui": "node scripts/run-office-ui-tests.cjs"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
