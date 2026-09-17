@@ -2,7 +2,7 @@ import { createHash } from 'crypto'
 import { execFile } from 'child_process'
 import { existsSync, mkdirSync } from 'fs'
 import { basename, join } from 'path'
-import { app } from 'electron'
+import { workspaceFiles } from './workspaceStore'
 import type { GitDiffFile, GitDiffFileStatus, GitDiffHunk, GitDiffLine, GitDiffResult, GitMergeResult } from '../shared/types'
 
 function run(args: string[], cwd: string): Promise<string> {
@@ -23,7 +23,7 @@ function repoSlug(repoRoot: string): string {
 }
 
 function worktreesRoot(repoRoot: string): string {
-  return join(app.getPath('userData'), 'worktrees', repoSlug(repoRoot))
+  return workspaceFiles().path(join('에이전트 작업본', repoSlug(repoRoot)))
 }
 
 export async function isGitRepo(repoRoot: string): Promise<boolean> {
@@ -43,10 +43,11 @@ export interface DeskWorktree {
 
 /** Idempotent: returns the existing worktree for a desk if one was already created. */
 export async function ensureDeskWorktree(repoRoot: string, deskKey: string): Promise<DeskWorktree | null> {
+  repoRoot = workspaceFiles().path(repoRoot)
   if (!(await isGitRepo(repoRoot))) return null
 
   const branch = `desk/${deskKey}`
-  const path = join(worktreesRoot(repoRoot), deskKey)
+  const path = workspaceFiles().path(join(worktreesRoot(repoRoot), deskKey))
 
   if (existsSync(path)) {
     try {
@@ -74,6 +75,8 @@ export async function ensureDeskWorktree(repoRoot: string, deskKey: string): Pro
 
 export async function removeDeskWorktree(repoRoot: string, worktreePath: string): Promise<void> {
   try {
+    workspaceFiles().path(repoRoot)
+    workspaceFiles().path(worktreePath)
     await run(['worktree', 'remove', '--force', worktreePath], repoRoot)
   } catch {
     // best-effort: the directory may already be gone, or still locked by a lingering process
@@ -163,6 +166,8 @@ async function snapshotUncommittedChanges(worktreePath: string, branch: string):
 
 export async function mergeDeskBranch(repoRoot: string, worktreePath: string, branch: string): Promise<GitMergeResult> {
   try {
+    workspaceFiles().path(repoRoot)
+    workspaceFiles().path(worktreePath)
     if (await hasUncommittedChanges(worktreePath)) {
       await snapshotUncommittedChanges(worktreePath, branch)
     }

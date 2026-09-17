@@ -6,6 +6,7 @@ import TerminalModal from './components/TerminalModal'
 import DiffPanel from './components/DiffPanel'
 import PlanApprovalModal from './components/PlanApprovalModal'
 import ChatPanel from './components/ChatPanel'
+import WorkspacePanel from './components/WorkspacePanel'
 import { usePtyStatuses } from './hooks/usePtyStatuses'
 import { useAgentChat, type PlanReadyPayload } from './hooks/useAgentChat'
 import { planTask } from './lib/taskRouter'
@@ -36,6 +37,7 @@ interface PendingPlan {
 
 function App() {
   const [workFolder, setWorkFolder] = useState<string | null>(null)
+  const [filesOpen, setFilesOpen] = useState(false)
   const [templates, setTemplates] = useState<AgentTemplate[]>([])
   const [instances, setInstances] = useState<AgentInstance[]>([])
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
@@ -87,7 +89,7 @@ function App() {
   }
 
   useEffect(() => {
-    window.api.workspace.getWorkFolder().then(setWorkFolder)
+    window.api.workspace.getWorkFolder().then(setWorkFolder).catch((e) => setError(String(e)))
     refreshTemplates()
     window.api.instances.list().then(setInstances)
     const unsubscribeTemplates = window.api.templates.onChanged(refreshTemplates)
@@ -413,11 +415,14 @@ function App() {
         instances={instances}
         templates={templates}
         workFolder={workFolder}
-        onChooseFolder={chooseFolder}
+        onOpenFiles={() => setFilesOpen(true)}
+        onOpenFolder={() => { void window.api.workspace.openFolder().catch((e) => setError(String(e))) }}
         messages={messages}
         selectedTargetIds={selectedTargetIds}
         onSend={sendPromptToSelected}
       />
+
+      {filesOpen && <WorkspacePanel workFolder={workFolder} onChooseFolder={chooseFolder} onClose={() => setFilesOpen(false)} />}
 
       {selectedInstanceId &&
         (() => {

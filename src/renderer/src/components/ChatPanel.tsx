@@ -7,7 +7,8 @@ interface ChatPanelProps {
   instances: AgentInstance[]
   templates: AgentTemplate[]
   workFolder: string | null
-  onChooseFolder: () => void
+  onOpenFiles: () => void
+  onOpenFolder: () => void
   messages: ChatMessage[]
   selectedTargetIds: Set<string>
   onSend: (text: string) => void | Promise<void>
@@ -17,7 +18,8 @@ function ChatPanel({
   instances,
   templates,
   workFolder,
-  onChooseFolder,
+  onOpenFiles,
+  onOpenFolder,
   messages,
   selectedTargetIds,
   onSend
@@ -146,11 +148,12 @@ function ChatPanel({
       </div>
 
       <div className="chat-folder-row">
-        <span className="chat-folder-label">작업 폴더</span>
+        <span className="chat-folder-label">작업실</span>
         <span className="chat-folder-path" title={workFolder ?? ''}>
-          {workFolder ?? '미지정'}
+          {workFolder?.split(/[\\/]/).pop() ?? '준비 중'}
         </span>
-        <button onClick={onChooseFolder}>변경</button>
+        <button onClick={onOpenFiles} title="작업실 파일 목록">파일</button>
+        <button onClick={onOpenFolder} title="작업실을 탐색기로 열기">열기</button>
       </div>
 
       <div className={`chat-selected-row${selectedNames.length === 0 ? ' chat-auto-route' : ''}`}>

@@ -1,9 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { existsSync, readFileSync } from 'fs'
-import { join } from 'path'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { existsSync, statSync } from 'fs'
 import { ptyManager } from './ptyManager'
 import { agentTemplateStore } from './agentStore'
-import { workspaceStore } from './workspaceStore'
+import { workspaceFiles, workspaceStore } from './workspaceStore'
 import { instanceManager } from './instanceManager'
 import { openSettingsWindow } from './windowManager'
 import { taskWorkspaceManager } from './taskWorkspaceManager'
@@ -34,7 +33,7 @@ function broadcastTeamCapacityChanged(): void {
 export function registerIpcHandlers(): void {
   ipcMain.handle('pty:spawn', (event, options: PtySpawnOptions = {}): PtySpawnResult => {
     const command = options.command ?? (process.platform === 'win32' ? 'powershell.exe' : 'bash')
-    const cwd = options.cwd ?? process.cwd()
+    const cwd = workspaceFiles().path(options.cwd ?? workspaceStore.get())
     const ptyId = ptyManager.spawn({ ...options, command, cwd }, event.sender)
     return { ptyId }
   })
@@ -44,7 +43,8 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.on('pty:send-prompt', (_event, ptyId: string, prompt: string) => {
-    ptyManager.sendPrompt(ptyId, prompt)
+    const files = workspaceFiles()
+    ptyManager.sendPrompt(ptyId, `[작업실 규칙]\n작업실: ${files.root}\n파일 생성·수정과 명령 실행은 이 작업실 안에서만 수행하세요. 폴더 밖 파일은 수정하지 마세요. SRS·PRD·PHASES·작업 보고서는 ${files.path('문서')} 아래 작업별 폴더에 저장하세요. 에셋·애니메이션 폴더에는 리소스만 두고 문서를 섞지 마세요. 결과물은 ${files.path('결과물')}에 정리하세요.\n\n${prompt}`)
   })
 
   ipcMain.on('pty:resize', (_event, ptyId: string, cols: number, rows: number) => {
@@ -81,11 +81,31 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('workspace:get', () => workspaceStore.get())
 
+  ipcMain.handle('workspace:list-files', (_event, path = '', query = '') => workspaceFiles().list(path, query))
+  ipcMain.handle('workspace:preview-file', (_event, path: string) => workspaceFiles().preview(path))
+  ipcMain.handle('workspace:create-folder', (_event, parent: string, name: string) => workspaceFiles().createFolder(parent, name))
+  ipcMain.handle('workspace:open-folder', async (_event, path = '') => {
+    const folder = workspaceFiles().path(path)
+    if (!statSync(folder).isDirectory()) throw new Error('폴더를 선택해주세요.')
+    const error = await shell.openPath(folder)
+    if (error) throw new Error(error)
+  })
+  ipcMain.handle('workspace:reveal-file', (_event, path: string) => {
+    const file = workspaceFiles().path(path)
+    if (!existsSync(file)) throw new Error('파일을 찾을 수 없습니다.')
+    shell.showItemInFolder(file)
+  })
+
   ipcMain.handle('workspace:choose', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.OpenDialogOptions = {
+      title: '전용 작업실 안의 프로젝트 폴더 선택',
+      defaultPath: workspaceFiles().path('프로젝트'),
+      properties: ['openDirectory', 'createDirectory']
+    }
     const result = win
-      ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
-      : await dialog.showOpenDialog({ properties: ['openDirectory'] })
+      ? await dialog.showOpenDialog(win, options)
+      : await dialog.showOpenDialog(options)
     if (result.canceled || result.filePaths.length === 0) {
       return workspaceStore.get()
     }
@@ -97,17 +117,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('tasks:prepare', (_event, request: string) => {
     const workspace = workspaceStore.get()
     if (!workspace) throw new Error('작업 폴더를 먼저 지정해주세요.')
-    const privateTaskRoot = join(app.getPath('userData'), 'private-tasks')
+    const privateTaskRoot = workspaceFiles().path('문서')
     return taskWorkspaceManager.prepare(privateTaskRoot, request)
   })
 
   ipcMain.handle('tasks:read-spec', (_event, specPath: string) => {
-    const privateTaskRoot = join(app.getPath('userData'), 'private-tasks')
-    const resolved = join(specPath)
-    if (!resolved.startsWith(privateTaskRoot) || !existsSync(resolved)) {
-      throw new Error('접근할 수 없는 문서 경로입니다.')
-    }
-    return readFileSync(resolved, 'utf-8')
+    return workspaceFiles().preview(specPath)
   })
 
   ipcMain.handle('instances:list', () => instanceManager.list())

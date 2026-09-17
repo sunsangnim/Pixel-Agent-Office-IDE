@@ -61,7 +61,12 @@ const api: PreloadApi = {
   },
   workspace: {
     getWorkFolder: (): Promise<string | null> => ipcRenderer.invoke('workspace:get'),
-    chooseWorkFolder: (): Promise<string | null> => ipcRenderer.invoke('workspace:choose')
+    chooseWorkFolder: (): Promise<string | null> => ipcRenderer.invoke('workspace:choose'),
+    listFiles: (path = '', query = '') => ipcRenderer.invoke('workspace:list-files', path, query),
+    previewFile: (path: string) => ipcRenderer.invoke('workspace:preview-file', path),
+    openFolder: (path = '') => ipcRenderer.invoke('workspace:open-folder', path),
+    revealFile: (path: string) => ipcRenderer.invoke('workspace:reveal-file', path),
+    createFolder: (parent: string, name: string) => ipcRenderer.invoke('workspace:create-folder', parent, name)
   },
   tasks: {
     prepare: (request: string) => ipcRenderer.invoke('tasks:prepare', request),

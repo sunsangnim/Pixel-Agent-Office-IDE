@@ -8,6 +8,7 @@ import { adapterIdForTemplate } from './cliAdapters'
 import { buildAgentProfiles } from '../shared/agentProfiles'
 import { ensureDeskWorktree, removeDeskWorktree } from './gitWorktreeManager'
 import { teamCapacityStore } from './teamCapacityStore'
+import { workspaceFiles } from './workspaceStore'
 
 class InstanceManager {
   private runs = new Map<string, AgentRun>()
@@ -46,6 +47,7 @@ class InstanceManager {
   }
 
   async create(templateId: string, repoRoot: string, sender: WebContents): Promise<AgentInstance[]> {
+    repoRoot = workspaceFiles().path(repoRoot)
     const template = agentTemplateStore.list().find((candidate) => candidate.id === templateId)
     if (!template) throw new Error(`Unknown agent template: ${templateId}`)
     if (this.runs.size >= ORCHESTRATION_POLICY.maxConcurrentRuns) {
@@ -73,7 +75,7 @@ class InstanceManager {
 
     const deskKey = `${templateId}-${slotIndex}`
     const worktree = await ensureDeskWorktree(repoRoot, deskKey).catch(() => null)
-    const cwd = worktree?.path ?? repoRoot
+    const cwd = workspaceFiles().path(worktree?.path ?? repoRoot)
 
     const ptyId = ptyManager.spawn(
       {
@@ -115,6 +117,7 @@ class InstanceManager {
     const template = agentTemplateStore.list().find((candidate) => candidate.id === run.templateId)
     if (!template) throw new Error(`Unknown agent template: ${run.templateId}`)
 
+    workspaceFiles().path(run.cwd)
     ptyManager.kill(run.ptyId)
     const ptyId = ptyManager.spawn(
       {
