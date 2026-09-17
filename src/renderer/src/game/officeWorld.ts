@@ -32,22 +32,18 @@ export interface OfficeWorldSnapshot {
   actors: OfficeGameActor[]
 }
 
-// The office no longer boots into a fixed 5-desks-per-team grid - this is
-// the hand-arranged layout that's actually in use (1 seat each for Claude
-// and Codex and Antigravity), baked in as the default so a fresh install
-// or a cleared interior save starts here instead of with 15 desks nobody
-// asked for. Exact desk/chair pixel positions and chair rotation live in
-// DEFAULT_LAYOUT_SEED (layoutPersistence.ts); these points are only the
-// desk-creation fallback and the pre-seating deskPoint() fallback.
+// Lead desk creation and pre-seating fallbacks. DEFAULT_LAYOUT_SEED contains
+// the exact furniture positions plus a second desk/chair pair for each team.
+// Those pairs retain their custom ids so existing saves do not duplicate them.
 export const TEAM_DESKS: WorldPoint[][] = [
   [{ x: 112, y: 468 }],
-  [{ x: 320, y: 468 }],
-  [{ x: 560, y: 468 }]
+  [{ x: 352, y: 468 }],
+  [{ x: 592, y: 468 }]
 ]
 
 /** Team columns have no drawn boundary, so desk-count reporting infers which
- *  team a desk belongs to from its x position, split at the midpoints between
- *  the three TEAM_DESKS column centers (130, 375, 590). */
+ *  team a desk belongs to from its x position. Keep the established zone
+ *  boundaries stable when the default furniture positions change. */
 export function teamIndexForX(x: number): number {
   if (x < 252.5) return 0
   if (x < 482.5) return 1
