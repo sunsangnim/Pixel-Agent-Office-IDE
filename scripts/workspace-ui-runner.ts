@@ -22,7 +22,7 @@ app.whenReady().then(async () => {
   mkdirSync(app.getPath('userData'), { recursive: true })
   writeFileSync(join(app.getPath('userData'), 'workspace.json'), JSON.stringify({ workFolder: fixture }))
   assert.equal(workspaceStore.get(), files.path('프로젝트/기본 작업'), 'external legacy workspace is replaced')
-  const docs = files.createFolder('문서/애니메이션', '대표 타이핑')
+  const docs = files.createFolder(WORKSPACE_FOLDERS.documents, '대표 타이핑')
   const spec = join(docs, 'SRS-PRD-SCREEN-DESIGN.md')
   writeFileSync(files.path(spec), '# 대표 타이핑 모션\n\n문서는 에셋과 분리해 관리합니다.\n<script>window.bad = true</script>')
   const requestedOutput = files.createFolder(WORKSPACE_FOLDERS.outputs, '의뢰한 작업')
