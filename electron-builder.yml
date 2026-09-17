@@ -1,0 +1,25 @@
+appId: com.sunsangnim.pixel-agent-office-ide
+productName: Pixel Agent Office IDE
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+# node-pty ships a native .node binding - it must live as a real file on disk
+# (asar packs everything into one archive Node's native module loader can't
+# dlopen from), so unpack it and anything else with a native addon.
+asarUnpack:
+  - '**/*.node'
+win:
+  target: nsis
+  artifactName: ${productName}-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  target: AppImage
+  category: Development
+mac:
+  target: dmg
+  category: public.app-category.developer-tools

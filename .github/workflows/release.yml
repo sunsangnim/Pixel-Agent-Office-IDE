@@ -1,0 +1,26 @@
+name: Release build
+
+# Manual only - packaging isn't part of the on-every-push CI. Also, node-pty's
+# native-module rebuild step (node-gyp/winpty) cannot run in this repo's own
+# local checkout path (it contains a space - a long-standing node-gyp/Windows
+# limitation: https://github.com/nodejs/node-gyp/issues/65), so this workflow
+# is the only place a real Windows installer actually gets built - GitHub's
+# runner checks out to a path with no spaces.
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pixel-agent-office-ide-windows
+          path: dist/*.exe
