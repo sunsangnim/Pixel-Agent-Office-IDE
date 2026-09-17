@@ -63,6 +63,9 @@ import {
 } from './layoutPersistence'
 import { ActorStateMachine, actionForPresence } from './actorStateMachine'
 import { pantryPoseAt, type PantryAnimation } from './pantryAnimation'
+import {
+  REPRESENTATIVE_WORK_TEXTURE, REPRESENTATIVE_WORK_POSES, representativeWorkPixels, representativeWorkPoseAt
+} from './representativeWorkAnimation'
 import { IdleActivity } from './idleActivity'
 import { CharacterGait, type CharacterPose } from './characterGait'
 import { STAFF_WALK_SHEETS, WALK_ROW_NAMES, STAFF_SEATED_SHEETS, SEATED_ROW_NAMES, STAFF_PANTRY_SHEETS } from './staffWalkSheets'
@@ -258,6 +261,7 @@ export class OfficeScene extends Phaser.Scene {
   private teamLabels = new Map<string, Phaser.GameObjects.Text>()
   private representativeSprite?: Phaser.GameObjects.Sprite
   private representativeSeatedForeground?: Phaser.GameObjects.Sprite
+  private representativeWorkElapsedMs = 0
   private representativeLabel?: Phaser.GameObjects.Text
   private representativeDestination?: Phaser.GameObjects.Arc
   private representativeRoute: WorldPoint[] = []
@@ -455,6 +459,7 @@ export class OfficeScene extends Phaser.Scene {
       this.updateActorPantryActions(elapsed)
       this.updateRepresentativeMovement(elapsed / 1000)
       this.updateRepresentativePantryAction(elapsed)
+      this.updateRepresentativeWorkAnimation(elapsed)
     }
     this.updateRepresentativeLabelPosition()
     this.actors.forEach((view) => this.updateActorOverlayPosition(view))
@@ -1698,6 +1703,7 @@ export class OfficeScene extends Phaser.Scene {
     let headDepth: number
     if (chair && this.representativeSeatedForeground) {
       headDepth = this.applySeatedComposition(chair, sprite, this.representativeSeatedForeground, sprite)
+      this.updateRepresentativeWorkAnimation(0)
     } else {
       sprite.setDepth(sprite.y).setCrop().setVisible(true)
       this.representativeSeatedForeground?.setVisible(false)
@@ -1706,6 +1712,31 @@ export class OfficeScene extends Phaser.Scene {
     this.representativeLabel?.setDepth(headDepth + OFFICE_WORLD_HEIGHT)
     this.representativeSpeechBubble?.setDepth(headDepth + OFFICE_WORLD_HEIGHT + 1)
     this.representativeSpeech?.setDepth(headDepth + OFFICE_WORLD_HEIGHT + 2)
+  }
+
+  private updateRepresentativeWorkAnimation(deltaMs: number): void {
+    const sprite = this.representativeSprite
+    const foreground = this.representativeSeatedForeground
+    const chair = this.representativeSeat && this.furniture.get(this.representativeSeat.chairId)
+    if (!sprite || !foreground) return
+    // Only work at an actual nearby desk, including desks moved in the editor.
+    // Meeting-room and standalone chairs retain the relaxed sitting pose.
+    const atDesk = chair && [...this.furniture.values()].some((furniture) =>
+      furniture.frame === DESK_FURNITURE_FRAME && intersectsAabb(
+        this.furnitureWalkCollision(chair.image, 0), this.furnitureWalkCollision(furniture.image, 16)))
+    if (!atDesk || this.layoutEditing) {
+      this.representativeWorkElapsedMs = 0
+      if (chair && foreground.texture.key === REPRESENTATIVE_WORK_TEXTURE) this.renderSeatedForeground(sprite, foreground)
+      return
+    }
+    this.representativeWorkElapsedMs += deltaMs
+    const direction = this.furnitureDirection(this.furnitureRotation(chair.image))
+    const pose = representativeWorkPoseAt(this.representativeWorkElapsedMs)
+    const frame = `ceo-work-${direction}-${pose}`
+    if (foreground.texture.key !== REPRESENTATIVE_WORK_TEXTURE || foreground.frame.name !== frame) {
+      foreground.setTexture(REPRESENTATIVE_WORK_TEXTURE, frame)
+        .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
+    }
   }
 
   private applySeatedComposition(chair: FurnitureView, sprite: Phaser.GameObjects.Sprite,
@@ -1738,6 +1769,7 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private applyRepresentativePose(pose: CharacterPose): void {
+    this.representativeWorkElapsedMs = 0
     this.representativeSprite?.stop().setTexture('ceo-animation-sheet-frames', pose.frame)
       .setCrop().setVisible(true).setFlipX(pose.flipX).setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT)
     this.representativeSeatedForeground?.setVisible(false)
@@ -1780,6 +1812,7 @@ export class OfficeScene extends Phaser.Scene {
     // The generated side views are left, then right in reading order.
     const seatedDirections = ['front', 'left', 'back', 'right']
     this.createCharacterFrames('ceo-seated-sheet', (column, row) => `ceo-sit-${seatedDirections[row * 2 + column]}`)
+    this.createRepresentativeWorkFrames()
     this.createCharacterFrames('ceo-pantry-sheet', (column, row) =>
       `ceo-${row < 2 ? 'drinking' : 'eating'}-${(row % 2) * 3 + column}`, 'pantry')
     const bubble = this.textures.get('speech-bubble')
@@ -1792,6 +1825,29 @@ export class OfficeScene extends Phaser.Scene {
     const bounds = measureFurnitureBounds(context.getImageData(0, 0, source.width, source.height).data, source.width, source.height)
     bubble.add('panel', 0, Math.floor(bounds.x * source.width), Math.floor(bounds.y * source.height),
       Math.ceil(bounds.width * source.width), Math.ceil(bounds.height * source.height))
+  }
+
+  private createRepresentativeWorkFrames(): void {
+    const seated = this.textures.get('ceo-seated-sheet-frames')
+    const source = seated.getSourceImage() as HTMLCanvasElement
+    const input = source.getContext('2d')!
+    const texture = this.textures.createCanvas(REPRESENTATIVE_WORK_TEXTURE,
+      CHARACTER_FRAME_WIDTH * REPRESENTATIVE_WORK_POSES, CHARACTER_FRAME_HEIGHT * FURNITURE_DIRECTIONS.length)
+    if (!texture) throw new Error('Could not create representative work frames')
+    const context = texture.getContext()
+    FURNITURE_DIRECTIONS.forEach((direction, row) => {
+      const frame = seated.get(`ceo-sit-${direction}`)
+      const pixels = input.getImageData(frame.cutX, frame.cutY, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
+      for (let pose = 0; pose < REPRESENTATIVE_WORK_POSES; pose += 1) {
+        const output = context.createImageData(CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
+        output.data.set(representativeWorkPixels(pixels.data, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT, direction, pose))
+        const x = pose * CHARACTER_FRAME_WIDTH
+        const y = row * CHARACTER_FRAME_HEIGHT
+        context.putImageData(output, x, y)
+        texture.add(`ceo-work-${direction}-${pose}`, 0, x, y, CHARACTER_FRAME_WIDTH, CHARACTER_FRAME_HEIGHT)
+      }
+    })
+    texture.refresh()
   }
 
   private createCharacterFrames(sourceKey: string, frameName: (column: number, row: number) => string,
