@@ -1141,7 +1141,7 @@ export class OfficeScene extends Phaser.Scene {
         chairBounds ? chairBounds.y + chairBounds.height : 0)
       // Measure visible pixels, so transparent PNG padding does not push the
       // marker away. Keep it on the floor with a gap below wheels and shoes.
-      label.setPosition(chair?.image.x ?? desk.image.x, bottom + 22).setVisible(true)
+      label.setPosition(chair?.image.x ?? desk.image.x, bottom + 23).setVisible(true)
     }
   }
 
