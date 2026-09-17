@@ -274,9 +274,7 @@ export class OfficeScene extends Phaser.Scene {
   // selected piece's fixed offset from the dragged (leader) piece.
   private groupDragOffsets = new Map<string, WorldPoint>()
   private nextFurnitureId = 1
-  // Team-lead nameplates (desk-T-0 only) - fixed floor zone markers, not
-  // tied to the desk's live position (see ensureDeskPair); tracked here only
-  // so a deleted desk's label gets cleaned up with it.
+  // Team floor markers follow the clear space below each lead desk/chair.
   private teamLabels = new Map<string, Phaser.GameObjects.Text>()
   private representativeSprite?: Phaser.GameObjects.Sprite
   private representativeSeatedForeground?: Phaser.GameObjects.Sprite
@@ -621,9 +619,8 @@ export class OfficeScene extends Phaser.Scene {
       this.updateSelectionOutline()
       // Carry the rest of the multi-selected group along by the same delta -
       // each piece keeps its own offset from the dragged (leader) piece, and
-      // is independently clamped to the world bounds. The "Team X" label is
-      // a fixed floor marker, not tied to any one desk's position, so it is
-      // deliberately left alone here even if its desk is part of the drag.
+      // is independently clamped to the world bounds. Floor labels update
+      // after every member has moved, using the whole desk/chair pair.
       this.groupDragOffsets.forEach((offset, otherId) => {
         const otherView = this.furniture.get(otherId)
         if (!otherView) return
@@ -1127,6 +1124,25 @@ export class OfficeScene extends Phaser.Scene {
         }
       }
     }
+    this.refreshTeamLabels()
+  }
+
+  private refreshTeamLabels(): void {
+    for (const [deskId, label] of this.teamLabels) {
+      const desk = this.furniture.get(deskId)
+      if (!desk || !isInStaffArea(desk.image)) {
+        label.setVisible(false)
+        continue
+      }
+      const chair = this.furniture.get(pairedFurnitureId(deskId)!)
+      const deskBounds = this.furnitureWalkCollision(desk.image, 0)
+      const chairBounds = chair && this.furnitureWalkCollision(chair.image, 0)
+      const bottom = Math.max(deskBounds.y + deskBounds.height,
+        chairBounds ? chairBounds.y + chairBounds.height : 0)
+      // Measure visible pixels, so transparent PNG padding does not push the
+      // marker away. Keep it on the floor with a gap below wheels and shoes.
+      label.setPosition(chair?.image.x ?? desk.image.x, bottom + 22).setVisible(true)
+    }
   }
 
   private maxFurnitureDepth(): number {
@@ -1241,15 +1257,12 @@ export class OfficeScene extends Phaser.Scene {
     if (!this.removedDeskIds.has(deskId) && !this.furniture.has(deskId)) {
       this.addFurniture(deskId, DESK_FURNITURE_FRAME, point.x, point.y + 12, 92, 58)
       if (slotIndex === 0) {
-        // A fixed floor marker for the zone, anchored to the static
-        // TEAM_DESKS point - not the desk's own (possibly dragged-elsewhere)
-        // position, so it stays put as its own zone label instead of
-        // tagging along whenever the desk itself gets moved around.
         const teamNames = ['Claude', 'Codex', 'Antigravity']
-        const label = this.addOfficeText(point.x - 36, point.y - 33, `Team ${teamNames[teamIndex]}`, {
+        const label = this.addOfficeText(0, 0, `Team ${teamNames[teamIndex]}`, {
           fontSize: '11px', color: '#111111'
-        }).setPadding(4, 4).setDepth(3)
+        }).setPadding(4, 4).setOrigin(0.5, 0).setDepth(3)
         this.teamLabels.set(deskId, label)
+        this.refreshTeamLabels()
       }
     }
     // Created right after its own desk, so on a fresh install (nothing in
