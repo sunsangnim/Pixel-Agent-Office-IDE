@@ -43,7 +43,7 @@ export class WorkspaceFiles {
     for (const [oldName, newName] of Object.entries(LEGACY_WORKSPACE_FOLDERS)) {
       this.migrateFolder(confinedPath(this.root, oldName), confinedPath(this.root, newName))
     }
-    for (const name of [...Object.values(WORKSPACE_FOLDERS), `${WORKSPACE_FOLDERS.documents}/에셋`, `${WORKSPACE_FOLDERS.documents}/애니메이션`]) {
+    for (const name of Object.values(WORKSPACE_FOLDERS)) {
       mkdirSync(this.path(name), { recursive: true })
     }
     mkdirSync(this.path(join('프로젝트', '기본 작업')), { recursive: true })
