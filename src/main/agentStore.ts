@@ -5,8 +5,12 @@ import { app } from 'electron'
 import type { AgentTemplate, AgentTemplateInput, AgentTemplatePatch } from '../shared/types'
 
 const defaultTemplates: AgentTemplate[] = [
-  { id: 'claude-code', name: 'Claude Code', command: 'claude', args: [], color: '#d97757', leadTitle: '부장' },
-  { id: 'codex-cli', name: 'Codex CLI', command: 'codex', args: [], color: '#10a37f', leadTitle: '차장' },
+  // `claude` has no top-level "login" command - only `claude auth login` (see `claude auth --help`).
+  // Without this, the generic ['login'] fallback in SettingsWindow's login button hands the CLI a
+  // bare "login" positional, which it treats as a chat prompt instead of an auth command.
+  { id: 'claude-code', name: 'Claude Code', command: 'claude', args: [], color: '#d97757', leadTitle: '부장', loginArgs: ['auth', 'login'] },
+  // `codex login` is a real top-level subcommand, so the plain form is correct here.
+  { id: 'codex-cli', name: 'Codex CLI', command: 'codex', args: [], color: '#10a37f', leadTitle: '차장', loginArgs: ['login'] },
   {
     id: 'antigravity-cli',
     name: 'Antigravity CLI',
