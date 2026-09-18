@@ -42,6 +42,10 @@ function defaultWindowBounds(): { x?: number; y?: number; width: number; height:
   return { ...position, width, height }
 }
 
+export function getMainWindow(): BrowserWindow | null {
+  return mainWindow
+}
+
 export function createMainWindow(): BrowserWindow {
   const saved = windowBoundsStore.get()
   const bounds = saved ?? defaultWindowBounds()

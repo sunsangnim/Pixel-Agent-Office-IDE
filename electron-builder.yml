@@ -11,6 +11,11 @@ files:
 # dlopen from), so unpack it and anything else with a native addon.
 asarUnpack:
   - '**/*.node'
+publish:
+  provider: github
+  owner: sunsangnim
+  repo: Pixel-Agent-Office-IDE
+  releaseType: release
 win:
   target: nsis
   artifactName: ${productName}-${version}-${arch}.${ext}

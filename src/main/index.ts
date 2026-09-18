@@ -3,6 +3,7 @@ import { registerIpcHandlers } from './ipc'
 import { ptyManager } from './ptyManager'
 import { createMainWindow } from './windowManager'
 import { taskRecovery } from './taskRecovery'
+import { initAutoUpdater } from './autoUpdater'
 
 // keep the whole app from going down over one bad IPC call (e.g. a native
 // node-pty error from a process that exited mid-request); log and continue
@@ -14,6 +15,7 @@ process.on('uncaughtException', (error) => {
 app.whenReady().then(() => {
   registerIpcHandlers()
   createMainWindow()
+  initAutoUpdater()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
