@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Pixel Agent Office IDE</title>
+<meta name="description" content="Claude Code, Codex CLI, Antigravity CLI를 픽셀 오피스 안의 팀으로 표현하는 멀티 에이전트 IDE" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏢</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0d0f;
+    --bg-elevated: #10151a;
+    --border: #1f2a2e;
+    --text: #eef4f3;
+    --text-dim: #96a5a6;
+    --accent: #2dd4bf;
+    --accent-strong: #5eead4;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif;
+    line-height: 1.5;
+    padding-inline: 24px;
+    padding-block: max(24px, env(safe-area-inset-top, 0px)) 24px;
+  }
+  a { color: inherit; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+
+  .wrap { max-width: 1040px; margin: 0 auto; }
+
+  header.top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-block: 20px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.05rem; }
+  .brand-emoji { font-size: 1.4rem; }
+  header.top nav { display: flex; gap: 20px; font-size: 0.92rem; color: var(--text-dim); }
+  header.top nav a:hover { color: var(--text); }
+
+  .hero {
+    text-align: center;
+    padding-block: 56px 40px;
+  }
+  .hero h1 {
+    font-size: clamp(2rem, 5vw, 3.4rem);
+    font-weight: 800;
+    line-height: 1.15;
+    margin: 0 0 18px;
+    letter-spacing: -0.02em;
+  }
+  .hero h1 .accent { color: var(--accent-strong); }
+  .hero p.sub {
+    max-width: 620px;
+    margin: 0 auto 32px;
+    color: var(--text-dim);
+    font-size: 1.08rem;
+  }
+
+  .cta-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 26px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 1rem;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn-primary {
+    background: linear-gradient(180deg, var(--accent-strong), var(--accent));
+    color: #06201c;
+    box-shadow: 0 8px 24px -8px rgba(45, 212, 191, 0.55);
+  }
+  .btn-primary:hover { box-shadow: 0 10px 28px -6px rgba(45, 212, 191, 0.7); }
+  .btn-secondary {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .btn-secondary:hover { border-color: var(--accent); }
+  .btn small { font-weight: 400; opacity: 0.75; font-size: 0.8em; }
+
+  .version-note { font-size: 0.85rem; color: var(--text-dim); margin-top: 4px; }
+  .version-note a { color: var(--accent-strong); text-decoration: none; }
+  .version-note a:hover { text-decoration: underline; }
+
+  .screenshot-frame {
+    margin: 44px auto 0;
+    max-width: 880px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    padding: 10px;
+    box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.6);
+  }
+  .screenshot-frame img {
+    display: block;
+    width: 100%;
+    border-radius: 10px;
+  }
+
+  section.features {
+    padding-block: 72px 40px;
+  }
+  section.features h2 {
+    text-align: center;
+    font-size: 1.7rem;
+    margin-bottom: 40px;
+    letter-spacing: -0.01em;
+  }
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+  }
+  .feature-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+  }
+  .feature-card .icon { font-size: 1.6rem; margin-bottom: 10px; display: block; }
+  .feature-card h3 { margin: 0 0 8px; font-size: 1.02rem; }
+  .feature-card p { margin: 0; color: var(--text-dim); font-size: 0.92rem; }
+
+  section.requirements {
+    padding-block: 24px 64px;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    text-align: center;
+  }
+  section.requirements code {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 0.88em;
+  }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding-block: 28px;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+  footer a { text-decoration: none; }
+  footer a:hover { color: var(--text); }
+
+  @media (max-width: 520px) {
+    header.top nav { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand"><span class="brand-emoji">🏢</span> Pixel Agent Office IDE</div>
+    <nav>
+      <a href="#features">기능</a>
+      <a href="https://github.com/sunsangnim/Pixel-Agent-Office-IDE">GitHub</a>
+      <a href="https://github.com/sunsangnim/Pixel-Agent-Office-IDE/releases">릴리스</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <h1>AI 에이전트가 일하는<br /><span class="accent">픽셀 오피스</span>를 지켜보세요</h1>
+    <p class="sub">
+      Claude Code, Codex CLI, Antigravity CLI를 픽셀 오피스 속 세 팀으로 표현하는 Electron 기반
+      멀티 에이전트 IDE입니다. 채팅으로 지시하면 팀장이 배정되고, 실제 CLI 세션의 상태가
+      책상·회의실·탕비실에 그대로 반영됩니다.
+    </p>
+    <div class="cta-row">
+      <a id="download-btn" class="btn btn-primary" href="https://github.com/sunsangnim/Pixel-Agent-Office-IDE/releases/latest">
+        <span>⬇</span> Windows용 다운로드
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/sunsangnim/Pixel-Agent-Office-IDE">
+        GitHub에서 소스 보기
+      </a>
+    </div>
+    <div class="version-note" id="version-note" hidden>
+      최신 버전 <a id="version-link" href="#"></a>
+    </div>
+
+    <div class="screenshot-frame">
+      <img src="assets/screenshot.png" alt="Pixel Agent Office IDE 실행 화면 - Claude, Codex, Antigravity 팀이 배치된 픽셀 오피스" />
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <h2>무엇을 할 수 있나요</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="icon">🧑‍💼</span>
+        <h3>3개 팀, 15개 고정 좌석</h3>
+        <p>Claude·Codex·Antigravity 팀장과 팀별 하위 세션이 각자의 책상에서 실시간 상태를 보여줍니다.</p>
+      </div>
+      <div class="feature-card">
+        <span class="icon">💬</span>
+        <h3>채팅으로 작업 배정</h3>
+        <p>담당자 미지정 시 자동 배정, <code style="background:transparent;border:none;padding:0">@</code> 멘션으로 특정 팀장에게 직접 지시할 수 있습니다.</p>
+      </div>
+      <div class="feature-card">
+        <span class="icon">🧩</span>
+        <h3>복합 작업 오케스트레이션</h3>
+        <p>대규모 작업은 Claude=코딩·문서, Codex=이미지, Antigravity=테스트·검증으로 자동 분담됩니다.</p>
+      </div>
+      <div class="feature-card">
+        <span class="icon">🏙️</span>
+        <h3>생활형 픽셀 오피스</h3>
+        <p>출근·휴식·회의·탕비실 이동까지 갖춘 16/32비트풍 오피스에서 팀의 일상이 이어집니다.</p>
+      </div>
+      <div class="feature-card">
+        <span class="icon">📝</span>
+        <h3>회의 → SRS 자동 정리</h3>
+        <p>세 팀장에게 동시에 의견을 묻고, 회의가 끝나면 하나의 SRS·PRD로 통합 정리합니다.</p>
+      </div>
+      <div class="feature-card">
+        <span class="icon">🔄</span>
+        <h3>자동 업데이트</h3>
+        <p>새 버전이 나오면 앱이 알아서 감지·다운로드하고, 재시작 시 안내 후 설치합니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="requirements">
+    실행하려면 <code>Claude Code</code>, <code>Codex CLI</code>, <code>Antigravity CLI</code> 중 사용할 CLI와
+    <code>git</code>, <code>gh</code>(GitHub CLI) 로그인이 먼저 필요합니다. 자세한 내용은
+    <a href="https://github.com/sunsangnim/Pixel-Agent-Office-IDE#readme" style="color:var(--accent-strong)">README</a>를 참고하세요.
+  </section>
+
+  <footer>
+    <span>MIT License</span>
+    <a href="https://github.com/sunsangnim/Pixel-Agent-Office-IDE">github.com/sunsangnim/Pixel-Agent-Office-IDE</a>
+  </footer>
+</div>
+
+<script>
+(async () => {
+  try {
+    const res = await fetch('https://api.github.com/repos/sunsangnim/Pixel-Agent-Office-IDE/releases/latest');
+    if (!res.ok) return;
+    const data = await res.json();
+    const asset = (data.assets || []).find((a) => a.name.endsWith('.exe'));
+    const btn = document.getElementById('download-btn');
+    const note = document.getElementById('version-note');
+    const link = document.getElementById('version-link');
+    if (asset) {
+      btn.href = asset.browser_download_url;
+    }
+    if (data.tag_name) {
+      link.href = data.html_url || 'https://github.com/sunsangnim/Pixel-Agent-Office-IDE/releases/latest';
+      link.textContent = data.tag_name;
+      note.hidden = false;
+    }
+  } catch (e) {
+    // GitHub API unreachable or rate-limited - the button already falls back
+    // to the releases page itself, so no fallback logic needed here.
+  }
+})();
+</script>
+</body>
+</html>
