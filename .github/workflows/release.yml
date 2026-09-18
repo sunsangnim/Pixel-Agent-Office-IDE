@@ -22,9 +22,26 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # publishes a GitHub Release tagged with package.json's version and
-      # uploads latest.yml alongside the installer - electron-updater reads
-      # that release to notify running apps of the update.
+      # Create the release before electron-builder runs. electron-builder
+      # uploads the installer, blockmap, and latest.yml as separate parallel
+      # tasks, each of which calls its own getOrCreateRelease first - when no
+      # release exists yet for the tag, two of those calls raced to POST the
+      # same brand-new tag and GitHub rejected the loser with "Published
+      # releases must have a valid tag". Creating the (published) release
+      # here first means every task just finds it via GET, no race. A
+      # published release (not draft) is required for electron-updater's
+      # GitHub provider, which ignores drafts.
+      - name: Ensure GitHub release exists for this version
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $tag = "v$version"
+          gh release view $tag --repo "${{ github.repository }}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --repo "${{ github.repository }}" --title $tag --notes "" --target main
+          }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run release:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
