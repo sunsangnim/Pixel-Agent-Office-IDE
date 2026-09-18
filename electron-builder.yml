@@ -15,6 +15,10 @@ publish:
   provider: github
   owner: sunsangnim
   repo: Pixel-Agent-Office-IDE
+  # matches the published (non-draft) release the workflow pre-creates -
+  # electron-builder skips publishing entirely if this doesn't match the
+  # existing release's type.
+  releaseType: release
 win:
   target: nsis
   artifactName: ${productName}-${version}-${arch}.${ext}
