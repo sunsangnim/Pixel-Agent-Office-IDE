@@ -22,9 +22,14 @@ publish:
 win:
   target: nsis
   artifactName: ${productName}-${version}-${arch}.${ext}
+# oneClick is required for electron-updater's silent install-on-quit to
+# actually be silent - with oneClick:false (the "assisted" installer),
+# electron-updater's own /S-silent relaunch still surfaces the full wizard
+# (user/directory pages), defeating the point of a background auto-update.
+# The tradeoff is no directory-picker on first install, which is fine for
+# almost everyone.
 nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
+  oneClick: true
 linux:
   target: AppImage
   category: Development
