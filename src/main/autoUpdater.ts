@@ -10,7 +10,13 @@ export function initAutoUpdater(): void {
   if (!app.isPackaged) return
 
   autoUpdater.autoDownload = true
-  autoUpdater.autoInstallOnAppQuit = false
+  // electron-updater only registers its "install on quit" hook once, the
+  // moment a download finishes, and it captures autoInstallOnAppQuit's
+  // value at that exact instant (BaseUpdater.addQuitHandler) - flipping the
+  // flag later, e.g. from the "나중에" button below, is too late to matter.
+  // Leaving it at the library's own default (true) is what makes "나중에"
+  // actually install on the next quit.
+  autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('error', (error) => {
     console.error('[auto-updater] 업데이트 확인 실패:', error)
@@ -32,9 +38,9 @@ export function initAutoUpdater(): void {
     showDialog.then(({ response }) => {
       if (response === 0) {
         autoUpdater.quitAndInstall()
-      } else {
-        autoUpdater.autoInstallOnAppQuit = true
       }
+      // else "나중에": nothing to do - the quit hook registered above already
+      // installs silently on the next normal app quit.
     })
   })
 
