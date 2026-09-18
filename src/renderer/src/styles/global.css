@@ -1215,6 +1215,13 @@ textarea {
   font-size: 13px;
 }
 
+.settings-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
 .profile-card-diff-btn {
   position: absolute;
   top: 6px;

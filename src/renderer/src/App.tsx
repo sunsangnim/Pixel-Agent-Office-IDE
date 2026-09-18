@@ -327,7 +327,7 @@ ${plan.originalText}`
         mode = 'manual'
         planInstanceIds = targetIds
       } else {
-        const plan = planTask(text)
+        const plan = planTask(text, templates.map((template) => template.id))
         addSystemMessage(`작업 계획: ${plan.reason}`)
         mode = plan.complexity
         const leaders: AgentInstance[] = []

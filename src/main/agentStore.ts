@@ -27,19 +27,18 @@ function getStorePath(): string {
 
 function readTemplates(): AgentTemplate[] {
   const path = getStorePath()
+  // No file yet means a fresh install - the office starts empty except the
+  // representative, and each team only shows up once its CLI is added
+  // (either as a custom template or one of the built-in presets below).
   if (!existsSync(path)) {
-    return defaultTemplates
+    return []
   }
   try {
     const raw = readFileSync(path, 'utf-8')
     const parsed = JSON.parse(raw) as AgentTemplate[]
-    if (!Array.isArray(parsed)) return defaultTemplates
-    // Built-in teams are additive so existing installations also receive newly
-    // introduced CLI adapters without overwriting user customizations.
-    const existingIds = new Set(parsed.map((template) => template.id))
-    return [...parsed, ...defaultTemplates.filter((template) => !existingIds.has(template.id))]
+    return Array.isArray(parsed) ? parsed : []
   } catch {
-    return defaultTemplates
+    return []
   }
 }
 
@@ -52,6 +51,22 @@ function writeTemplates(templates: AgentTemplate[]): void {
 export const agentTemplateStore = {
   list(): AgentTemplate[] {
     return readTemplates()
+  },
+
+  /** The known built-in CLIs a user can one-click add, so they don't have to
+   *  hand-type command names and colors for Claude/Codex/Antigravity. */
+  presets(): AgentTemplate[] {
+    return defaultTemplates
+  },
+
+  addPreset(id: string): AgentTemplate[] {
+    const preset = defaultTemplates.find((template) => template.id === id)
+    if (!preset) return readTemplates()
+    const templates = readTemplates()
+    if (templates.some((template) => template.id === id)) return templates
+    const updated = [...templates, preset]
+    writeTemplates(updated)
+    return updated
   },
 
   create(input: AgentTemplateInput): AgentTemplate[] {

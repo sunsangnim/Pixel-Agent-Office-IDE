@@ -67,12 +67,14 @@ function SettingsWindow() {
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
   const [representativeName, setRepresentativeName] = useState('')
   const [nameSaved, setNameSaved] = useState(false)
+  const [presets, setPresets] = useState<AgentTemplate[]>([])
 
   useEffect(() => {
     window.api.templates.list().then((list) => {
       setTemplates(list)
       setLoading(false)
     })
+    window.api.templates.presets().then(setPresets)
     window.api.teamCapacity.list().then(setCapacities)
     window.api.profiles.list().then(setProfiles)
     window.api.userProfile.getRepresentativeName().then(setRepresentativeName)
@@ -96,6 +98,13 @@ function SettingsWindow() {
     setRepresentativeName(saved)
     setNameSaved(true)
     setTimeout(() => setNameSaved(false), 2000)
+  }
+
+  const missingPresets = presets.filter((preset) => !templates.some((t) => t.id === preset.id))
+
+  const addPreset = async (id: string): Promise<void> => {
+    const updated = await window.api.templates.addPreset(id)
+    setTemplates(updated)
   }
 
   const resetForm = (): void => {
@@ -178,8 +187,18 @@ function SettingsWindow() {
 
       <p className="settings-hint">
         오피스에 배치할 수 있는 에이전트 템플릿을 관리합니다. 실제 CLI 실행 명령어를 등록하고, API
-        키를 넣거나 계정으로 직접 로그인하세요.
+        키를 넣거나 계정으로 직접 로그인하세요. 추가한 팀만 오피스에 출근합니다.
       </p>
+
+      {missingPresets.length > 0 && (
+        <div className="settings-preset-row">
+          {missingPresets.map((preset) => (
+            <button key={preset.id} className="pill-btn" onClick={() => void addPreset(preset.id)}>
+              + {preset.name} 추가
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <p>불러오는 중...</p>
@@ -219,7 +238,7 @@ function SettingsWindow() {
               </div>
             </li>
           ))}
-          {templates.length === 0 && <li>등록된 템플릿이 없습니다.</li>}
+          {templates.length === 0 && <li>등록된 템플릿이 없습니다. 위에서 CLI를 추가해주세요.</li>}
         </ul>
       )}
 

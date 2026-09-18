@@ -88,6 +88,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('templates:list', () => agentTemplateStore.list())
 
+  ipcMain.handle('templates:presets', () => agentTemplateStore.presets())
+
+  ipcMain.handle('templates:add-preset', (_event, id: string) => {
+    const result = agentTemplateStore.addPreset(id)
+    broadcastTemplatesChanged()
+    return result
+  })
+
   ipcMain.handle('templates:create', (_event, input: AgentTemplateInput) => {
     const result = agentTemplateStore.create(input)
     broadcastTemplatesChanged()

@@ -7,7 +7,7 @@ import type { WebContents } from 'electron'
 import { getCliAdapter, adapterIdForTemplate } from '../src/main/cliAdapters'
 import { ptyManager } from '../src/main/ptyManager'
 import { BUILT_IN_AGENT_PROFILES } from '../src/shared/agentProfiles'
-import { MAX_TEAM_CAPACITY, ORCHESTRATION_POLICY } from '../src/shared/orchestrationPolicy'
+import { BUILT_IN_TEAM_IDS, MAX_TEAM_CAPACITY, ORCHESTRATION_POLICY } from '../src/shared/orchestrationPolicy'
 import type { AgentRuntimeState, AgentStatePayload, CliAdapterId } from '../src/shared/types'
 import { planTask } from '../src/renderer/src/lib/taskRouter'
 import { parseOfficeCommand, resolveOfficeCommandTargets } from '../src/renderer/src/lib/officeCommands'
@@ -97,16 +97,25 @@ function verifyRoutingAndProfiles(): void {
   assert.equal(BUILT_IN_AGENT_PROFILES.filter((profile) => profile.rank === 'subAgent').length, 12)
   assert.equal(MAX_TEAM_CAPACITY - 1, 4)
 
-  assert.deepEqual(planTask('간단한 버그 고쳐').templateIds, ['claude-code'])
-  assert.deepEqual(planTask('@코덱스 애니메이션 고쳐').templateIds, ['codex-cli'])
-  assert.deepEqual(planTask('@Codex 테스트 고쳐').templateIds, ['codex-cli'])
-  assert.deepEqual(planTask('@안티그래피 이미지 만들어').templateIds, ['antigravity-cli'])
-  assert.deepEqual(planTask('@claude 기능 만들어').templateIds, ['claude-code'])
-  assert.deepEqual(planTask('전체 기능을 병렬로 통합 테스트해').templateIds, [
+  const allTeams = [...BUILT_IN_TEAM_IDS]
+  assert.deepEqual(planTask('간단한 버그 고쳐', allTeams).templateIds, ['claude-code'])
+  assert.deepEqual(planTask('@코덱스 애니메이션 고쳐', allTeams).templateIds, ['codex-cli'])
+  assert.deepEqual(planTask('@Codex 테스트 고쳐', allTeams).templateIds, ['codex-cli'])
+  assert.deepEqual(planTask('@안티그래피 이미지 만들어', allTeams).templateIds, ['antigravity-cli'])
+  assert.deepEqual(planTask('@claude 기능 만들어', allTeams).templateIds, ['claude-code'])
+  assert.deepEqual(planTask('전체 기능을 병렬로 통합 테스트해', allTeams).templateIds, [
     'claude-code',
     'codex-cli',
     'antigravity-cli'
   ])
+  // Teams the user never configured drop out of both the default assignment
+  // and complex-task orchestration instead of erroring on an unknown template.
+  assert.deepEqual(planTask('간단한 버그 고쳐', ['codex-cli']).templateIds, ['codex-cli'])
+  assert.deepEqual(planTask('전체 기능을 병렬로 통합 테스트해', ['claude-code', 'codex-cli']).templateIds, [
+    'claude-code',
+    'codex-cli'
+  ])
+  assert.deepEqual(planTask('간단한 버그 고쳐', []).templateIds, [])
   assert.equal(adapterIdForTemplate('claude-code'), 'claude')
   assert.equal(adapterIdForTemplate('codex-cli'), 'codex')
   assert.equal(adapterIdForTemplate('antigravity-cli'), 'antigravity')
@@ -137,15 +146,15 @@ function verifyRoutingAndProfiles(): void {
   const chatStorage = new Map<string, string>()
   const chatStore = { getItem: (key: string) => chatStorage.get(key) ?? null,
     setItem: (key: string, value: string) => { chatStorage.set(key, value) } }
-  const meetingMessage = userChatMessage('회의하자')
-  saveChatHistory(chatStore, [meetingMessage, userChatMessage('첫 줄\n둘째 줄'), userChatMessage('회의 종료')])
+  const meetingMessage = userChatMessage('회의하자', '대표')
+  saveChatHistory(chatStore, [meetingMessage, userChatMessage('첫 줄\n둘째 줄', '대표'), userChatMessage('회의 종료', '대표')])
   assert.deepEqual(readChatHistory(chatStore).map(message => message.text), ['회의하자', '첫 줄\n둘째 줄', '회의 종료'])
   assert.equal(readChatHistory(chatStore)[0].id, meetingMessage.id, 'reload retains message identity and order')
   chatStorage.set(CHAT_HISTORY_KEY, 'broken')
   assert.deepEqual(readChatHistory(chatStore), [])
   chatStorage.set(CHAT_HISTORY_KEY, JSON.stringify([null, {}, { kind: 'other' }, meetingMessage]))
   assert.deepEqual(readChatHistory(chatStore), [meetingMessage])
-  saveChatHistory(chatStore, Array.from({ length: 305 }, (_, index) => userChatMessage(String(index))))
+  saveChatHistory(chatStore, Array.from({ length: 305 }, (_, index) => userChatMessage(String(index), '대표')))
   assert.equal(readChatHistory(chatStore).length, 300)
   assert.equal(readChatHistory(chatStore)[0].text, '5')
   assert.doesNotThrow(() => saveChatHistory({ setItem: () => { throw new Error('Quota exceeded') } }, [meetingMessage]))

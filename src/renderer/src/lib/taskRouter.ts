@@ -9,7 +9,26 @@ export interface DispatchPlan {
 
 const COMPLEX_MARKERS = ['병렬', '분담', '전체', '아키텍처', '마이그레이션', '리팩터링', '통합 테스트', 'orchestrat']
 
-export function planTask(text: string): DispatchPlan {
+const BUILT_IN_ROLE_DESCRIPTIONS: Record<string, string> = {
+  'claude-code': 'Claude=코딩·문서작업',
+  'codex-cli': 'Codex=이미지 생성',
+  'antigravity-cli': 'Antigravity=테스트·검증'
+}
+
+/** Picks a sensible default team for work nobody explicitly assigned - Claude
+ *  when it's configured (matches the written docs/behavior), otherwise
+ *  whichever team the user actually added first. Empty only when no agent
+ *  has been configured at all. */
+function defaultTeam(availableTemplateIds: string[]): string[] {
+  if (availableTemplateIds.includes('claude-code')) return ['claude-code']
+  return availableTemplateIds.length > 0 ? [availableTemplateIds[0]] : []
+}
+
+function simplePlan(templateIds: string[], reason: string): DispatchPlan {
+  return { templateIds, complexity: 'simple', reason, explicitlyAssigned: false }
+}
+
+export function planTask(text: string, availableTemplateIds: string[]): DispatchPlan {
   const normalized = text.toLowerCase()
   const explicitRoutes: Array<{ pattern: RegExp; templateId: string; name: string }> = [
     { pattern: /@(?:클로드|claude)(?=\s|$)/i, templateId: 'claude-code', name: 'Claude' },
@@ -31,19 +50,23 @@ export function planTask(text: string): DispatchPlan {
     COMPLEX_MARKERS.some((marker) => normalized.includes(marker))
 
   if (complex) {
-    return {
-      templateIds: [...BUILT_IN_TEAM_IDS],
-      complexity: 'complex',
-      reason: '큰 작업으로 판단해 Claude=코딩·문서작업, Codex=이미지 생성, Antigravity=테스트·검증으로 오케스트레이션',
-      explicitlyAssigned: false
+    const availableBuiltIns = BUILT_IN_TEAM_IDS.filter((id) => availableTemplateIds.includes(id))
+    if (availableBuiltIns.length > 1) {
+      return {
+        templateIds: availableBuiltIns,
+        complexity: 'complex',
+        reason: `큰 작업으로 판단해 ${availableBuiltIns.map((id) => BUILT_IN_ROLE_DESCRIPTIONS[id]).join(', ')}으로 오케스트레이션`,
+        explicitlyAssigned: false
+      }
     }
+    // Fewer than two of the three built-in roles are configured - there's
+    // nothing to split work across, so fall through to the single-team default.
   }
 
-  if (/ui|ux|화면|디자인|픽셀|css|프론트/.test(normalized)) {
-    return { templateIds: ['claude-code'], complexity: 'simple', reason: '미지정 작업의 기본 담당 Claude에게 배정', explicitlyAssigned: false }
+  const fallback = defaultTeam(availableTemplateIds)
+  if (fallback.length === 0) {
+    return simplePlan([], '등록된 에이전트가 없습니다. 설정에서 CLI를 먼저 추가해주세요.')
   }
-  if (/분석|기획|문서|리뷰|검토|설계/.test(normalized)) {
-    return { templateIds: ['claude-code'], complexity: 'simple', reason: '미지정 작업의 기본 담당 Claude에게 배정', explicitlyAssigned: false }
-  }
-  return { templateIds: ['claude-code'], complexity: 'simple', reason: '미지정 작업의 기본 담당 Claude에게 배정', explicitlyAssigned: false }
+  const fallbackName = BUILT_IN_ROLE_DESCRIPTIONS[fallback[0]]?.split('=')[0] ?? fallback[0]
+  return simplePlan(fallback, `미지정 작업의 기본 담당 ${fallbackName}에게 배정`)
 }

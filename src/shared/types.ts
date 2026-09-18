@@ -71,6 +71,8 @@ export type AgentTemplatePatch = Partial<AgentTemplateInput>
 
 export interface AgentTemplateApi {
   list(): Promise<AgentTemplate[]>
+  presets(): Promise<AgentTemplate[]>
+  addPreset(id: string): Promise<AgentTemplate[]>
   create(input: AgentTemplateInput): Promise<AgentTemplate[]>
   update(id: string, patch: AgentTemplatePatch): Promise<AgentTemplate[]>
   remove(id: string): Promise<AgentTemplate[]>

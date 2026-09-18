@@ -126,14 +126,6 @@ export function ensureDeskPair(scene: OfficeScene, teamIndex: number, slotIndex:
   const chairId = `chair-${teamIndex}-${slotIndex}`
   if (!scene.removedDeskIds.has(deskId) && !scene.furniture.has(deskId)) {
     scene.addFurniture(deskId, DESK_FURNITURE_FRAME, point.x, point.y + 12, 92, 58)
-    if (slotIndex === 0) {
-      const teamNames = ['Claude', 'Codex', 'Antigravity']
-      const label = scene.addOfficeText(0, 0, `Team ${teamNames[teamIndex]}`, {
-        fontSize: '11px', color: '#111111'
-      }).setPadding(4, 4).setOrigin(0.5, 0).setDepth(3)
-      scene.teamLabels.set(deskId, label)
-      scene.refreshTeamLabels()
-    }
   }
   // Created right after its own desk, so on a fresh install (nothing in
   // zOrderById yet) it gets a stable tie breaker. Its floor position keeps

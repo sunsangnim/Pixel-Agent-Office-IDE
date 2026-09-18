@@ -4,7 +4,6 @@ import { CONFERENCE_TABLE_FRAME, CONFERENCE_TABLE_ID, OFFICE_LAYOUT_SAVE_KEY, OF
 import { DESK_FURNITURE_FRAME, EditorState, FloorTexture, FurnitureView, OFFICE_FLOOR_SAVE_KEY, STACKABLE_FURNITURE_FRAMES, TABLETOP_FURNITURE_FRAMES, furnitureDisplaySize, pairedFurnitureId } from './OfficeScene'
 import { OFFICE_WORLD_HEIGHT, OFFICE_WORLD_WIDTH } from './officeWorld'
 import { intersectsAabb } from './collisionResolution'
-import { isInStaffArea } from './officeRooms'
 import { rotatedFootprint, snapFurniturePoint } from './officeGrid'
 
 const MAX_UNDO_HISTORY = 50
@@ -26,8 +25,6 @@ function pushUndo(scene: OfficeScene): void {
 function applyLayoutSnapshot(scene: OfficeScene, snapshot: LayoutSnapshot): void {
   for (const view of scene.furniture.values()) view.image.destroy()
   scene.furniture.clear()
-  scene.teamLabels.forEach((label) => label.destroy())
-  scene.teamLabels.clear()
   scene.clearMultiSelection()
   scene.selectedFurniture = null
   scene.selectionOutline?.destroy()
@@ -470,11 +467,6 @@ export async function deleteFurnitureView(scene: OfficeScene, view: FurnitureVie
   delete scene.layoutSave[id]
   scene.zOrderById.delete(id)
   scene.removeFromMultiSelection(id)
-  // A team's "Team X" label rides along with its lead desk (see
-  // ensureDeskPair) - without this it would be left behind as an orphaned
-  // text object floating on the floor once that desk is gone.
-  scene.teamLabels.get(id)?.destroy()
-  scene.teamLabels.delete(id)
   if (!id.startsWith('custom-') || id === CONFERENCE_TABLE_ID) {
     scene.removedDeskIds.add(id)
     const paired = pairedFurnitureId(id)
@@ -546,8 +538,6 @@ export function resetFurnitureLayout(scene: OfficeScene): void {
     scene.furniture.delete(id)
     if (!id.startsWith('custom-') || id === CONFERENCE_TABLE_ID) scene.removedDeskIds.add(id)
   }
-  scene.teamLabels.forEach((label) => label.destroy())
-  scene.teamLabels.clear()
   localStorage.setItem(OFFICE_REMOVED_DESKS_KEY, JSON.stringify([...scene.removedDeskIds]))
   scene.reportDeskCounts()
   scene.selectFurniture(null)
@@ -606,24 +596,6 @@ export function refreshFurnitureDepths(scene: OfficeScene): void {
         image.setDepth(Math.max(image.depth, support.image.depth + 0.25))
       }
     }
-  }
-  scene.refreshTeamLabels()
-}
-export function refreshTeamLabels(scene: OfficeScene): void {
-  for (const [deskId, label] of scene.teamLabels) {
-    const desk = scene.furniture.get(deskId)
-    if (!desk || !isInStaffArea(desk.image)) {
-      label.setVisible(false)
-      continue
-    }
-    const chair = scene.furniture.get(pairedFurnitureId(deskId)!)
-    const deskBounds = scene.furnitureWalkCollision(desk.image, 0)
-    const chairBounds = chair && scene.furnitureWalkCollision(chair.image, 0)
-    const bottom = Math.max(deskBounds.y + deskBounds.height,
-      chairBounds ? chairBounds.y + chairBounds.height : 0)
-    // Measure visible pixels, so transparent PNG padding does not push the
-    // marker away. Keep it on the floor with a gap below wheels and shoes.
-    label.setPosition(chair?.image.x ?? desk.image.x, bottom + 23).setVisible(true)
   }
 }
 export function editorState(scene: OfficeScene): EditorState {

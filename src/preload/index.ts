@@ -50,6 +50,8 @@ const api: PreloadApi = {
   },
   templates: {
     list: (): Promise<AgentTemplate[]> => ipcRenderer.invoke('templates:list'),
+    presets: (): Promise<AgentTemplate[]> => ipcRenderer.invoke('templates:presets'),
+    addPreset: (id: string): Promise<AgentTemplate[]> => ipcRenderer.invoke('templates:add-preset', id),
     create: (input: AgentTemplateInput): Promise<AgentTemplate[]> =>
       ipcRenderer.invoke('templates:create', input),
     update: (id: string, patch: AgentTemplatePatch): Promise<AgentTemplate[]> =>
