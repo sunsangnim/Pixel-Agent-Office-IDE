@@ -327,6 +327,13 @@ export interface SystemApi {
   logError(context: string, message: string): void
 }
 
+export interface UserProfileApi {
+  getRepresentativeName(): Promise<string>
+  hasRepresentativeName(): Promise<boolean>
+  setRepresentativeName(name: string): Promise<string>
+  onRepresentativeNameChanged(callback: (name: string) => void): () => void
+}
+
 export interface PreloadApi {
   meetings: MeetingApi
   pty: PtyApi
@@ -339,4 +346,5 @@ export interface PreloadApi {
   system: SystemApi
   git: GitApi
   teamCapacity: TeamCapacityApi
+  userProfile: UserProfileApi
 }

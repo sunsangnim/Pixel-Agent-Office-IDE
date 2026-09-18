@@ -20,6 +20,10 @@ import { staffWorkTexture } from './staffWorkAnimation'
 export function applySnapshot(scene: OfficeScene, snapshot: OfficeWorldSnapshot): void {
   scene.snapshot = snapshot
   scene.pendingSnapshot = null
+  const representativeLabelText = `${snapshot.representativeName} 대표`
+  if (scene.representativeLabel && scene.representativeLabel.text !== representativeLabelText) {
+    scene.representativeLabel.setText(representativeLabelText)
+  }
   for (const profileId of scene.greetedVisitors) {
     if (!snapshot.actors.some((actor) => actor.profileId === profileId && actor.presence === 'representativeVisit')) {
       scene.greetedVisitors.delete(profileId)

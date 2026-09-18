@@ -29,6 +29,7 @@ export interface OfficeWorldSnapshot {
   now: number
   meetingActive: boolean
   elevatorOpen: boolean
+  representativeName: string
   actors: OfficeGameActor[]
 }
 

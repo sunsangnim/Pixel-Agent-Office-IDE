@@ -42,15 +42,20 @@ export interface AgentAssignment {
 export function useAgentChat(
   instances: AgentInstance[],
   templates: AgentTemplate[],
+  userName: string,
   onPlanReady?: (payload: PlanReadyPayload) => void
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>(() => readChatHistory(localStorage))
   const [lastTaskByInstance, setLastTaskByInstance] = useState<Record<string, string>>({})
+  // kept fresh every render so the long-lived pty:data listener below always
+  // sees the current name without needing to resubscribe
+  const userNameRef = useRef(userName)
+  userNameRef.current = userName
 
   useEffect(() => saveChatHistory(localStorage, messages), [messages])
 
   const addUserMessage = (text: string): void => {
-    const message = userChatMessage(text)
+    const message = userChatMessage(text, userNameRef.current)
     setMessages((prev) => [...prev, message])
   }
 
@@ -297,14 +302,7 @@ export function useAgentChat(
 
     setMessages((prev) => [
       ...prev,
-      {
-        id: crypto.randomUUID(),
-        kind: 'user',
-        authorName: '김태호',
-        authorColor: '#6ea8fe',
-        authorSeed: 'me',
-        text: displayText
-      },
+      userChatMessage(displayText, userNameRef.current),
       {
         id: crypto.randomUUID(),
         kind: 'system',
@@ -358,7 +356,7 @@ export function useAgentChat(
 
     setMessages((prev) => [
       ...prev,
-      ...(displayText === null ? [] : [userChatMessage(displayText)]),
+      ...(displayText === null ? [] : [userChatMessage(displayText, userNameRef.current)]),
       {
         id: crypto.randomUUID(),
         kind: 'system',
@@ -418,14 +416,7 @@ export function useAgentChat(
 
     setMessages((prev) => [
       ...prev,
-      {
-        id: crypto.randomUUID(),
-        kind: 'user',
-        authorName: '김태호',
-        authorColor: '#6ea8fe',
-        authorSeed: 'me',
-        text: originalText
-      },
+      userChatMessage(originalText, userNameRef.current),
       {
         id: crypto.randomUUID(),
         kind: 'system',

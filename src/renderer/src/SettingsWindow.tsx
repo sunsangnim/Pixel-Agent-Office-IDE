@@ -65,6 +65,8 @@ function SettingsWindow() {
   const [loginSession, setLoginSession] = useState<{ ptyId: string; title: string } | null>(null)
   const [capacities, setCapacities] = useState<Record<string, number>>({})
   const [profiles, setProfiles] = useState<AgentProfile[]>([])
+  const [representativeName, setRepresentativeName] = useState('')
+  const [nameSaved, setNameSaved] = useState(false)
 
   useEffect(() => {
     window.api.templates.list().then((list) => {
@@ -73,6 +75,7 @@ function SettingsWindow() {
     })
     window.api.teamCapacity.list().then(setCapacities)
     window.api.profiles.list().then(setProfiles)
+    window.api.userProfile.getRepresentativeName().then(setRepresentativeName)
     const unsubscribeTemplates = window.api.templates.onChanged(() => {
       window.api.templates.list().then(setTemplates)
       window.api.profiles.list().then(setProfiles)
@@ -86,6 +89,14 @@ function SettingsWindow() {
       unsubscribeCapacity()
     }
   }, [])
+
+  const saveRepresentativeName = async (): Promise<void> => {
+    if (!representativeName.trim()) return
+    const saved = await window.api.userProfile.setRepresentativeName(representativeName)
+    setRepresentativeName(saved)
+    setNameSaved(true)
+    setTimeout(() => setNameSaved(false), 2000)
+  }
 
   const resetForm = (): void => {
     setEditingId(null)
@@ -142,6 +153,29 @@ function SettingsWindow() {
         <h1>에이전트 설정</h1>
         <span className="settings-count-badge">{templates.length}개 등록됨</span>
       </div>
+
+      <form
+        className="settings-form-card"
+        onSubmit={(e) => { e.preventDefault(); void saveRepresentativeName() }}
+      >
+        <h3>내 이름</h3>
+        <p className="settings-hint">오피스 화면과 채팅에 대표 이름으로 표시됩니다.</p>
+        <label>
+          이름
+          <input
+            value={representativeName}
+            onChange={(e) => setRepresentativeName(e.target.value)}
+            placeholder="예: 홍길동"
+            maxLength={20}
+            required
+          />
+        </label>
+        <div className="settings-form-actions">
+          <button type="submit" className="pill-btn pill-btn-primary">저장</button>
+          {nameSaved && <span className="settings-saved-hint">저장됨</span>}
+        </div>
+      </form>
+
       <p className="settings-hint">
         오피스에 배치할 수 있는 에이전트 템플릿을 관리합니다. 실제 CLI 실행 명령어를 등록하고, API
         키를 넣거나 계정으로 직접 로그인하세요.

@@ -27,7 +27,10 @@ export function createRepresentativeActor(scene: OfficeScene): void {
     .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setOrigin(0.5, 1)
   scene.representativeSeatedForeground = scene.add.sprite(0, 0, 'ceo-seated-sheet-frames', 'ceo-sit-front')
     .setDisplaySize(ACTOR_SPRITE_WIDTH, ACTOR_SPRITE_HEIGHT).setOrigin(0.5, 1).setVisible(false)
-  scene.representativeLabel = scene.addOfficeText(0, 0, '김태호 대표', {
+  // Real label text is set moments later by the first applySnapshot() call
+  // once the representative's configured name has loaded from the main
+  // process - this generic placeholder is only visible for a single frame.
+  scene.representativeLabel = scene.addOfficeText(0, 0, '대표', {
     fontSize: '13px', color: '#111111', align: 'center'
   }).setOrigin(0.5, 1).setPadding(4, 4).setDepth(700)
   scene.representativeSpeechBubble = scene.add.image(0, 0, 'speech-bubble', 'panel')

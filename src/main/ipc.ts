@@ -11,6 +11,7 @@ import type { MeetingDraft } from '../shared/meetingNotes'
 import { diffAgainstBase, mergeDeskBranch } from './gitWorktreeManager'
 import { mergeTaskFeature } from './taskFeatureWorktree'
 import { teamCapacityStore } from './teamCapacityStore'
+import { userProfileStore } from './userProfileStore'
 import { buildAgentProfiles } from '../shared/agentProfiles'
 import { TASK_DOCUMENTS_FOLDER, WORKSPACE_FOLDERS } from '../shared/workspaceLayout'
 import { logRendererError } from './errorLog'
@@ -106,6 +107,16 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.on('settings:open', () => openSettingsWindow())
+
+  ipcMain.handle('user-profile:get-representative-name', () => userProfileStore.getRepresentativeName())
+  ipcMain.handle('user-profile:has-representative-name', () => userProfileStore.hasSetRepresentativeName())
+  ipcMain.handle('user-profile:set-representative-name', (_event, name: string) => {
+    const result = userProfileStore.setRepresentativeName(name)
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('user-profile:representative-name-changed', result)
+    }
+    return result
+  })
 
   ipcMain.handle('workspace:get', () => workspaceStore.get())
 

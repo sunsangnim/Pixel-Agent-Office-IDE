@@ -7,6 +7,7 @@ import DiffPanel from './components/DiffPanel'
 import ChatPanel from './components/ChatPanel'
 import WorkspacePanel from './components/WorkspacePanel'
 import ResumeProjectDialog from './components/ResumeProjectDialog'
+import FirstRunNameDialog from './components/FirstRunNameDialog'
 import { resolveResumeRequest } from './lib/resumeCommands'
 import { MEETING_LEADS, isMeetingQuestion, pendingMeetingQuestions, type MeetingDraft } from '@shared/meetingNotes'
 import { MEETING_NOTES_KEY, readMeetingDraft } from './lib/meetingNotes'
@@ -57,6 +58,8 @@ function App() {
   const [manuallyOffDutyIds, setManuallyOffDutyIds] = useState<Set<string>>(new Set())
   const [representativeVisitors, setRepresentativeVisitors] = useState(() => readOfficeVisitors(localStorage))
   const [conversationProfileId, setConversationProfileId] = useState<string | null>(null)
+  const [representativeName, setRepresentativeName] = useState('대표')
+  const [showNamePrompt, setShowNamePrompt] = useState(false)
   const recoveredCommand = useRef(false)
   const instancesLoaded = useRef(false)
   const [meetingDraft, setMeetingDraft] = useState<MeetingDraft | null>(() => readMeetingDraft(localStorage))
@@ -84,7 +87,18 @@ function App() {
   }
 
   const { messages, lastTaskByInstance, sendPrompt, sendPlanningPrompt, sendAssignments, addSystemMessage, addUserMessage, addAgentMessage, cancelPlanning, trackRestoredTasks } =
-    useAgentChat(instances, templates, handlePlanReady)
+    useAgentChat(instances, templates, representativeName, handlePlanReady)
+
+  useEffect(() => {
+    window.api.userProfile.getRepresentativeName().then(setRepresentativeName)
+    window.api.userProfile.hasRepresentativeName().then((has) => { if (!has) setShowNamePrompt(true) })
+    return window.api.userProfile.onRepresentativeNameChanged(setRepresentativeName)
+  }, [])
+
+  const confirmRepresentativeName = (name: string): void => {
+    window.api.userProfile.setRepresentativeName(name).then(setRepresentativeName)
+    setShowNamePrompt(false)
+  }
 
   useEffect(() => {
     if (!window.api.tasks.dispatch) return
@@ -657,6 +671,7 @@ ${plan.originalText}`
           meetingActive={meetingActive}
           manuallyOffDutyIds={manuallyOffDutyIds}
           representativeVisitors={representativeVisitors}
+          representativeName={representativeName}
           messages={messages}
           requests={requests}
           onConversationChange={setConversationProfileId}
@@ -679,6 +694,7 @@ ${plan.originalText}`
         instances={instances}
         templates={templates}
         workFolder={workFolder}
+        userName={representativeName}
         onOpenFiles={() => setFilesOpen(true)}
         onOpenFolder={() => { void window.api.workspace.openFolder().catch((e) => setError(String(e))) }}
         messages={messages}
@@ -689,6 +705,7 @@ ${plan.originalText}`
 
       {filesOpen && <WorkspacePanel workFolder={workFolder} onChooseFolder={chooseFolder} onClose={() => setFilesOpen(false)} />}
       {resumeOpen && <ResumeProjectDialog tasks={trackedTasks} onClose={() => setResumeOpen(false)} onSelect={project => { void resumeProject(project) }} />}
+      {showNamePrompt && <FirstRunNameDialog onConfirm={confirmRepresentativeName} onSkip={() => setShowNamePrompt(false)} />}
 
       {selectedInstanceId &&
         (() => {

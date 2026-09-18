@@ -164,7 +164,7 @@ function actor(profileId = 'test', teamIndex = 0, presence = 'deskIdle', slotInd
 }
 
 function snapshot(scene, actors) {
-  scene.updateSnapshot({ now: scene.simulationTimeMs, meetingActive: actors.some((actor) => actor.presence === 'meeting'), elevatorOpen: false, actors })
+  scene.updateSnapshot({ now: scene.simulationTimeMs, meetingActive: actors.some((actor) => actor.presence === 'meeting'), elevatorOpen: false, representativeName: '대표', actors })
 }
 
 function advance(scene, seconds, observe = () => {}) {
@@ -905,7 +905,7 @@ for (const frame of [0, 1, 2]) {
   assert.deepEqual(position(sprite), initial)
   assert.equal(scene.representativePantryAction, undefined, 'walk before showing a drink or snack')
   assert.equal(scene.representativePantryTarget, furniture.id)
-  assert.equal(scene.representativeLabel.text, '김태호 대표', 'action text never alters the name')
+  assert.equal(scene.representativeLabel.text, '대표', 'action text never alters the name')
   assert.match(scene.representativeSpeech.text, frame === 0 ? /커피 마시러 가는 중/ : /간식 먹으러 가는 중/)
   assert.equal(scene.representativeSpeechBubble.visible, true)
   awaitRepresentativeBreak(scene)
@@ -930,7 +930,7 @@ for (const frame of [0, 1, 2]) {
   assert.equal(sprite.texture.key, 'ceo-animation-sheet-frames')
   assert.equal(sprite.frame, 'ceo-idle-0')
   assert.equal(scene.representativePantryTarget, null)
-  assert.equal(scene.representativeLabel.text, '김태호 대표')
+  assert.equal(scene.representativeLabel.text, '대표')
   assert.equal(scene.representativeSpeechBubble.visible, false, 'completion immediately hides the bubble without a reaction')
   assert.equal(scene.representativeSpeech.visible, false)
   advance(scene, 2)
@@ -1045,7 +1045,7 @@ for (const point of [{ x: 24, y: 144 }, { x: 936, y: 144 }, { x: 480, y: 144 },
   const bubble = speechLayout.representativeSpeechBubble
   const text = speechLayout.representativeSpeech
   const label = speechLayout.representativeLabel
-  assert.equal(label.text, '김태호 대표')
+  assert.equal(label.text, '대표')
   assert.equal(label.x, point.x, 'the name stays centered over the head even at the north/side edges')
   assert.equal(label.y, point.y - speechLayout.representativeSprite.displayHeight - 6)
   const namePosition = position(label)

@@ -7,6 +7,7 @@ interface ChatPanelProps {
   instances: AgentInstance[]
   templates: AgentTemplate[]
   workFolder: string | null
+  userName: string
   onOpenFiles: () => void
   onOpenFolder: () => void
   messages: ChatMessage[]
@@ -19,6 +20,7 @@ function ChatPanel({
   instances,
   templates,
   workFolder,
+  userName,
   onOpenFiles,
   onOpenFolder,
   messages,
@@ -100,7 +102,7 @@ function ChatPanel({
         <div className="chat-user">
           <IdenticonAvatar seed="me-ceo" color="#6ea8fe" size={34} />
           <div className="chat-user-info">
-            <span className="chat-user-name">김태호</span>
+            <span className="chat-user-name">{userName}</span>
             <span className="chat-user-title">대표</span>
           </div>
         </div>

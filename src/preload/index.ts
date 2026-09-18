@@ -142,6 +142,17 @@ const api: PreloadApi = {
       ipcRenderer.on('team-capacity:changed', listener)
       return () => ipcRenderer.removeListener('team-capacity:changed', listener)
     }
+  },
+  userProfile: {
+    getRepresentativeName: (): Promise<string> => ipcRenderer.invoke('user-profile:get-representative-name'),
+    hasRepresentativeName: (): Promise<boolean> => ipcRenderer.invoke('user-profile:has-representative-name'),
+    setRepresentativeName: (name: string): Promise<string> =>
+      ipcRenderer.invoke('user-profile:set-representative-name', name),
+    onRepresentativeNameChanged: (callback: (name: string) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, name: string): void => callback(name)
+      ipcRenderer.on('user-profile:representative-name-changed', listener)
+      return () => ipcRenderer.removeListener('user-profile:representative-name-changed', listener)
+    }
   }
 }
 

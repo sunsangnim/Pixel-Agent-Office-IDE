@@ -19,6 +19,7 @@ interface OfficeViewProps {
   meetingActive: boolean
   manuallyOffDutyIds: Set<string>
   representativeVisitors?: Set<string>
+  representativeName: string
   messages: ChatMessage[]
   requests: OfficeRequest[]
   onConversationChange: (profileId: string) => void
@@ -41,6 +42,7 @@ function OfficeView(props: OfficeViewProps) {
     now: officeClock.now.getTime(),
     meetingActive: props.meetingActive,
     elevatorOpen: officeClock.isClockInActive,
+    representativeName: props.representativeName,
     actors: props.profiles.map((profile, rosterIndex) => {
       const instance = props.instances.find((candidate) => candidate.profileId === profile.profileId)
       const template = props.templates.find((candidate) => candidate.id === profile.templateId)

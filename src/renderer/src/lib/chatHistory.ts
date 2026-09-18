@@ -18,8 +18,8 @@ export function resetChatForBoot(storage: Pick<Storage, 'getItem' | 'setItem' | 
   storage.setItem(CHAT_BOOT_KEY, bootId)
 }
 
-export function userChatMessage(text: string): ChatMessage {
-  return { id: crypto.randomUUID(), kind: 'user', authorName: '김태호', authorColor: '#6ea8fe', authorSeed: 'me', text }
+export function userChatMessage(text: string, authorName: string): ChatMessage {
+  return { id: crypto.randomUUID(), kind: 'user', authorName, authorColor: '#6ea8fe', authorSeed: 'me', text }
 }
 
 export function readChatHistory(storage: Pick<Storage, 'getItem'>): ChatMessage[] {
