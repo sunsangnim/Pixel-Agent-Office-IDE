@@ -1,6 +1,6 @@
 {
   "name": "pixel-agent-office-ide",
-  "version": "0.2.4",
+  "version": "0.2.0",
   "description": "Pixel-art multi-agent CLI office IDE",
   "main": "./out/main/index.js",
   "private": true,

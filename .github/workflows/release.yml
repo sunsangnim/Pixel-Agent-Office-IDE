@@ -1,19 +1,49 @@
 name: Release build
 
-# Manual only - packaging isn't part of the on-every-push CI. Also, node-pty's
+# Runs on every push to main, but the check-version job is a fast no-op
+# unless package.json's version was actually bumped (no release for that
+# tag yet) - so pushing regular commits doesn't spend Windows build minutes.
+# Bump the version to cut a release; workflow_dispatch is kept for manually
+# re-running one.
+#
+# Packaging isn't part of the on-every-push CI job below because node-pty's
 # native-module rebuild step (node-gyp/winpty) cannot run in this repo's own
 # local checkout path (it contains a space - a long-standing node-gyp/Windows
 # limitation: https://github.com/nodejs/node-gyp/issues/65), so this workflow
 # is the only place a real Windows installer actually gets built - GitHub's
 # runner checks out to a path with no spaces.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-windows:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,8 +64,7 @@ jobs:
       - name: Ensure GitHub release exists for this version
         shell: pwsh
         run: |
-          $version = node -p "require('./package.json').version"
-          $tag = "v$version"
+          $tag = "${{ needs.check-version.outputs.tag }}"
           gh release view $tag --repo "${{ github.repository }}" 2>$null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag --repo "${{ github.repository }}" --title $tag --notes "" --target main
