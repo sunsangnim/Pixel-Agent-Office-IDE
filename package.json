@@ -5,7 +5,7 @@
   "main": "./out/main/index.js",
   "private": true,
   "author": "",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "homepage": "https://github.com/sunsangnim/Pixel-Agent-Office-IDE",
   "engines": {
     "node": ">=22"
